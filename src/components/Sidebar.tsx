@@ -3,11 +3,14 @@ import { useStore } from '../store';
 import { formatTimestamp } from '../utils/parser';
 import {
   MessageSquare, Radio, Clock, Zap, Settings, Plus,
-  ChevronDown, ChevronRight, Activity, Cpu, LayoutGrid
+  ChevronDown, ChevronRight, Cpu, Download, Terminal, Bot
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
+  { id: 'install', label: 'Install', icon: Download },
+  { id: 'commands', label: 'Commands', icon: Terminal },
+  { id: 'agents', label: 'Agents', icon: Bot },
   { id: 'gateway', label: 'Gateway', icon: Radio },
   { id: 'crons', label: 'Crons', icon: Clock },
   { id: 'skills', label: 'Skills', icon: Zap },
@@ -23,8 +26,8 @@ export default function Sidebar() {
   const [historyExpanded, setHistoryExpanded] = useState(true);
 
   const statusLabel = {
-    unchecked: 'Checking…',
-    connecting: 'Connecting…',
+    unchecked: 'Checking...',
+    connecting: 'Connecting...',
     connected: 'Connected',
     disconnected: 'Disconnected',
     error: 'Error',
@@ -32,8 +35,8 @@ export default function Sidebar() {
 
   const agentLabel = {
     idle: 'Idle',
-    thinking: 'Thinking…',
-    running_tool: 'Using tool…',
+    thinking: 'Thinking...',
+    running_tool: 'Using tool...',
     error: 'Error',
   }[agentState];
 
@@ -51,7 +54,7 @@ export default function Sidebar() {
       <div style={{ padding: '18px 16px 12px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, var(--accent), #3b9eff)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
-            🪽
+            H
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--text-primary)' }}>Hermes</div>

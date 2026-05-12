@@ -104,13 +104,18 @@
   to { transform: rotate(360deg); }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
 
 .typing-cursor::after {
-  content: '▋';
+  content: '|';
   animation: blink 1s step-end infinite;
   color: var(--accent);
   margin-left: 1px;

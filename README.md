@@ -1,160 +1,93 @@
-# 🪽 Hermes GUI — Desktop Agent
+# Hermes GUI - Desktop Agent
 
-A native desktop GUI for [Hermes Agent](https://github.com/NousResearch/hermes) built with **Tauri v2 + React 18 + TypeScript + Tailwind CSS v4**.
+A native desktop GUI for [Nous Research Hermes Agent](https://github.com/NousResearch/hermes-agent), built with Tauri v2, React, TypeScript, and Tailwind CSS.
 
-> No browser, no SSH tunnel, no terminal required. Every Hermes feature exposed as a UI action.
+The goal is simple: keep Hermes Agent as the engine, then expose installation, setup, command execution, gateway control, agents, sessions, skills, crons, and configuration from a better desktop UI.
 
-![Hermes GUI Screenshot](docs/screenshot.png)
-
----
-
-## Features
+## Current Surface
 
 | Panel | What it does |
-|---|---|
-| **💬 Conversation** | SSE streaming chat, live tool call cards, reasoning trace blocks, stop button, token usage bar |
-| **⌘K Command Palette** | All 17 slash commands searchable — `/model`, `/compress`, `/retry`, `/skills`, and more |
-| **📡 Gateway** | Start/stop `hermes gateway run`, platform connection cards (Telegram, Discord, Slack, WhatsApp, Signal, Email), live process log |
-| **⏰ Crons** | Scheduled task management with natural-language schedule input |
-| **⚡ Skills** | Browse, create, edit, and invoke Hermes skills with an inline markdown editor |
-| **⚙️ Settings** | API keys (masked), personality editor, memory viewer, workspace + terminal backend config |
+| --- | --- |
+| Conversation | OpenAI-compatible SSE chat against the local Hermes API gateway. |
+| Install | Detects Hermes, shows the active home/config/binary, runs the official installer, and launches safe diagnostics. |
+| Command Center | Searchable catalog of Hermes CLI commands with a native Tauri command runner. |
+| Agents | Main, one-shot, scripted, worktree, background, gateway, goal, and ACP agent modes. |
+| Gateway | Starts/stops `hermes gateway run`, checks `127.0.0.1:8642`, and tracks platform connection setup. |
+| Crons | Local scheduled-task UI scaffold for Hermes cron workflows. |
+| Skills | Browse, create, edit, and invoke reusable Hermes skills. |
+| Settings | API keys, personality, memory, workspace, and terminal backend settings scaffold. |
 
----
+## References Checked
+
+- [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent): official agent, installer, CLI, gateway, slash command, skills, cron, memory, ACP, MCP, and profile surfaces.
+- [nesquena/hermes-webui](https://github.com/nesquena/hermes-webui): web dashboard with strong command/session parity and a three-panel operational layout.
+- [fathah/hermes-desktop](https://github.com/fathah/hermes-desktop): Electron desktop implementation with native installation, runtime checks, gateway process control, sessions, profiles, skills, and config management.
 
 ## Architecture
 
+```text
+React renderer
+  |-- fetch/SSE --> http://localhost:8642/v1/chat/completions
+  |-- Tauri IPC --> Rust backend
+                  |-- discover/install Hermes Agent
+                  |-- run hermes commands
+                  |-- start/stop managed gateway process
+                  |-- probe localhost:8642 health
 ```
-React UI (renderer)
-    │
-    ├──── fetch() SSE ──────▶ http://localhost:8642/v1/chat/completions
-    │                              (Hermes OpenAI-compatible API)
-    │
-    └──── Tauri IPC ────────▶ Rust backend
-                                  └── spawn/kill hermes gateway run
-                                  └── read/write ~/.hermes/config.yaml
-```
 
-The frontend communicates with Hermes via the **built-in OpenAI-compatible API server** at `http://localhost:8642` — no fragile stdout parsing.
+The app wraps Hermes rather than reimplementing it. Chat still flows through Hermes Agent's OpenAI-compatible API server, while desktop-only tasks use Tauri commands.
 
----
-
-## Getting Started
+## Development
 
 ### Prerequisites
 
-- [Node.js 18+](https://nodejs.org/)
-- [Rust + Cargo](https://www.rust-lang.org/learn/get-started) (for the full desktop app)
-- [Hermes Agent](https://github.com/NousResearch/hermes) installed and on PATH
+- Node.js 18+
+- Rust and Cargo for the full Tauri desktop app
+- Hermes Agent if you want live command/gateway integration
 
-### Development (frontend only)
+### Frontend Preview
 
 ```bash
-git clone https://github.com/vaguemit/hermes-gui.git
-cd hermes-gui
 npm install
 npm run dev
-# → http://localhost:1420
 ```
 
-### Full Desktop App
+Open http://localhost:1420.
+
+### Desktop App
 
 ```bash
 npm run tauri dev
 ```
 
-### Production Build
+### Build
 
 ```bash
-npm run build        # frontend bundle only
-npm run tauri build  # native installer (.dmg / .deb / .AppImage / .exe)
+npm run build
+npm run tauri build
 ```
 
----
+## Native Commands
 
-## Tech Stack
+The Rust backend currently exposes:
 
-| Layer | Choice |
-|---|---|
-| Desktop shell | Tauri v2 (Rust) |
-| Frontend | React 18 + TypeScript |
-| Styling | Tailwind CSS v4 (`@tailwindcss/vite`) |
-| State | Zustand |
-| Agent API | `fetch()` → `http://localhost:8642` (OpenAI SSE format) |
-| Icons | lucide-react |
-| Fonts | Inter + JetBrains Mono (Google Fonts) |
+- `hermes_install_status`
+- `hermes_install`
+- `hermes_run_command`
+- `hermes_start_gateway`
+- `hermes_stop_gateway`
+- `hermes_gateway_status`
 
----
-
-## How It Connects to Hermes
-
-1. On app launch, check `GET http://localhost:8642/health`
-2. If healthy → show "Connected" and proceed
-3. If not → offer "Start Gateway" button which spawns `hermes gateway run` as a managed child process
-4. All chat goes via `POST /v1/chat/completions` with SSE streaming
-5. Tool call events are parsed from `delta.tool_calls` in the stream and rendered as live cards
-
----
-
-## Project Structure
-
-```
-hermes-gui/
-├── src/
-│   ├── api/hermes.ts          # API client (SSE streaming, health check, model list)
-│   ├── components/
-│   │   ├── ConversationPanel.tsx
-│   │   ├── Sidebar.tsx
-│   │   ├── ToolsPanel.tsx
-│   │   ├── CommandPalette.tsx
-│   │   ├── ModelSwitcher.tsx
-│   │   ├── GatewayPanel.tsx
-│   │   ├── CronPanel.tsx
-│   │   ├── SkillsPanel.tsx
-│   │   └── SettingsModal.tsx
-│   ├── utils/parser.tsx       # Markdown renderer, message type detection
-│   ├── store.ts               # Zustand store
-│   ├── App.tsx                # Root layout
-│   └── index.css              # Design system (CSS variables)
-└── src-tauri/                 # Tauri Rust backend
-```
-
----
+These are consumed from `src/api/desktop.ts`, which falls back gracefully when the app is running in browser preview mode.
 
 ## Roadmap
 
-### Milestone 1 ✅ (done)
-- [x] Tauri project scaffolded
-- [x] React frontend with SSE streaming
-- [x] Tool call cards parsed from stream
-- [x] Full conversation UI with stop button
-
-### Milestone 2 ✅ (done)
-- [x] Command palette (all slash commands)
-- [x] Model switcher (grouped by provider)
-- [x] Session list in sidebar
-
-### Milestone 3 ✅ (done)
-- [x] Settings panel (API keys, personality, memory, workspace)
-- [x] Tool toggles panel
-
-### Milestone 4 ✅ (done)
-- [x] Gateway panel (start/stop + status + platform cards)
-- [x] Cron scheduler
-- [x] Skills browser + editor
-
-### Milestone 5 — In Progress
-- [ ] Rust backend: spawn `hermes gateway run` via Tauri shell plugin
-- [ ] Real config R/W (`~/.hermes/config.yaml`, `.env`)
-- [ ] Session persistence (read `~/.hermes/sessions/`)
-- [ ] App packaging + auto-update
-
----
-
-## Contributing
-
-PRs welcome. The codebase is intentionally thin — it wraps Hermes, never reimplements it.
-
----
+- Stream installer and command output live instead of returning only at process exit.
+- Persist real platform config to Hermes config/env files.
+- Replace local cron/skills mock data with Hermes-backed reads and writes.
+- Add sessions/profiles/memory panels backed by `~/.hermes`.
+- Add a PTY-backed terminal view for fully interactive commands like `hermes setup model`.
+- Package signed installers with auto-update.
 
 ## License
 

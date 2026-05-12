@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export type GatewayStatus = 'unchecked' | 'connecting' | 'connected' | 'disconnected' | 'error';
 export type AgentState = 'idle' | 'thinking' | 'running_tool' | 'error';
-export type NavSection = 'chat' | 'gateway' | 'crons' | 'skills' | 'settings';
+export type NavSection = 'chat' | 'install' | 'commands' | 'agents' | 'gateway' | 'crons' | 'skills' | 'settings';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageType = 'prose' | 'tool_call' | 'tool_output' | 'error' | 'info' | 'reasoning' | 'system';
 
@@ -239,12 +239,12 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Platforms
   platforms: [
-    { name: 'Telegram', status: 'disconnected', icon: '✈' },
-    { name: 'Discord', status: 'disconnected', icon: '🎮' },
-    { name: 'Slack', status: 'disconnected', icon: '💬' },
-    { name: 'WhatsApp', status: 'disconnected', icon: '📱' },
-    { name: 'Signal', status: 'disconnected', icon: '🔒' },
-    { name: 'Email', status: 'disconnected', icon: '✉' },
+    { name: 'Telegram', status: 'disconnected', icon: 'TG' },
+    { name: 'Discord', status: 'disconnected', icon: 'DC' },
+    { name: 'Slack', status: 'disconnected', icon: 'SL' },
+    { name: 'WhatsApp', status: 'disconnected', icon: 'WA' },
+    { name: 'Signal', status: 'disconnected', icon: 'SG' },
+    { name: 'Email', status: 'disconnected', icon: 'EM' },
   ],
 
   // Crons

@@ -6,6 +6,9 @@ import ConversationPanel from './components/ConversationPanel';
 import ToolsPanel from './components/ToolsPanel';
 import CommandPalette from './components/CommandPalette';
 import ModelSwitcher from './components/ModelSwitcher';
+import InstallPanel from './components/InstallPanel';
+import CommandCenterPanel from './components/CommandCenterPanel';
+import AgentsPanel from './components/AgentsPanel';
 import GatewayPanel from './components/GatewayPanel';
 import CronPanel from './components/CronPanel';
 import SkillsPanel from './components/SkillsPanel';
@@ -44,6 +47,9 @@ export default function App() {
   const mainContent = () => {
     switch (activeSection) {
       case 'chat': return <ConversationPanel />;
+      case 'install': return <InstallPanel />;
+      case 'commands': return <CommandCenterPanel />;
+      case 'agents': return <AgentsPanel />;
       case 'gateway': return <GatewayPanel />;
       case 'crons': return <CronPanel />;
       case 'skills': return <SkillsPanel />;
@@ -75,11 +81,14 @@ export default function App() {
         }}>
           {/* Section title */}
           <span style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text-primary)', flex: 1 }}>
-            {activeSection === 'chat' && '💬 Conversation'}
-            {activeSection === 'gateway' && '📡 Gateway'}
-            {activeSection === 'crons' && '⏰ Cron Scheduler'}
-            {activeSection === 'skills' && '⚡ Skills'}
-            {activeSection === 'settings' && '⚙️ Settings'}
+            {activeSection === 'chat' && 'Conversation'}
+            {activeSection === 'install' && 'Install and Runtime'}
+            {activeSection === 'commands' && 'Command Center'}
+            {activeSection === 'agents' && 'Agents'}
+            {activeSection === 'gateway' && 'Gateway'}
+            {activeSection === 'crons' && 'Cron Scheduler'}
+            {activeSection === 'skills' && 'Skills'}
+            {activeSection === 'settings' && 'Settings'}
           </span>
 
           {/* Palette shortcut */}
@@ -91,7 +100,7 @@ export default function App() {
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; }}
           >
             <span>/ Commands</span>
-            <kbd style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>⌘K</kbd>
+            <kbd style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>Ctrl K</kbd>
           </button>
 
           {/* Toggle right panel */}
