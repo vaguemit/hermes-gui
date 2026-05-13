@@ -135,7 +135,7 @@ function exportSessionToMarkdown(messages: Message[]): string {
 }
 
 export default function ConversationPanel() {
-  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection } = useStore();
+  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen } = useStore();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<{ abort: () => void } | null>(null);
@@ -180,6 +180,39 @@ export default function ConversationPanel() {
     }
     if (userContent === '/usage') {
       addMessage({ id: generateId(), role: 'system', type: 'info', content: `Tokens: ${tokensUsed.toLocaleString()} / ${contextWindow.toLocaleString()}`, timestamp: Date.now() });
+      return;
+    }
+    if (userContent === '/help') {
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: '**Hermes Commands**\n\n`/new` or `/reset` — clear conversation\n`/usage` — show token usage\n`/model` — open model switcher\n`/agents` — view agent modes\n`/skills` — open skills browser\n`/gateway` — open gateway panel\n`/tools` — open command center\n`/version` — show Hermes version\n\nAll other `/` commands are forwarded to the Hermes agent.', timestamp: Date.now() });
+      return;
+    }
+    if (userContent === '/model') {
+      setModelSwitcherOpen(true);
+      return;
+    }
+    if (userContent === '/agents') {
+      setActiveSection('agents');
+      return;
+    }
+    if (userContent === '/skills') {
+      setActiveSection('skills');
+      return;
+    }
+    if (userContent === '/gateway') {
+      setActiveSection('gateway');
+      return;
+    }
+    if (userContent === '/tools') {
+      setActiveSection('commands');
+      return;
+    }
+    if (userContent.startsWith('/version')) {
+      import('../api/desktop').then(({ runHermesCommand }) => {
+        runHermesCommand(['--version']).then(result => {
+          addMessage({ id: generateId(), role: 'system', type: 'info', content: result.stdout || result.stderr || 'Could not get version.', timestamp: Date.now() });
+        });
+      });
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Fetching Hermes version...', timestamp: Date.now() });
       return;
     }
 
@@ -234,8 +267,17 @@ export default function ConversationPanel() {
             addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() });
             setAgentState('running_tool');
           }),
-        ]).then(([u1, u2, u3, u4]) => {
-          cleanupRef.fn = () => { u1(); u2(); u3(); u4(); };
+          listen<string>(`tool-call-${eventId}`, (ev) => {
+            if (aborted) return;
+            if (ev.payload === '__executing__') {
+              setAgentState('running_tool');
+              return;
+            }
+            addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() });
+            setAgentState('running_tool');
+          }),
+        ]).then(([u1, u2, u3, u4, u5]) => {
+          cleanupRef.fn = () => { u1(); u2(); u3(); u4(); u5(); };
           chatStream(eventId, history, activeModel).catch(reject);
         }).catch(reject);
       });
