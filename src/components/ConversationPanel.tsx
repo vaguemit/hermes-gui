@@ -5,7 +5,7 @@ import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy,
   ChevronDown, ChevronRight, AlertTriangle,
-  Brain, Terminal, CheckCircle2, XCircle, Loader2
+  Brain, Terminal, CheckCircle2, XCircle, Loader2, Download
 } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).slice(2);
@@ -13,29 +13,29 @@ const generateId = () => Math.random().toString(36).slice(2);
 function ToolCallCard({ tc }: { tc: ToolCall }) {
   const [expanded, setExpanded] = useState(true);
   const statusIcon = {
-    pending: <Loader2 size={12} className="animate-spin" style={{ color: 'var(--text-muted)' }} />,
-    running: <Loader2 size={12} style={{ color: 'var(--tool-blue)', animation: 'spin 1s linear infinite' }} />,
-    done: <CheckCircle2 size={12} style={{ color: 'var(--success)' }} />,
-    error: <XCircle size={12} style={{ color: 'var(--error)' }} />,
+    pending: <Loader2 size={12} className="animate-spin" style={{ color: 'var(--text-secondary)' }} />,
+    running: <Loader2 size={12} style={{ color: 'var(--accent-blue)', animation: 'spin 1s linear infinite' }} />,
+    done: <CheckCircle2 size={12} style={{ color: 'var(--accent-green)' }} />,
+    error: <XCircle size={12} style={{ color: 'var(--accent-red)' }} />,
   }[tc.status];
 
   return (
     <div className="tool-card my-2 animate-in">
-      <button onClick={() => setExpanded(!expanded)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--tool-blue)' }}>
+      <button onClick={() => setExpanded(!expanded)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent-blue)' }}>
         <Terminal size={13} />
-        <span style={{ fontWeight: 600, fontSize: 12, fontFamily: 'monospace' }}>{tc.name}</span>
+        <span style={{ fontWeight: 600, fontSize: 12, fontFamily: 'var(--font-mono)' }}>{tc.name}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
           {statusIcon}
-          {expanded ? <ChevronDown size={12} style={{ color: 'var(--text-muted)' }} /> : <ChevronRight size={12} style={{ color: 'var(--text-muted)' }} />}
+          {expanded ? <ChevronDown size={12} style={{ color: 'var(--text-secondary)' }} /> : <ChevronRight size={12} style={{ color: 'var(--text-secondary)' }} />}
         </span>
       </button>
       {expanded && tc.input && (
         <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--text-secondary)' }}>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Input</div>
+          <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Input</div>
           <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{tc.input.slice(0, 300)}</pre>
           {tc.output && (
             <>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 8, marginBottom: 4 }}>Output</div>
+              <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 8, marginBottom: 4 }}>Output</div>
               <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-primary)' }}>{tc.output.slice(0, 400)}</pre>
             </>
           )}
@@ -50,7 +50,7 @@ function ReasoningBlock({ content }: { content: string }) {
   const clean = content.replace(/<think>|<\/think>|^Thinking:\s*/gi, '').trim();
   return (
     <div className="reasoning-block my-2 animate-in">
-      <button onClick={() => setExpanded(!expanded)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--reasoning)' }}>
+      <button onClick={() => setExpanded(!expanded)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent-amber-dim)' }}>
         <Brain size={13} />
         <span style={{ fontSize: 12, fontWeight: 600 }}>Reasoning trace</span>
         <span style={{ marginLeft: 'auto' }}>{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
@@ -66,16 +66,16 @@ function MessageBubble({ msg }: { msg: Message }) {
   if (msg.type === 'error') return (
     <div className="animate-in" style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-start' }}>
       <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <AlertTriangle size={14} style={{ color: 'var(--error)' }} />
+        <AlertTriangle size={14} style={{ color: 'var(--accent-red)' }} />
       </div>
       <div style={{ flex: 1, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, padding: '10px 14px' }}>
-        <span style={{ color: 'var(--error)', fontSize: 13 }}>{msg.content}</span>
+        <span style={{ color: 'var(--accent-red)', fontSize: 13 }}>{msg.content}</span>
       </div>
     </div>
   );
   if (msg.type === 'info' || msg.type === 'system') return (
     <div className="animate-in" style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
-      <span style={{ fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 100, padding: '3px 12px' }}>{msg.content}</span>
+      <span style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 100, padding: '3px 12px' }}>{msg.content}</span>
     </div>
   );
 
@@ -95,13 +95,43 @@ function MessageBubble({ msg }: { msg: Message }) {
         {msg.toolCalls?.map((tc) => <ToolCallCard key={tc.id} tc={tc} />)}
         {!isUser && !msg.isStreaming && (
           <button onClick={() => { navigator.clipboard.writeText(msg.content); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-            style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 11.5, cursor: 'pointer', padding: '3px 7px', borderRadius: 5, marginTop: 6 }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: 11.5, cursor: 'pointer', padding: '3px 7px', borderRadius: 5, marginTop: 6 }}>
             <Copy size={11} />{copied ? 'Copied!' : 'Copy'}
           </button>
         )}
       </div>
     </div>
   );
+}
+
+function exportSessionToMarkdown(messages: Message[]): string {
+  const lines: string[] = [];
+  for (const msg of messages) {
+    const ts = formatTimestamp(msg.timestamp);
+    if (msg.type === 'reasoning') {
+      const clean = msg.content.replace(/<think>|<\/think>|^Thinking:\s*/gi, '').trim();
+      lines.push(`## reasoning ${ts}\n\n> ${clean.replace(/\n/g, '\n> ')}\n`);
+    } else if (msg.type === 'tool_call' || msg.type === 'tool_output') {
+      lines.push(`## ${msg.role} ${ts}\n\n\`\`\`json\n${msg.content}\n\`\`\`\n`);
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        for (const tc of msg.toolCalls) {
+          lines.push(`### tool: ${tc.name}\n`);
+          if (tc.input) lines.push(`**Input:**\n\`\`\`json\n${tc.input}\n\`\`\`\n`);
+          if (tc.output) lines.push(`**Output:**\n\`\`\`json\n${tc.output}\n\`\`\`\n`);
+        }
+      }
+    } else {
+      lines.push(`## ${msg.role} ${ts}\n\n${msg.content}\n`);
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        for (const tc of msg.toolCalls) {
+          lines.push(`### tool: ${tc.name}\n`);
+          if (tc.input) lines.push(`**Input:**\n\`\`\`json\n${tc.input}\n\`\`\`\n`);
+          if (tc.output) lines.push(`**Output:**\n\`\`\`json\n${tc.output}\n\`\`\`\n`);
+        }
+      }
+    }
+  }
+  return lines.join('\n');
 }
 
 export default function ConversationPanel() {
@@ -125,6 +155,17 @@ export default function ConversationPanel() {
   }, []);
 
   const handleStop = () => { abortRef.current?.abort(); setIsRunning(false); setAgentState('idle'); };
+
+  const handleExport = () => {
+    const md = exportSessionToMarkdown(messages);
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `hermes-session-${Date.now()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || isRunning) return;
@@ -181,13 +222,21 @@ export default function ConversationPanel() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {messages.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 20px 0', borderBottom: '1px solid var(--border)' }}>
+          <button className="btn btn-ghost btn-sm" onClick={handleExport} title="Export session to Markdown" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Download size={13} />
+            Export
+          </button>
+        </div>
+      )}
       <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
         {messages.length === 0 && (
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, opacity: 0.5 }}>
             <div style={{ fontSize: 48 }}>🪽</div>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>Start a conversation with Hermes</div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Type a message or press <kbd style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px', fontSize: 11 }}>/</kbd> for slash commands</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Type a message or press <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px', fontSize: 11 }}>/</kbd> for slash commands</div>
             </div>
           </div>
         )}
@@ -198,23 +247,23 @@ export default function ConversationPanel() {
       {tokensUsed > 0 && (
         <div style={{ padding: '0 28px 6px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-            <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Context</span>
-            <span style={{ fontSize: 10.5, color: usagePct > 80 ? 'var(--warning)' : 'var(--text-muted)' }}>{tokensUsed.toLocaleString()} / {contextWindow.toLocaleString()}</span>
+            <span style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>Context</span>
+            <span style={{ fontSize: 10.5, color: usagePct > 80 ? 'var(--accent-amber)' : 'var(--text-secondary)' }}>{tokensUsed.toLocaleString()} / {contextWindow.toLocaleString()}</span>
           </div>
-          <div style={{ height: 3, background: 'var(--bg-elevated)', borderRadius: 2 }}>
-            <div style={{ height: '100%', width: `${Math.min(usagePct, 100)}%`, background: usagePct > 80 ? 'var(--warning)' : 'var(--accent)', borderRadius: 2, transition: 'width 0.4s' }} />
+          <div style={{ height: 3, background: 'var(--bg2)', borderRadius: 2 }}>
+            <div style={{ height: '100%', width: `${Math.min(usagePct, 100)}%`, background: usagePct > 80 ? 'var(--accent-amber)' : 'var(--accent-green)', borderRadius: 2, transition: 'width 0.4s' }} />
           </div>
         </div>
       )}
 
-      <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+      <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--border)', background: 'var(--bg1)' }}>
         {isDisconnected && (
-          <div style={{ marginBottom: 10, padding: '7px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, fontSize: 12.5, color: 'var(--error)', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ marginBottom: 10, padding: '7px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, fontSize: 12.5, color: 'var(--accent-red)', display: 'flex', gap: 8, alignItems: 'center' }}>
             <AlertTriangle size={13} /> Gateway not connected — start it from the Gateway panel.
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 14px' }}>
-          <button title="Attach file" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4, borderRadius: 6, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 14px' }}>
+          <button title="Attach file" style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 4, borderRadius: 6, flexShrink: 0 }}>
             <Paperclip size={17} />
           </button>
           <textarea
@@ -232,13 +281,13 @@ export default function ConversationPanel() {
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', resize: 'none', color: 'var(--text-primary)', fontSize: 14, lineHeight: 1.6, maxHeight: 180, overflowY: 'auto' }}
           />
           {isRunning
-            ? <button onClick={handleStop} id="stop-btn" style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: 'var(--error)', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}><Square size={15} fill="currentColor" /></button>
-            : <button onClick={sendMessage} id="send-btn" disabled={!input.trim()} style={{ background: input.trim() ? 'var(--accent)' : 'var(--bg-hover)', border: 'none', borderRadius: 8, color: input.trim() ? 'white' : 'var(--text-muted)', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: input.trim() ? 'pointer' : 'not-allowed', boxShadow: input.trim() ? '0 0 12px var(--accent-glow)' : 'none', flexShrink: 0 }}><Send size={15} /></button>
+            ? <button onClick={handleStop} id="stop-btn" style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: 'var(--accent-red)', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}><Square size={15} fill="currentColor" /></button>
+            : <button onClick={sendMessage} id="send-btn" disabled={!input.trim()} style={{ background: input.trim() ? 'var(--accent-green)' : 'var(--bg2)', border: 'none', borderRadius: 8, color: input.trim() ? 'white' : 'var(--text-secondary)', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: input.trim() ? 'pointer' : 'not-allowed', flexShrink: 0 }}><Send size={15} /></button>
           }
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, padding: '0 2px' }}>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}><kbd style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>↵</kbd> Send · <kbd style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>Shift+↵</kbd> Newline</span>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{input.length > 0 ? `${input.length} chars` : ''}</span>
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}><kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>↵</kbd> Send · <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>Shift+↵</kbd> Newline</span>
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{input.length > 0 ? `${input.length} chars` : ''}</span>
         </div>
       </div>
     </div>

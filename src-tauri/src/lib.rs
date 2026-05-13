@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     env,
     ffi::OsString,
+    io::{BufRead, BufReader},
     net::{SocketAddr, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -13,7 +14,7 @@ use std::{
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 
 struct GatewayState(Mutex<Option<Child>>);
@@ -451,6 +452,146 @@ fn hermes_gateway_status(state: tauri::State<GatewayState>) -> Result<bool, Stri
     Ok(api_healthy())
 }
 
+// ── Streaming helpers ─────────────────────────────────────────────────────────
+
+fn stream_spawn(
+    app_handle: &tauri::AppHandle,
+    program: PathBuf,
+    args: &[String],
+    event_id: &str,
+    timeout_secs: u64,
+) -> Result<CommandResult, String> {
+    use std::sync::mpsc;
+
+    let command_text = std::iter::once(program.to_string_lossy().to_string())
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let home = hermes_home();
+    let mut child = Command::new(&program)
+        .args(args)
+        .env("HERMES_HOME", &home)
+        .env("PATH", enhanced_path(&home))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start `{}`: {}", command_text, e))?;
+
+    let (tx, rx) = mpsc::channel::<String>();
+
+    if let Some(stdout) = child.stdout.take() {
+        let tx2 = tx.clone();
+        thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().flatten() {
+                let _ = tx2.send(line);
+            }
+        });
+    }
+    if let Some(stderr) = child.stderr.take() {
+        let tx2 = tx.clone();
+        thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().flatten() {
+                let _ = tx2.send(line);
+            }
+        });
+    }
+    drop(tx);
+
+    let timeout = Duration::from_secs(timeout_secs);
+    let started = Instant::now();
+    let mut accumulated = String::new();
+    let mut timed_out = false;
+    let app = app_handle.clone();
+    let eid = event_id.to_string();
+
+    loop {
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(line) => {
+                let _ = app.emit(&eid, &line);
+                if !accumulated.is_empty() { accumulated.push('\n'); }
+                accumulated.push_str(&line);
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if started.elapsed() > timeout {
+                    let _ = child.kill();
+                    timed_out = true;
+                    break;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    let exit_status = child.wait().map_err(|e| e.to_string())?;
+    let _ = app.emit(&eid, "__DONE__");
+
+    Ok(CommandResult {
+        success: !timed_out && exit_status.success(),
+        code: exit_status.code(),
+        command: command_text,
+        stdout: accumulated,
+        stderr: if timed_out { "Timed out".to_string() } else { String::new() },
+    })
+}
+
+#[tauri::command]
+fn hermes_stream_command(
+    app_handle: tauri::AppHandle,
+    args: Vec<String>,
+    event_id: String,
+    timeout_secs: Option<u64>,
+) -> Result<CommandResult, String> {
+    stream_spawn(&app_handle, command_program(), &args, &event_id, timeout_secs.unwrap_or(1800))
+}
+
+#[tauri::command]
+fn hermes_stream_install(
+    app_handle: tauri::AppHandle,
+    event_id: String,
+) -> Result<CommandResult, String> {
+    #[cfg(windows)]
+    let (program, args) = {
+        let script = "Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1' -OutFile \"$env:TEMP\\hermes-install.ps1\"; & \"$env:TEMP\\hermes-install.ps1\" -SkipSetup";
+        (PathBuf::from("powershell"), vec![
+            String::from("-NoProfile"),
+            String::from("-ExecutionPolicy"),
+            String::from("Bypass"),
+            String::from("-Command"),
+            String::from(script),
+        ])
+    };
+    #[cfg(not(windows))]
+    let (program, args) = (
+        PathBuf::from("bash"),
+        vec![
+            String::from("-lc"),
+            String::from("curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup"),
+        ],
+    );
+    stream_spawn(&app_handle, program, &args, &event_id, 1800)
+}
+
+#[tauri::command]
+fn update_tray_status(app_handle: tauri::AppHandle, status: String) -> Result<(), String> {
+    let label = match status.as_str() {
+        "connected"    => "Gateway: Running ●",
+        "connecting"   => "Gateway: Starting ◌",
+        "error"        => "Gateway: Error ✕",
+        _              => "Gateway: Stopped ○",
+    };
+    if let Some(tray) = app_handle.tray_by_id("main-tray") {
+        let open   = tauri::menu::MenuItem::with_id(&app_handle, "open",   "Open Hermes", true,  None::<&str>).map_err(|e| e.to_string())?;
+        let stat   = tauri::menu::MenuItem::with_id(&app_handle, "gw-status", label,       false, None::<&str>).map_err(|e| e.to_string())?;
+        let sep    = tauri::menu::PredefinedMenuItem::separator(&app_handle).map_err(|e| e.to_string())?;
+        let quit   = tauri::menu::MenuItem::with_id(&app_handle, "quit",   "Quit",        true,  None::<&str>).map_err(|e| e.to_string())?;
+        let menu   = tauri::menu::Menu::with_items(&app_handle, &[&open, &stat, &sep, &quit]).map_err(|e| e.to_string())?;
+        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 // ── New commands ──────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -624,6 +765,7 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&open_item, &sep, &quit_item])?;
 
             TrayIconBuilder::new()
+                .id("main-tray")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .icon(app.default_window_icon().unwrap().clone())
@@ -679,6 +821,9 @@ pub fn run() {
             hermes_start_gateway,
             hermes_stop_gateway,
             hermes_gateway_status,
+            hermes_stream_command,
+            hermes_stream_install,
+            update_tray_status,
             detect_api_keys,
             read_env,
             write_env,

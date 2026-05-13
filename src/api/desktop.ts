@@ -155,3 +155,52 @@ export async function getAutostartEnabled(): Promise<boolean> {
   if (!hasTauriBridge()) return false;
   return invoke<boolean>('plugin:autostart|is_enabled');
 }
+
+async function _streamViaEvent<T>(
+  commandName: string,
+  commandArgs: Record<string, unknown>,
+  onLine: (line: string) => void,
+  fallback: T,
+): Promise<T> {
+  if (!hasTauriBridge()) return fallback;
+  const { listen } = await import('@tauri-apps/api/event');
+  const eventId = `stream-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return new Promise((resolve, reject) => {
+    listen<string>(eventId, (ev) => {
+      if (ev.payload !== '__DONE__' && ev.payload !== '__TIMEOUT__') onLine(ev.payload);
+    }).then((unlisten) => {
+      invoke<T>(commandName, { ...commandArgs, event_id: eventId })
+        .then((r) => { unlisten(); resolve(r); })
+        .catch((e) => { unlisten(); reject(e); });
+    }).catch(reject);
+  });
+}
+
+export async function streamHermesCommand(
+  args: string[],
+  onLine: (line: string) => void,
+  timeoutSecs = 1800,
+): Promise<CommandResult> {
+  return _streamViaEvent<CommandResult>(
+    'hermes_stream_command',
+    { args, timeout_secs: timeoutSecs },
+    onLine,
+    browserOnlyResult(['hermes', ...args].join(' ')),
+  );
+}
+
+export async function streamInstallHermes(
+  onLine: (line: string) => void,
+): Promise<CommandResult> {
+  return _streamViaEvent<CommandResult>(
+    'hermes_stream_install',
+    {},
+    onLine,
+    browserOnlyResult('official Hermes installer'),
+  );
+}
+
+export async function updateTrayStatus(status: string): Promise<void> {
+  if (!hasTauriBridge()) return;
+  return invoke<void>('update_tray_status', { status });
+}

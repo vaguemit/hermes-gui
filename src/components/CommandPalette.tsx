@@ -4,13 +4,13 @@ import { useStore } from '../store';
 import { SLASH_COMMANDS } from '../data/hermesCatalog';
 
 const CATEGORY_COLORS: Record<string, string> = {
-  Session: 'var(--accent)',
-  Config: 'var(--tool-blue)',
-  Tools: 'var(--success)',
-  Skills: 'var(--reasoning)',
-  Gateway: 'var(--warning)',
+  Session: 'var(--accent-green)',
+  Config: 'var(--accent-blue)',
+  Tools: 'var(--accent-green)',
+  Skills: 'var(--accent-amber-dim)',
+  Gateway: 'var(--accent-amber)',
   Info: 'var(--text-secondary)',
-  Exit: 'var(--error)',
+  Exit: 'var(--accent-red)',
 };
 
 export default function CommandPalette() {
@@ -69,10 +69,10 @@ export default function CommandPalette() {
       <div
         className="animate-in"
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 620, background: 'var(--bg-elevated)', border: '1px solid var(--border-bright)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(124,106,247,0.1)' }}
+        style={{ width: 620, background: 'var(--bg2)', border: '1px solid var(--border-active)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(124,106,247,0.1)' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-          <Search size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          <Search size={16} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
           <input
             ref={inputRef}
             id="palette-input"
@@ -82,12 +82,12 @@ export default function CommandPalette() {
             placeholder="Search slash commands..."
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: 14.5 }}
           />
-          <kbd style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px', fontSize: 11, color: 'var(--text-muted)' }}>Esc</kbd>
+          <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px', fontSize: 11, color: 'var(--text-secondary)' }}>Esc</kbd>
         </div>
 
         <div style={{ maxHeight: 420, overflowY: 'auto', padding: 6 }}>
           {filtered.length === 0 ? (
-            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No commands match</div>
+            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>No commands match</div>
           ) : (
             filtered.map((item, idx) => (
               <button
@@ -104,11 +104,11 @@ export default function CommandPalette() {
                   border: 'none',
                   cursor: 'pointer',
                   textAlign: 'left',
-                  background: idx === selected ? 'var(--bg-hover)' : 'transparent',
+                  background: idx === selected ? 'var(--bg2)' : 'transparent',
                   transition: 'background 0.12s',
                 }}
               >
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, color: CATEGORY_COLORS[item.category] || 'var(--accent)', minWidth: 142 }}>{item.cmd}</span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: CATEGORY_COLORS[item.category] || 'var(--accent-green)', minWidth: 142 }}>{item.cmd}</span>
                 <span style={{ flex: 1, fontSize: 12.5, color: 'var(--text-secondary)' }}>{item.desc}</span>
                 <span className="badge badge-muted" style={{ fontSize: 10, flexShrink: 0 }}>{item.category}</span>
               </button>
@@ -116,10 +116,10 @@ export default function CommandPalette() {
           )}
         </div>
 
-        <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', gap: 16, fontSize: 11, color: 'var(--text-muted)' }}>
-          <span><kbd style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px' }}>Up/Down</kbd> Navigate</span>
-          <span><kbd style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px' }}>Enter</kbd> Select</span>
-          <span><kbd style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px' }}>Esc</kbd> Close</span>
+        <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', gap: 16, fontSize: 11, color: 'var(--text-secondary)' }}>
+          <span><kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px' }}>Up/Down</kbd> Navigate</span>
+          <span><kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px' }}>Enter</kbd> Select</span>
+          <span><kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px' }}>Esc</kbd> Close</span>
         </div>
       </div>
     </div>

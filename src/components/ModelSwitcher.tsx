@@ -47,15 +47,15 @@ export default function ModelSwitcher() {
       <div
         className="animate-in"
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 480, background: 'var(--bg-elevated)', border: '1px solid var(--border-bright)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.7)' }}
+        style={{ width: 480, background: 'var(--bg2)', border: '1px solid var(--border-active)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.7)' }}
       >
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Cpu size={16} style={{ color: 'var(--accent)' }} />
+          <Cpu size={16} style={{ color: 'var(--accent-green)' }} />
           <span style={{ fontWeight: 600, fontSize: 14.5, flex: 1 }}>Switch Model</span>
-          <button onClick={() => setModelSwitcherOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={16} /></button>
+          <button onClick={() => setModelSwitcherOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><X size={16} /></button>
         </div>
         <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Search size={14} style={{ color: 'var(--text-muted)' }} />
+          <Search size={14} style={{ color: 'var(--text-secondary)' }} />
           <input
             autoFocus
             id="model-search"
@@ -68,7 +68,7 @@ export default function ModelSwitcher() {
         <div style={{ maxHeight: 360, overflowY: 'auto', padding: 8 }}>
           {filtered.map((provider) => (
             <div key={provider.name} style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '4px 8px' }}>{provider.name}</div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '4px 8px' }}>{provider.name}</div>
               {provider.models.map((model) => (
                 <button
                   key={model}
@@ -78,17 +78,17 @@ export default function ModelSwitcher() {
                     background: model === activeModel ? 'var(--accent-dim)' : 'transparent',
                     transition: 'background 0.12s',
                   }}
-                  onMouseEnter={e => { if (model !== activeModel) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+                  onMouseEnter={e => { if (model !== activeModel) (e.currentTarget as HTMLElement).style.background = 'var(--bg2)'; }}
                   onMouseLeave={e => { if (model !== activeModel) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
                 >
-                  <span style={{ fontFamily: 'monospace', fontSize: 12.5, color: model === activeModel ? 'var(--accent)' : 'var(--text-primary)', flex: 1 }}>{model}</span>
+                  <span style={{ fontFamily: 'monospace', fontSize: 12.5, color: model === activeModel ? 'var(--accent-green)' : 'var(--text-primary)', flex: 1 }}>{model}</span>
                   {model === activeModel && <span className="badge badge-accent">Active</span>}
                 </button>
               ))}
             </div>
           ))}
           {filtered.length === 0 && (
-            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No models match</div>
+            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>No models match</div>
           )}
         </div>
       </div>

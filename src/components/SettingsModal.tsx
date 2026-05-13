@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff } from 'lucide-react';
-import { readEnv, writeEnv } from '../api/desktop';
+import { readEnv, writeEnv, readFile, writeFile, readConfig, writeConfig, getAutostartEnabled, toggleAutostart } from '../api/desktop';
 
 const PROVIDERS_KEYS = [
   { label: 'OpenAI', key: 'OPENAI_API_KEY', hint: 'sk-...' },
@@ -11,6 +11,20 @@ const PROVIDERS_KEYS = [
   { label: 'Google AI', key: 'GOOGLE_API_KEY', hint: 'AIza...' },
   { label: 'Nous Portal', key: 'NOUS_API_KEY', hint: 'np-...' },
 ];
+
+const DEFAULT_PERSONALITY = `# Hermes Personality
+
+You are Hermes, a powerful AI agent and personal assistant. You are direct, concise, and helpful.
+
+## Traits
+- Clear and precise in your responses
+- Proactive in suggesting next steps
+- Honest about your limitations
+
+## Style
+- Use markdown for structured responses
+- Keep answers focused and actionable
+`;
 
 function MaskedInput({ placeholder, id, value, onChange }: {
   placeholder: string;
@@ -52,12 +66,29 @@ type SettingsTab = typeof TABS[number]['id'];
 export default function SettingsModal() {
   const { settingsOpen, setSettingsOpen } = useStore();
   const [tab, setTab] = useState<SettingsTab>('api-keys');
-  const [workingDir, setWorkingDir] = useState('~/workspace');
-  const [terminalBackend, setTerminalBackend] = useState('Local');
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState('');
 
+  // API Keys tab state
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [apiSaving, setApiSaving] = useState(false);
+  const [apiSaveMsg, setApiSaveMsg] = useState('');
+
+  // Personality tab state
+  const [personality, setPersonality] = useState('');
+  const [personalitySaving, setPersonalitySaving] = useState(false);
+  const [personalitySaveMsg, setPersonalitySaveMsg] = useState('');
+
+  // Memory tab state
+  const [memoryContent, setMemoryContent] = useState('');
+  const [userContent, setUserContent] = useState('');
+
+  // Workspace tab state
+  const [workingDir, setWorkingDir] = useState('');
+  const [terminalBackend, setTerminalBackend] = useState('Local');
+  const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [workspaceSaving, setWorkspaceSaving] = useState(false);
+  const [workspaceSaveMsg, setWorkspaceSaveMsg] = useState('');
+
+  // API Keys: load on tab open
   useEffect(() => {
     if (settingsOpen && tab === 'api-keys') {
       readEnv().then(env => {
@@ -68,9 +99,53 @@ export default function SettingsModal() {
     }
   }, [settingsOpen, tab]);
 
+  // Personality: load on tab open
+  useEffect(() => {
+    if (settingsOpen && tab === 'personality') {
+      readFile('personalities/default.md').then(content => {
+        setPersonality(content);
+      }).catch(() => {
+        setPersonality(DEFAULT_PERSONALITY);
+      });
+    }
+  }, [settingsOpen, tab]);
+
+  // Memory: load both files on tab open
+  useEffect(() => {
+    if (settingsOpen && tab === 'memory') {
+      readFile('memory/MEMORY.md').then(content => {
+        setMemoryContent(content);
+      }).catch(() => {
+        setMemoryContent('# Memory\n\nNo memories recorded yet. Hermes will populate this automatically.');
+      });
+      readFile('memory/USER.md').then(content => {
+        setUserContent(content);
+      }).catch(() => {
+        setUserContent('# User Profile\n\nNo user profile recorded yet.');
+      });
+    }
+  }, [settingsOpen, tab]);
+
+  // Workspace: load config and autostart on tab open
+  useEffect(() => {
+    if (settingsOpen && tab === 'workspace') {
+      readConfig().then(yaml => {
+        const match = yaml.match(/working_dir:\s*(.+)/);
+        setWorkingDir(match ? match[1].trim() : '~/workspace');
+      }).catch(() => {
+        setWorkingDir('~/workspace');
+      });
+      getAutostartEnabled().then(enabled => {
+        setAutostartEnabled(enabled);
+      }).catch(() => {
+        setAutostartEnabled(false);
+      });
+    }
+  }, [settingsOpen, tab]);
+
   const saveApiKeys = async () => {
-    setSaving(true);
-    setSaveMsg('');
+    setApiSaving(true);
+    setApiSaveMsg('');
     try {
       for (const p of PROVIDERS_KEYS) {
         const val = apiKeys[p.key];
@@ -78,12 +153,56 @@ export default function SettingsModal() {
           await writeEnv(p.key, val.trim());
         }
       }
-      setSaveMsg('Saved');
+      setApiSaveMsg('Saved');
     } catch {
-      setSaveMsg('Error saving');
+      setApiSaveMsg('Error saving');
     } finally {
-      setSaving(false);
-      setTimeout(() => setSaveMsg(''), 2500);
+      setApiSaving(false);
+      setTimeout(() => setApiSaveMsg(''), 2500);
+    }
+  };
+
+  const savePersonality = async () => {
+    setPersonalitySaving(true);
+    setPersonalitySaveMsg('');
+    try {
+      await writeFile('personalities/default.md', personality);
+      setPersonalitySaveMsg('Saved');
+    } catch {
+      setPersonalitySaveMsg('Error');
+    } finally {
+      setPersonalitySaving(false);
+      setTimeout(() => setPersonalitySaveMsg(''), 2500);
+    }
+  };
+
+  const handleAutostartToggle = async (enabled: boolean) => {
+    setAutostartEnabled(enabled);
+    try {
+      await toggleAutostart(enabled);
+    } catch {
+      // revert on failure
+      setAutostartEnabled(!enabled);
+    }
+  };
+
+  const saveWorkspaceConfig = async () => {
+    setWorkspaceSaving(true);
+    setWorkspaceSaveMsg('');
+    try {
+      let yaml = await readConfig().catch(() => '');
+      if (/working_dir:\s*.+/.test(yaml)) {
+        yaml = yaml.replace(/working_dir:\s*.+/, `working_dir: ${workingDir}`);
+      } else {
+        yaml = yaml ? `${yaml.trimEnd()}\nworking_dir: ${workingDir}\n` : `working_dir: ${workingDir}\n`;
+      }
+      await writeConfig(yaml);
+      setWorkspaceSaveMsg('Saved');
+    } catch {
+      setWorkspaceSaveMsg('Error');
+    } finally {
+      setWorkspaceSaving(false);
+      setTimeout(() => setWorkspaceSaveMsg(''), 2500);
     }
   };
 
@@ -130,33 +249,32 @@ export default function SettingsModal() {
                     <MaskedInput id={`key-${p.key}`} placeholder={p.hint} value={apiKeys[p.key] || ''} onChange={val => setApiKeys(prev => ({ ...prev, [p.key]: val }))} />
                   </div>
                 ))}
-                <button className="btn btn-primary" onClick={saveApiKeys} disabled={saving} style={{ marginTop: 8, fontSize: 13 }}>{saving ? 'Saving...' : saveMsg || 'Save API Keys'}</button>
+                <button className="btn btn-primary" onClick={saveApiKeys} disabled={apiSaving} style={{ marginTop: 8, fontSize: 13 }}>{apiSaving ? 'Saving...' : apiSaveMsg || 'Save API Keys'}</button>
               </div>
             )}
 
             {tab === 'personality' && (
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Personality</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Hermes personality files from ~/.hermes/personalities/</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Stored in ~/.hermes/personalities/default.md</div>
                 <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Active Personality</label>
-                  <select className="input-field" style={{ cursor: 'pointer' }}>
-                    <option>default</option>
-                    <option>assistant</option>
-                    <option>researcher</option>
-                    <option>coder</option>
-                  </select>
-                </div>
-                <div>
                   <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Edit Personality (Markdown)</label>
                   <textarea
                     className="input-field"
-                    rows={10}
-                    style={{ fontFamily: 'monospace', fontSize: 12.5, resize: 'vertical' }}
-                    defaultValue="# Hermes Personality\n\nYou are Hermes, a powerful AI agent..."
+                    rows={14}
+                    value={personality}
+                    onChange={e => setPersonality(e.target.value)}
+                    style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, resize: 'vertical' }}
                   />
                 </div>
-                <button className="btn btn-primary" style={{ marginTop: 10, fontSize: 13 }}>Save Personality</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={savePersonality}
+                  disabled={personalitySaving}
+                  style={{ fontSize: 13 }}
+                >
+                  {personalitySaving ? 'Saving...' : personalitySaveMsg || 'Save Personality'}
+                </button>
               </div>
             )}
 
@@ -173,17 +291,16 @@ export default function SettingsModal() {
                 </div>
                 <div style={{ marginBottom: 12 }}>
                   <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>MEMORY.md (read-only)</label>
-                  <div style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontFamily: 'monospace', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 140, overflowY: 'auto' }}>
-                    # Memory{'\n\n'}No memories recorded yet. Hermes will populate this automatically.
+                  <div style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 140, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                    {memoryContent}
                   </div>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>USER.md</label>
-                  <div style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontFamily: 'monospace', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 100, overflowY: 'auto' }}>
-                    # User Profile{'\n\n'}No user profile recorded yet.
+                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>USER.md (read-only)</label>
+                  <div style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 100, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                    {userContent}
                   </div>
                 </div>
-                <button className="btn btn-ghost" style={{ marginTop: 12, fontSize: 12.5 }}>Open in System Editor</button>
               </div>
             )}
 
@@ -193,7 +310,7 @@ export default function SettingsModal() {
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Working directory and execution environment</div>
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Working Directory</label>
-                  <input className="input-field" value={workingDir} onChange={e => setWorkingDir(e.target.value)} style={{ fontFamily: 'monospace' }} />
+                  <input className="input-field" value={workingDir} onChange={e => setWorkingDir(e.target.value)} style={{ fontFamily: 'var(--font-mono)' }} />
                 </div>
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Terminal Backend</label>
@@ -207,7 +324,28 @@ export default function SettingsModal() {
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Controls where Hermes executes shell commands</div>
                 </div>
-                <button className="btn btn-primary" style={{ fontSize: 13 }}>Save Workspace Config</button>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', marginBottom: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>Launch on login</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Start Hermes automatically when you log in</div>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={autostartEnabled}
+                      onChange={e => handleAutostartToggle(e.target.checked)}
+                    />
+                    <span className="toggle-slider" />
+                  </label>
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={saveWorkspaceConfig}
+                  disabled={workspaceSaving}
+                  style={{ fontSize: 13 }}
+                >
+                  {workspaceSaving ? 'Saving...' : workspaceSaveMsg || 'Save Workspace Config'}
+                </button>
               </div>
             )}
           </div>
