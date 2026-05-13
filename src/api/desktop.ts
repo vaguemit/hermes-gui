@@ -177,7 +177,8 @@ export async function getModelConfig(): Promise<ModelConfig> {
 
 export async function setModelConfig(provider: string, model: string, baseUrl: string): Promise<void> {
   if (!isTauriApp()) return;
-  return invoke<void>('set_model_config', { provider, model, base_url: baseUrl });
+  // Tauri v2: JS must pass camelCase keys — framework converts to snake_case for Rust
+  return invoke<void>('set_model_config', { provider, model, baseUrl });
 }
 
 export async function checkUpdate(): Promise<UpdateInfo> {

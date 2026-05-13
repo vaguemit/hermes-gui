@@ -153,6 +153,30 @@ export default function InstallWizard({ onComplete }: Props) {
       setSaveError('Please enter your API key.');
       return;
     }
+    if (isLocal && !baseUrl.trim()) {
+      setSaveError('Please enter the server URL.');
+      return;
+    }
+
+    // For local providers: verify the server is actually reachable before saving
+    if (isLocal) {
+      setSaving(true);
+      setSaveError('');
+      try {
+        const url = baseUrl.trim().replace(/\/$/, '');
+        const res = await fetch(`${url}/models`, { signal: AbortSignal.timeout(4000) });
+        if (!res.ok && res.status !== 404) {
+          setSaveError(`Server responded with ${res.status}. Make sure your local server is running at ${url}.`);
+          setSaving(false);
+          return;
+        }
+      } catch {
+        setSaveError(`Cannot reach ${baseUrl.trim()} — make sure your local server (LM Studio, Ollama, etc.) is running first.`);
+        setSaving(false);
+        return;
+      }
+    }
+
     setSaving(true);
     setSaveError('');
     try {
