@@ -135,7 +135,7 @@ function exportSessionToMarkdown(messages: Message[]): string {
 }
 
 export default function ConversationPanel() {
-  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection } = useStore();
+  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection } = useStore();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<{ abort: () => void } | null>(null);
@@ -216,6 +216,9 @@ export default function ConversationPanel() {
           }),
           listen<string>(`chat-done-${eventId}`, () => {
             if (aborted) return;
+            useStore.getState().activeToolCalls.forEach((tc) => {
+              updateToolCallGlobal(tc.id, { status: 'done' });
+            });
             updateLastMessage({ isStreaming: false });
             setAgentState('idle');
             cleanup();
@@ -226,8 +229,13 @@ export default function ConversationPanel() {
             cleanup();
             reject(new Error(ev.payload || 'Unknown gateway error'));
           }),
-        ]).then(([u1, u2, u3]) => {
-          cleanupRef.fn = () => { u1(); u2(); u3(); };
+          listen<string>(`tool-progress-${eventId}`, (ev) => {
+            if (aborted) return;
+            addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() });
+            setAgentState('running_tool');
+          }),
+        ]).then(([u1, u2, u3, u4]) => {
+          cleanupRef.fn = () => { u1(); u2(); u3(); u4(); };
           chatStream(eventId, history, activeModel).catch(reject);
         }).catch(reject);
       });
