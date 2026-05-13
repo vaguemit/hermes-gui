@@ -582,10 +582,10 @@ fn update_tray_status(app_handle: tauri::AppHandle, status: String) -> Result<()
         _              => "Gateway: Stopped ○",
     };
     if let Some(tray) = app_handle.tray_by_id("main-tray") {
-        let open   = tauri::menu::MenuItem::with_id(&app_handle, "open",   "Open Hermes", true,  None::<&str>).map_err(|e| e.to_string())?;
-        let stat   = tauri::menu::MenuItem::with_id(&app_handle, "gw-status", label,       false, None::<&str>).map_err(|e| e.to_string())?;
+        let open   = tauri::menu::MenuItem::with_id(&app_handle, "open",      "Open Hermes", true,  None::<&str>).map_err(|e| e.to_string())?;
+        let stat   = tauri::menu::MenuItem::with_id(&app_handle, "gw-status", label,         false, None::<&str>).map_err(|e| e.to_string())?;
         let sep    = tauri::menu::PredefinedMenuItem::separator(&app_handle).map_err(|e| e.to_string())?;
-        let quit   = tauri::menu::MenuItem::with_id(&app_handle, "quit",   "Quit",        true,  None::<&str>).map_err(|e| e.to_string())?;
+        let quit   = tauri::menu::MenuItem::with_id(&app_handle, "quit",      "Quit",        true,  None::<&str>).map_err(|e| e.to_string())?;
         let menu   = tauri::menu::Menu::with_items(&app_handle, &[&open, &stat, &sep, &quit]).map_err(|e| e.to_string())?;
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     }
@@ -764,8 +764,7 @@ pub fn run() {
             let sep = PredefinedMenuItem::separator(app)?;
             let menu = Menu::with_items(app, &[&open_item, &sep, &quit_item])?;
 
-            TrayIconBuilder::new()
-                .id("main-tray")
+            TrayIconBuilder::with_id("main-tray")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .icon(app.default_window_icon().unwrap().clone())

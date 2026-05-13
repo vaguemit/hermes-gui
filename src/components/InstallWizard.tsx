@@ -18,7 +18,7 @@ interface SetupState {
   providerId: string | null;
   install_completed: boolean;
   api_key_saved: boolean;
-  timestamp: string;
+  timestamp?: string;
 }
 
 async function loadSetupState(): Promise<SetupState | null> {
