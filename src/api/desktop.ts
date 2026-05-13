@@ -10,6 +10,13 @@ export interface HermesInstallStatus {
   binary_path: string | null;
   platform: string;
   last_error: string | null;
+  model_configured: boolean;
+}
+
+export interface ModelConfig {
+  provider: string;
+  model: string;
+  base_url: string;
 }
 
 export interface CommandResult {
@@ -70,6 +77,7 @@ export async function getHermesInstallStatus(): Promise<HermesInstallStatus> {
       binary_path: null,
       platform: navigator.platform || 'browser',
       last_error: 'Running in browser preview mode.',
+      model_configured: false,
     };
   }
 
@@ -139,6 +147,16 @@ export async function writeFile(relPath: string, content: string): Promise<void>
 export async function runHermesDoctor(): Promise<DoctorResult> {
   if (!isTauriApp()) return { ok: false, checks: [], raw: 'Tauri not available' };
   return invoke<DoctorResult>('run_hermes_doctor');
+}
+
+export async function getModelConfig(): Promise<ModelConfig> {
+  if (!isTauriApp()) return { provider: 'auto', model: '', base_url: '' };
+  return invoke<ModelConfig>('get_model_config');
+}
+
+export async function setModelConfig(provider: string, model: string, baseUrl: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('set_model_config', { provider, model, base_url: baseUrl });
 }
 
 export async function checkUpdate(): Promise<UpdateInfo> {
