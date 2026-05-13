@@ -510,28 +510,51 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
 
     let home = hermes_home();
 
-    // Persist api_server config so the HTTP API starts on every gateway launch
-    ensure_api_server_config();
+    // Write API_SERVER_ENABLED to .env so it persists even when launched outside this app
+    let env_path = home.join(".env");
+    let env_content = std::fs::read_to_string(&env_path).unwrap_or_default();
+    if !env_content.contains("API_SERVER_ENABLED") {
+        let mut lines: Vec<String> = env_content.lines().map(String::from).collect();
+        lines.push(String::from("API_SERVER_ENABLED=true"));
+        lines.push(String::from("GATEWAY_ALLOW_ALL_USERS=true"));
+        let _ = std::fs::write(&env_path, lines.join("\n") + "\n");
+    }
+
+    // Log stderr to a file for debugging gateway crashes
+    let log_file = home.join("logs").join("gateway-desktop.log");
+    let _ = std::fs::create_dir_all(home.join("logs"));
+    let stderr_file = std::fs::File::create(&log_file)
+        .map_err(|e| format!("Cannot create gateway log: {}", e))?;
 
     let mut cmd = Command::new(command_program());
 
     // --replace: kill any existing gateway instance (stale PID file, previous crash, etc.)
-    // GATEWAY_ALLOW_ALL_USERS: the desktop is a local client, no allowlist needed
-    // API_SERVER_ENABLED: expose the HTTP API on :8642 so the chat UI can connect
+    // --accept-hooks: don't prompt for hook approval (no TTY)
     cmd.args(["gateway", "run", "--replace", "--accept-hooks"])
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
         .env("API_SERVER_ENABLED", "true")
-        .env("GATEWAY_ALLOW_ALL_USERS", "true");
+        .env("GATEWAY_ALLOW_ALL_USERS", "true")
+        .env("NO_COLOR", "1")
+        .env("TERM", "dumb");
 
     for (k, v) in read_env_file(&home) {
         cmd.env(k, v);
     }
 
+    // On Windows, CREATE_NO_WINDOW prevents a console flash and ensures the
+    // child isn't killed when the parent console closes.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
     let child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::from(stderr_file))
         .spawn()
         .map_err(|err| format!("Failed to start gateway: {}", err))?;
 
