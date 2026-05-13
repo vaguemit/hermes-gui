@@ -144,14 +144,24 @@ This compiles the Rust backend and opens a native window. The Install panel will
 
 ---
 
+## Shipped
+
+- [x] **Live streaming** — `hermes_stream_command` / `hermes_stream_install` Rust IPC emit each output line as a Tauri event; wizard and install panel display output in real time.
+- [x] **Wizard resume** — progress saved to `{hermes_home}/gui-setup-state.json`; resumes from the correct step after accidental close.
+- [x] **Settings wired** — API keys, personality, memory, workspace and auto-start all read/write real `~/.hermes` files via `read_env` / `write_env` / `read_file` / `write_file` / `read_config` / `write_config`.
+- [x] **Crons wired** — loads from `hermes cron list`, creates/toggles/deletes via `hermes cron add/enable/disable/remove`.
+- [x] **Skills wired** — loads from `hermes skills list`, saves skill content to `~/.hermes/skills/<name>.md`, invokes via `hermes skills run`.
+- [x] **Gateway platform config** — each platform's tokens saved via `write_env`.
+- [x] **Dynamic tray menu** — `update_tray_status` Rust command rebuilds tray menu with live gateway state label on every status change.
+- [x] **Session export** — Markdown export of the active conversation with timestamps and tool-call blocks.
+- [x] **Auto-start toggle** — Settings → Workspace → "Launch on login" wired to `tauri-plugin-autostart`.
+- [x] **Update checker** — on launch, checks GitHub releases API and shows a banner with one-click update.
+
 ## Roadmap
 
-- [ ] Stream installer and command output live instead of returning only at process exit.
-- [ ] Persist real platform config to Hermes config/env files.
-- [ ] Replace local cron/skills mock data with Hermes-backed reads and writes.
-- [ ] Add sessions/profiles/memory panels backed by `~/.hermes`.
+- [ ] Add sessions/profiles/memory panels backed by `~/.hermes` (multi-profile `--profile` flag).
 - [ ] Add a PTY-backed terminal view for fully interactive commands like `hermes setup model`.
-- [ ] Package signed installers with auto-update.
+- [ ] Package signed installers with auto-update via Tauri updater plugin.
 
 ---
 
