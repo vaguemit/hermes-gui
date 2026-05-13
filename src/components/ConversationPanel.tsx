@@ -135,7 +135,7 @@ function exportSessionToMarkdown(messages: Message[]): string {
 }
 
 export default function ConversationPanel() {
-  const { messages, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection } = useStore();
+  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection } = useStore();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
