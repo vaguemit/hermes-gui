@@ -909,7 +909,7 @@ fn get_system_info() -> SystemInfo {
     use sysinfo::System;
     let mut sys = System::new();
     sys.refresh_memory();
-    sys.refresh_cpu_all();
+    sys.refresh_all();
     let ram_gb = sys.total_memory() / 1_073_741_824;
     let cpu_count = sys.cpus().len() as u32;
     SystemInfo { ram_gb, cpu_count }
