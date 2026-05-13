@@ -66,11 +66,34 @@ export default function App() {
     });
   }, []);
 
-  // Check gateway health on startup
+  // Check gateway health on startup and auto-start if not running
   useEffect(() => {
     setGatewayStatus('connecting');
-    checkHealth().then((ok) => {
-      setGatewayStatus(ok ? 'connected' : 'disconnected');
+    checkHealth().then(async (ok) => {
+      if (ok) {
+        setGatewayStatus('connected');
+      } else {
+        setGatewayStatus('disconnected');
+        // Auto-start gateway if Hermes is installed (reference app behavior)
+        try {
+          const status = await getHermesInstallStatus();
+          if (status.installed) {
+            await startGateway();
+            // Poll for health after auto-start
+            let attempts = 0;
+            const poll = setInterval(async () => {
+              attempts++;
+              const alive = await checkHealth();
+              if (alive) {
+                clearInterval(poll);
+                setGatewayStatus('connected');
+              } else if (attempts >= 10) {
+                clearInterval(poll);
+              }
+            }, 1500);
+          }
+        } catch { /* ignore */ }
+      }
     });
     startHealthPolling();
   }, []);
