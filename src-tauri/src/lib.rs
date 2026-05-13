@@ -776,6 +776,22 @@ fn chat_stream(
                         if let Some(content) = chunk["choices"][0]["delta"]["content"].as_str() {
                             let _ = app_handle.emit(&format!("chat-chunk-{}", eid), content);
                         }
+                        // Detect tool invocation (emit once when tool name first appears)
+                        if let Some(tool_calls) = chunk["choices"][0]["delta"]["tool_calls"].as_array() {
+                            if let Some(tc) = tool_calls.first() {
+                                if let Some(name) = tc["function"]["name"].as_str() {
+                                    if !name.is_empty() {
+                                        let _ = app_handle.emit(&format!("tool-call-{}", eid), name.to_string());
+                                    }
+                                }
+                            }
+                        }
+                        // finish_reason "tool_calls" → gateway is executing the tool; stream will resume
+                        if chunk["choices"][0]["finish_reason"].as_str() == Some("tool_calls") {
+                            // Don't emit done yet — gateway will continue streaming after tool execution
+                            // Just set agent state to running_tool via a dedicated event
+                            let _ = app_handle.emit(&format!("tool-call-{}", eid), "__executing__");
+                        }
                         if chunk["choices"][0]["finish_reason"].as_str() == Some("stop") {
                             let _ = app_handle.emit(&format!("chat-done-{}", eid), "");
                             return;
