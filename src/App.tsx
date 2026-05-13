@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useStore } from './store';
-import { checkHealth, startHealthPolling } from './api/hermes';
+import { startHealthPolling } from './api/hermes';
 import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp, listSessionsDisk, readSessionDisk, writeSessionDisk } from './api/desktop';
 import type { UpdateInfo } from './api/desktop';
 import Sidebar from './components/Sidebar';
@@ -49,6 +49,9 @@ export default function App() {
   // Gateway auto-restart refs
   const failureCount = useRef(0);
   const gatewayPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastRestartTime = useRef(0);
+  const RESTART_COOLDOWN_MS = 60_000; // Don't restart more than once per minute
+  const FAILURE_THRESHOLD = 5; // Require 5 consecutive failures (2.5 min at 30s intervals)
 
   // Check install status on mount — show wizard only in Tauri desktop mode
   useEffect(() => {
@@ -66,24 +69,29 @@ export default function App() {
     });
   }, []);
 
-  // Check gateway health on startup and auto-start if not running
+  // Check gateway status on startup using IPC (PID probe) — mirrors reference app.
+  // Lazy-auto-starts the gateway exactly like the reference's "lazy-start on first message".
   useEffect(() => {
+    if (!isTauriApp()) {
+      startHealthPolling();
+      return;
+    }
     setGatewayStatus('connecting');
-    checkHealth().then(async (ok) => {
-      if (ok) {
+    getGatewayStatus().then(async (running) => {
+      if (running) {
         setGatewayStatus('connected');
       } else {
         setGatewayStatus('disconnected');
-        // Auto-start gateway if Hermes is installed (reference app behavior)
+        // Auto-start gateway if Hermes is installed
         try {
           const status = await getHermesInstallStatus();
           if (status.installed) {
             await startGateway();
-            // Poll for health after auto-start
+            // Poll via IPC until the gateway PID is alive (max 15s)
             let attempts = 0;
             const poll = setInterval(async () => {
               attempts++;
-              const alive = await checkHealth();
+              const alive = await getGatewayStatus().catch(() => false);
               if (alive) {
                 clearInterval(poll);
                 setGatewayStatus('connected');
@@ -94,7 +102,7 @@ export default function App() {
           }
         } catch { /* ignore */ }
       }
-    });
+    }).catch(() => setGatewayStatus('disconnected'));
     startHealthPolling();
   }, []);
 
@@ -134,16 +142,20 @@ export default function App() {
           failureCount.current = 0;
         } else {
           failureCount.current += 1;
-          if (failureCount.current >= 3) {
+          const now = Date.now();
+          if (failureCount.current >= FAILURE_THRESHOLD && (now - lastRestartTime.current) > RESTART_COOLDOWN_MS) {
             failureCount.current = 0;
+            lastRestartTime.current = now;
             await startGateway().catch(() => {});
             addToast('Gateway restarted automatically', 'info');
           }
         }
       } catch {
         failureCount.current += 1;
-        if (failureCount.current >= 3) {
+        const now = Date.now();
+        if (failureCount.current >= FAILURE_THRESHOLD && (now - lastRestartTime.current) > RESTART_COOLDOWN_MS) {
           failureCount.current = 0;
+          lastRestartTime.current = now;
           await startGateway().catch(() => {});
           addToast('Gateway restarted automatically', 'info');
         }

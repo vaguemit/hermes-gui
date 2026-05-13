@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore, Message, ToolCall } from '../store';
-import { streamChat, checkHealth } from '../api/hermes';
+import { getGatewayStatus, chatStream } from '../api/desktop';
 import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy,
@@ -138,7 +138,7 @@ export default function ConversationPanel() {
   const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection } = useStore();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const abortRef = useRef<{ abort: () => void } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -192,31 +192,59 @@ export default function ConversationPanel() {
 
     addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: '', timestamp: Date.now(), isStreaming: true });
 
-    const abort = new AbortController();
-    abortRef.current = abort;
     const history = [...messages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.type === 'prose').map(m => ({ role: m.role, content: m.content })), { role: 'user', content: userContent }];
 
+    const eventId = Math.random().toString(36).slice(2);
+    const cleanupRef = { fn: null as (() => void) | null };
+    const cleanup = () => { if (cleanupRef.fn) { cleanupRef.fn(); cleanupRef.fn = null; } };
+    let aborted = false;
+
+    const abort = new AbortController();
+    abortRef.current = { abort: () => { aborted = true; abort.abort(); cleanup(); setIsRunning(false); setAgentState('idle'); updateLastMessage({ isStreaming: false }); } };
+
     let accumulated = '';
+
     try {
-      const gen = streamChat(history, activeModel, (event) => {
-        if (event.type === 'delta' && event.content) { accumulated += event.content; updateLastMessage({ content: accumulated, isStreaming: true }); }
-        if (event.type === 'tool_call' && event.toolName) {
-          addToolCall({ id: event.toolCallId || generateId(), name: event.toolName, input: event.toolInput || '', status: 'running', timestamp: Date.now() });
-          setAgentState('running_tool');
-        }
-        if (event.type === 'done' && event.usage) setTokenUsage(event.usage.total_tokens, contextWindow);
-      }, abort.signal);
-      for await (const _ of gen) { /* handled in callback */ }
-      updateLastMessage({ isStreaming: false });
-      setAgentState('idle');
+      const { listen } = await import('@tauri-apps/api/event');
+
+      await new Promise<void>((resolve, reject) => {
+        listen<{ event_id: string; type: string; content?: string; error?: string }>('chat-chunk', (ev) => {
+          if (ev.payload.event_id !== eventId) return;
+          if (aborted) { resolve(); return; }
+
+          if (ev.payload.type === 'delta' && ev.payload.content) {
+            accumulated += ev.payload.content;
+            updateLastMessage({ content: accumulated, isStreaming: true });
+          } else if (ev.payload.type === 'done') {
+            updateLastMessage({ isStreaming: false });
+            setAgentState('idle');
+            resolve();
+          } else if (ev.payload.type === 'error') {
+            reject(new Error(ev.payload.error || 'Unknown gateway error'));
+          }
+        }).then(u => {
+          cleanupRef.fn = u;
+          // Start the stream (fire IPC — Rust picks it up in a thread)
+          chatStream(eventId, history, activeModel).catch(reject);
+        }).catch(reject);
+      });
+
     } catch (err: unknown) {
-      if ((err as Error)?.name !== 'AbortError') {
-        updateLastMessage({ content: accumulated || 'Connection failed. Is the Hermes gateway running?', type: accumulated ? 'prose' : 'error', isStreaming: false });
+      cleanup();
+      if (!aborted && (err as Error)?.name !== 'AbortError') {
+        const errMsg = (err as Error)?.message || 'Connection failed. Is the Hermes gateway running?';
+        updateLastMessage({ content: accumulated || errMsg, type: accumulated ? 'prose' : 'error', isStreaming: false });
         setAgentState('error');
-        // Re-check gateway health so the banner updates immediately
-        checkHealth().then(ok => setGatewayStatus(ok ? 'connected' : 'disconnected'));
-      } else { updateLastMessage({ isStreaming: false }); setAgentState('idle'); }
-    } finally { setIsRunning(false); abortRef.current = null; }
+        getGatewayStatus().then(ok => setGatewayStatus(ok ? 'connected' : 'disconnected')).catch(() => {});
+      } else if (aborted) {
+        updateLastMessage({ isStreaming: false });
+        setAgentState('idle');
+      }
+    } finally {
+      cleanup();
+      setIsRunning(false);
+      abortRef.current = null;
+    }
   };
 
   const isDisconnected = gatewayStatus === 'disconnected' || gatewayStatus === 'error';

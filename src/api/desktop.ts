@@ -130,6 +130,21 @@ export async function getGatewayStatus(): Promise<boolean> {
   return invoke<boolean>('hermes_gateway_status');
 }
 
+/**
+ * Stream a chat message through the Rust IPC proxy.
+ * The WebView cannot fetch() http://localhost:8642 directly (Tauri origin restriction),
+ * so we delegate to Rust which has no such limits. Rust emits 'chat-chunk' events back.
+ */
+export async function chatStream(
+  eventId: string,
+  messages: Array<{ role: string; content: string }>,
+  model: string,
+): Promise<void> {
+  if (!isTauriApp()) throw new Error('Tauri not available');
+  return invoke<void>('chat_stream', { eventId, messages, model });
+}
+
+
 export async function detectApiKeys(): Promise<ApiKeyStatus> {
   if (!isTauriApp()) return { has_keys: false, providers: [] };
   return invoke<ApiKeyStatus>('detect_api_keys');

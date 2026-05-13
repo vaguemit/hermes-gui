@@ -7,7 +7,7 @@ use std::{
     io::{BufRead, BufReader},
     net::{SocketAddr, TcpStream},
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::Mutex,
     thread,
     time::{Duration, Instant},
@@ -18,7 +18,9 @@ use tauri::{
     Emitter, Manager,
 };
 
-struct GatewayState(Mutex<Option<Child>>);
+// GatewayState is kept as a Tauri managed-state marker.
+// The gateway itself is detached — we track it only via the PID file.
+struct GatewayState;
 
 struct PtyEntry {
     master: Box<dyn MasterPty + Send>,
@@ -487,36 +489,35 @@ fn hermes_install(timeout_secs: Option<u64>) -> Result<CommandResult, String> {
 }
 
 #[tauri::command]
-fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResult, String> {
-    let mut lock = state
-        .0
-        .lock()
-        .map_err(|_| String::from("Gateway process lock is poisoned"))?;
-
-    // If we already have a managed child that's still alive, don't start another
-    if let Some(child) = lock.as_mut() {
-        if child.try_wait().map_err(|err| err.to_string())?.is_none() {
-            // Also check that the API is actually responding
-            if api_healthy() {
-                return Ok(CommandResult {
-                    success: true,
-                    code: None,
-                    command: String::from("hermes gateway run"),
-                    stdout: String::from("Gateway is already running and healthy."),
-                    stderr: String::new(),
-                });
-            }
-        }
-        // Dead or unhealthy child — clear it
-        *lock = None;
-    }
-
+fn hermes_start_gateway(_state: tauri::State<GatewayState>) -> Result<CommandResult, String> {
     let home = hermes_home();
 
-    // Kill any existing gateway process via PID file (prevents "already running" errors)
+    // If the PID-file process is still alive, don't start another.
+    if is_gateway_pid_alive(&home) {
+        return Ok(CommandResult {
+            success: true,
+            code: None,
+            command: String::from("hermes gateway run"),
+            stdout: String::from("Gateway is already running."),
+            stderr: String::new(),
+        });
+    }
+
+    // Also accept a gateway we didn't launch ourselves (external / previous session).
+    if api_healthy() {
+        return Ok(CommandResult {
+            success: true,
+            code: None,
+            command: String::from("hermes gateway run"),
+            stdout: String::from("Existing gateway is already healthy — adopted."),
+            stderr: String::new(),
+        });
+    }
+
+    // At this point the gateway is truly dead — clean up any stale PID file.
     kill_existing_gateway(&home);
 
-    // Write API_SERVER_ENABLED to .env so it persists even when launched outside this app
+    // Write API_SERVER_ENABLED to .env so it persists even when launched outside this app.
     let env_path = home.join(".env");
     let env_content = std::fs::read_to_string(&env_path).unwrap_or_default();
     if !env_content.contains("API_SERVER_ENABLED") {
@@ -526,15 +527,13 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
         let _ = std::fs::write(&env_path, lines.join("\n") + "\n");
     }
 
-    // Log stderr to a file for debugging
+    // Log stderr to a file for debugging.
     let log_file = home.join("logs").join("gateway-desktop.log");
     let _ = std::fs::create_dir_all(home.join("logs"));
     let stderr_file = std::fs::File::create(&log_file)
         .map_err(|e| format!("Cannot create gateway log: {}", e))?;
 
     let mut cmd = Command::new(command_program());
-
-    // Use 'gateway run' (not just 'gateway') with --accept-hooks (no TTY for prompts)
     cmd.args(["gateway", "run", "--accept-hooks"])
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
@@ -547,13 +546,19 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
         cmd.env(k, v);
     }
 
-    // On Windows, CREATE_NO_WINDOW prevents a console flash and ensures the
-    // child isn't killed when the parent console closes.
+    // ── Detached process flags ────────────────────────────────────────────────
+    // Windows: DETACHED_PROCESS (0x08) + CREATE_NO_WINDOW (0x08000000) +
+    //          CREATE_NEW_PROCESS_GROUP (0x200)
+    // This exactly mirrors Node.js `spawn({ detached: true })` + `.unref()`.
+    // The gateway process is fully independent of the Tauri process and will
+    // NOT be killed when the app restarts or hot-reloads.
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        const DETACHED_PROCESS: u32       = 0x00000008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        const CREATE_NO_WINDOW: u32       = 0x08000000;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
     }
 
     let child = cmd
@@ -563,7 +568,11 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
         .spawn()
         .map_err(|err| format!("Failed to start gateway: {}", err))?;
 
-    *lock = Some(child);
+    // ── Drop the handle immediately — exactly like Node's .unref() ────────────
+    // We do NOT store the Child. The gateway is now fully detached and lives
+    // independently. We track it only through the PID file it writes itself.
+    std::mem::forget(child);
+
     Ok(CommandResult {
         success: true,
         code: None,
@@ -573,65 +582,86 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
     })
 }
 
-/// Kill any existing gateway by reading the PID file and sending a kill signal.
-fn kill_existing_gateway(home: &Path) {
+/// Parse PID from gateway.pid file (supports both plain integer and JSON `{"pid": N, ...}` format).
+fn read_gateway_pid(home: &Path) -> Option<u32> {
     let pid_file = home.join("gateway.pid");
     if !pid_file.exists() {
-        return;
+        return None;
     }
-    if let Ok(content) = std::fs::read_to_string(&pid_file) {
-        let pid: Option<u32> = if content.trim().starts_with('{') {
-            // JSON format: {"pid": 1234, ...}
-            content.split("\"pid\"")
-                .nth(1)
-                .and_then(|s| s.trim_start_matches(|c: char| c == ':' || c == ' ').split(|c: char| !c.is_ascii_digit()).next())
-                .and_then(|s| s.parse().ok())
-        } else {
-            content.trim().parse().ok()
-        };
+    let content = std::fs::read_to_string(&pid_file).ok()?;
+    let trimmed = content.trim();
+    if trimmed.starts_with('{') {
+        // JSON format: {"pid": 1234, ...}
+        // Find `"pid":` then grab the first run of digits after the colon.
+        let after_key = trimmed.split("\"pid\"").nth(1)?;
+        let digits: String = after_key
+            .trim_start_matches(|c: char| c == ':' || c == ' ')
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        digits.parse().ok()
+    } else {
+        trimmed.parse().ok()
+    }
+}
 
-        if let Some(pid) = pid {
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                let _ = Command::new("taskkill")
-                    .args(["/F", "/PID", &pid.to_string()])
-                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
-            }
-            #[cfg(not(windows))]
-            {
-                unsafe {
-                    libc::kill(pid as i32, libc::SIGTERM);
-                }
-            }
-            // Wait a moment for the process to die
-            std::thread::sleep(Duration::from_millis(500));
+/// Check if the gateway process from the PID file is actually alive.
+/// This is a lightweight OS-level probe — no TCP/HTTP involved.
+/// Mirrors Node.js `process.kill(pid, 0)` (signal 0 = probe only).
+fn is_gateway_pid_alive(home: &Path) -> bool {
+    let Some(pid) = read_gateway_pid(home) else { return false; };
+
+    #[cfg(windows)]
+    {
+        // On Windows, OpenProcess with PROCESS_QUERY_LIMITED_INFORMATION (0x1000)
+        // is the equivalent of signal(0) — returns a handle if the process exists.
+        use std::os::windows::io::RawHandle;
+        extern "system" {
+            fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> RawHandle;
+            fn CloseHandle(hObject: RawHandle) -> i32;
         }
+        const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+        if handle.is_null() {
+            return false;
+        }
+        unsafe { CloseHandle(handle) };
+        true
     }
-    // Remove the stale PID file
-    let _ = std::fs::remove_file(&pid_file);
+
+    #[cfg(not(windows))]
+    {
+        // UNIX: signal 0 probes process existence without sending a real signal.
+        unsafe { libc::kill(pid as i32, 0) == 0 }
+    }
+}
+
+/// Kill any existing gateway process via PID file, then remove the PID file.
+fn kill_existing_gateway(home: &Path) {
+    if let Some(pid) = read_gateway_pid(home) {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+        #[cfg(not(windows))]
+        {
+            unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    let _ = std::fs::remove_file(home.join("gateway.pid"));
 }
 
 #[tauri::command]
-fn hermes_stop_gateway(state: tauri::State<GatewayState>) -> Result<CommandResult, String> {
-    let mut lock = state
-        .0
-        .lock()
-        .map_err(|_| String::from("Gateway process lock is poisoned"))?;
-
-    // Kill our managed child if we have one
-    if let Some(mut child) = lock.take() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-
-    // Also kill via PID file (handles externally-started gateways)
+fn hermes_stop_gateway(_state: tauri::State<GatewayState>) -> Result<CommandResult, String> {
     let home = hermes_home();
     kill_existing_gateway(&home);
-
     Ok(CommandResult {
         success: true,
         code: None,
@@ -642,28 +672,131 @@ fn hermes_stop_gateway(state: tauri::State<GatewayState>) -> Result<CommandResul
 }
 
 #[tauri::command]
-fn hermes_gateway_status(state: tauri::State<GatewayState>) -> Result<bool, String> {
-    // Primary check: HTTP health endpoint (the only reliable way)
-    if api_healthy() {
+fn hermes_gateway_status(_state: tauri::State<GatewayState>) -> Result<bool, String> {
+    let home = hermes_home();
+    // Check PID-file liveness first (fast, no network) — mirrors reference app's
+    // `isGatewayRunning()` which uses `process.kill(pid, 0)`.
+    if is_gateway_pid_alive(&home) {
         return Ok(true);
     }
+    // Fallback: HTTP health (catches gateways not tracked by a PID file).
+    Ok(api_healthy())
+}
 
-    // Secondary: check if our managed child is still alive
-    let mut lock = state
-        .0
-        .lock()
-        .map_err(|_| String::from("Gateway process lock is poisoned"))?;
+// ── Chat proxy (Rust→HTTP→WebView events) ─────────────────────────────────────
+// The Tauri WebView cannot fetch() http://localhost:8642 due to origin restrictions.
+// We proxy the SSE stream through Rust (no such restrictions) and emit events back.
 
-    if let Some(child) = lock.as_mut() {
-        if child.try_wait().map_err(|err| err.to_string())?.is_none() {
-            // Process is alive but API not ready yet — still "starting"
-            return Ok(false);
+#[derive(Serialize, Clone)]
+struct ChatChunk {
+    event_id: String,
+    #[serde(rename = "type")]
+    kind: String, // "delta" | "done" | "error"
+    content: Option<String>,
+    error: Option<String>,
+}
+
+#[tauri::command]
+fn chat_stream(
+    app_handle: tauri::AppHandle,
+    event_id: String,
+    messages: Vec<serde_json::Value>,
+    model: String,
+) -> Result<(), String> {
+    let eid = event_id.clone();
+    thread::spawn(move || {
+        let url = "http://127.0.0.1:8642/v1/chat/completions";
+        let body = serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "stream": true,
+        });
+
+        let emit_error = |msg: String| {
+            let _ = app_handle.emit("chat-chunk", ChatChunk {
+                event_id: eid.clone(),
+                kind: "error".into(),
+                content: None,
+                error: Some(msg),
+            });
+        };
+
+        let response = match ureq::post(url)
+            .set("Content-Type", "application/json")
+            .send_string(&body.to_string())
+        {
+            Ok(r) => r,
+            Err(ureq::Error::Status(code, resp)) => {
+                let body = resp.into_string().unwrap_or_default();
+                // Try to extract error message from JSON
+                let msg = serde_json::from_str::<serde_json::Value>(&body)
+                    .ok()
+                    .and_then(|v| v["error"]["message"].as_str().map(String::from))
+                    .unwrap_or_else(|| format!("HTTP {}: {}", code, body.chars().take(200).collect::<String>()));
+                emit_error(msg);
+                return;
+            }
+            Err(e) => {
+                emit_error(format!("Failed to connect to gateway: {}", e));
+                return;
+            }
+        };
+
+        let reader = BufReader::new(response.into_reader());
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => break,
+            };
+            if !line.starts_with("data: ") {
+                continue;
+            }
+            let data = line.trim_start_matches("data: ");
+            if data == "[DONE]" {
+                let _ = app_handle.emit("chat-chunk", ChatChunk {
+                    event_id: eid.clone(),
+                    kind: "done".into(),
+                    content: None,
+                    error: None,
+                });
+                return;
+            }
+            // Parse the SSE data as JSON and extract delta content
+            if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(data) {
+                // Check for embedded error
+                if let Some(err_msg) = chunk["error"]["message"].as_str() {
+                    emit_error(err_msg.to_string());
+                    return;
+                }
+                if let Some(content) = chunk["choices"][0]["delta"]["content"].as_str() {
+                    let _ = app_handle.emit("chat-chunk", ChatChunk {
+                        event_id: eid.clone(),
+                        kind: "delta".into(),
+                        content: Some(content.to_string()),
+                        error: None,
+                    });
+                }
+                // finish_reason == "stop" → done (will be followed by [DONE] but handle it anyway)
+                if chunk["choices"][0]["finish_reason"].as_str() == Some("stop") {
+                    let _ = app_handle.emit("chat-chunk", ChatChunk {
+                        event_id: eid.clone(),
+                        kind: "done".into(),
+                        content: None,
+                        error: None,
+                    });
+                    return;
+                }
+            }
         }
-        // Dead child
-        *lock = None;
-    }
-
-    Ok(false)
+        // Stream ended without [DONE] — emit done anyway
+        let _ = app_handle.emit("chat-chunk", ChatChunk {
+            event_id: eid,
+            kind: "done".into(),
+            content: None,
+            error: None,
+        });
+    });
+    Ok(())
 }
 
 // ── Streaming helpers ─────────────────────────────────────────────────────────
@@ -1379,7 +1512,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .manage(GatewayState(Mutex::new(None)))
+        .manage(GatewayState)
         .manage(PtyState(Mutex::new(HashMap::new())))
         .setup(|app| {
             // System tray
@@ -1444,6 +1577,7 @@ pub fn run() {
             hermes_start_gateway,
             hermes_stop_gateway,
             hermes_gateway_status,
+            chat_stream,
             hermes_stream_command,
             hermes_stream_install,
             update_tray_status,

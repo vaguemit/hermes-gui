@@ -136,7 +136,7 @@ export const useStore = create<AppState>((set, get) => ({
   // Gateway
   gatewayStatus: 'unchecked',
   agentState: 'idle',
-  activeModel: 'openrouter:claude-3.5-sonnet',
+  activeModel: 'hermes-agent',
   setGatewayStatus: (s) => set({ gatewayStatus: s }),
   setAgentState: (s) => set({ agentState: s }),
   setActiveModel: (m) => set({ activeModel: m }),

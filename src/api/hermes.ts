@@ -1,7 +1,9 @@
-import { useStore, GatewayStatus } from '../store';
+import { useStore } from '../store';
+import { getGatewayStatus as getGatewayStatusIpc, isTauriApp } from './desktop';
 
 const API_BASE = 'http://localhost:8642/v1';
 
+/** HTTP health check — used only to verify the API is actually serving (e.g. before chat). */
 export async function checkHealth(): Promise<boolean> {
   try {
     const res = await fetch('http://localhost:8642/health', { signal: AbortSignal.timeout(3000) });
@@ -55,8 +57,15 @@ export async function* streamChat(
 
   if (!res.ok) {
     const text = await res.text();
-    onEvent({ type: 'error', error: `API error ${res.status}: ${text}` });
-    return;
+    // Try to extract a human-readable error message from JSON
+    try {
+      const parsed = JSON.parse(text);
+      const msg = parsed?.error?.message || parsed?.message || text;
+      throw new Error(msg);
+    } catch (jsonErr) {
+      if (jsonErr instanceof Error && jsonErr.message !== text) throw jsonErr;
+      throw new Error(`API error ${res.status}: ${text.slice(0, 300)}`);
+    }
   }
 
   const reader = res.body!.getReader();
@@ -114,6 +123,11 @@ export async function* streamChat(
         if (choice.finish_reason === 'stop' || choice.finish_reason === 'tool_calls') {
           onEvent({ type: 'done', usage: chunk.usage });
         }
+        // Embedded error in SSE stream (e.g. provider error forwarded through streaming)
+        if (chunk.error) {
+          const msg = chunk.error?.message || JSON.stringify(chunk.error);
+          throw new Error(msg);
+        }
       } catch {
         // Skip malformed lines
       }
@@ -124,15 +138,33 @@ export async function* streamChat(
 
 let healthInterval: ReturnType<typeof setInterval> | null = null;
 
+/**
+ * Poll gateway liveness using IPC PID-probe — the same authoritative check as
+ * the reference Electron app's isGatewayRunning() / process.kill(pid, 0).
+ *
+ * HTTP health (checkHealth) is NOT used here because it can fail even when the
+ * gateway process is alive and the port is bound, causing false "disconnected"
+ * flips that fight with the IPC-based status updates from GatewayPanel.
+ *
+ * Falls back to checkHealth() in browser preview mode where Tauri IPC is absent.
+ */
 export function startHealthPolling() {
   if (healthInterval) return;
   healthInterval = setInterval(async () => {
     const { setGatewayStatus, gatewayStatus } = useStore.getState();
-    const healthy = await checkHealth();
-    if (healthy && gatewayStatus !== 'connected') {
-      setGatewayStatus('connected');
-    } else if (!healthy && gatewayStatus === 'connected') {
-      setGatewayStatus('disconnected');
+    const running = isTauriApp()
+      ? await getGatewayStatusIpc().catch(() => false)
+      : await checkHealth();
+
+    if (running) {
+      if (gatewayStatus !== 'connected') {
+        setGatewayStatus('connected');
+      }
+    } else {
+      // Only flip away from connected — never override 'connecting' state
+      if (gatewayStatus === 'connected') {
+        setGatewayStatus('disconnected');
+      }
     }
   }, 5000);
 }
