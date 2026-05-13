@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronRight, Loader } from 'lucide-react';
-import { getHermesInstallStatus, streamInstallHermes, writeEnv, startGateway, readFile, writeFile } from '../api/desktop';
+import { getHermesInstallStatus, streamInstallHermes, writeEnv, setModelConfig, startGateway, readFile, writeFile } from '../api/desktop';
 
 const PROVIDERS = [
-  { id: 'openrouter', label: 'OpenRouter',  key: 'OPENROUTER_API_KEY', hint: 'sk-or-...',  url: 'https://openrouter.ai/keys' },
-  { id: 'openai',    label: 'OpenAI',       key: 'OPENAI_API_KEY',     hint: 'sk-...',      url: 'https://platform.openai.com/api-keys' },
-  { id: 'anthropic', label: 'Anthropic',    key: 'ANTHROPIC_API_KEY',  hint: 'sk-ant-...', url: 'https://console.anthropic.com/keys' },
-  { id: 'nvidia',    label: 'NVIDIA NIM',   key: 'NVIDIA_API_KEY',     hint: 'nvapi-...',  url: 'https://build.nvidia.com' },
-  { id: 'google',    label: 'Google AI',    key: 'GOOGLE_API_KEY',     hint: 'AIza...',     url: 'https://aistudio.google.com/apikey' },
-  { id: 'nous',      label: 'Nous Portal',  key: 'NOUS_API_KEY',       hint: 'np-...',      url: 'https://portal.nousresearch.com' },
+  { id: 'openrouter', label: 'OpenRouter',  key: 'OPENROUTER_API_KEY', hint: 'sk-or-...',  url: 'https://openrouter.ai/keys',             configProvider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1',          defaultModel: 'NousResearch/Hermes-3-Llama-3.1-405B' },
+  { id: 'openai',    label: 'OpenAI',       key: 'OPENAI_API_KEY',     hint: 'sk-...',      url: 'https://platform.openai.com/api-keys',   configProvider: 'openai',     baseUrl: '',                                      defaultModel: 'gpt-4o' },
+  { id: 'anthropic', label: 'Anthropic',    key: 'ANTHROPIC_API_KEY',  hint: 'sk-ant-...', url: 'https://console.anthropic.com/keys',      configProvider: 'anthropic',  baseUrl: '',                                      defaultModel: 'claude-3-5-sonnet-20241022' },
+  { id: 'nvidia',    label: 'NVIDIA NIM',   key: 'NVIDIA_API_KEY',     hint: 'nvapi-...',  url: 'https://build.nvidia.com',                configProvider: 'openai',     baseUrl: 'https://integrate.api.nvidia.com/v1',   defaultModel: 'meta/llama-3.1-405b-instruct' },
+  { id: 'google',    label: 'Google AI',    key: 'GOOGLE_API_KEY',     hint: 'AIza...',     url: 'https://aistudio.google.com/apikey',     configProvider: 'google',     baseUrl: '',                                      defaultModel: 'gemini-1.5-pro' },
+  { id: 'nous',      label: 'Nous Portal',  key: 'NOUS_API_KEY',       hint: 'np-...',      url: 'https://portal.nousresearch.com',        configProvider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1',          defaultModel: 'NousResearch/Hermes-3-Llama-3.1-405B' },
 ];
 
 const STATE_FILE = 'gui-setup-state.json';
@@ -45,6 +45,7 @@ export default function InstallWizard({ onComplete }: Props) {
   const [installLog, setInstallLog] = useState<string[]>([]);
   const [provider, setProvider] = useState<typeof PROVIDERS[0] | null>(null);
   const [apiKey, setApiKey] = useState('');
+  const [modelName, setModelName] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
   const [resumeLoaded, setResumeLoaded] = useState(false);
@@ -57,16 +58,18 @@ export default function InstallWizard({ onComplete }: Props) {
         loadSetupState(),
       ]);
       const isInstalled = status?.installed ?? false;
+      const isModelConfigured = status?.model_configured ?? false;
       setInstalled(isInstalled);
 
-      if (saved) {
+      if (saved && saved.step < 4) {
         // Resume from last saved point
-        const resumeStep = saved.step;
-        setStep(resumeStep);
+        setStep(saved.step);
         if (saved.providerId) {
           const p = PROVIDERS.find(x => x.id === saved.providerId);
-          if (p) setProvider(p);
+          if (p) { setProvider(p); setModelName(p.defaultModel); }
         }
+      } else if (isInstalled && !isModelConfigured) {
+        setStep(2); // Installed but no model configured — go straight to provider selection
       } else if (isInstalled) {
         setStep(2); // Skip install step if already installed
       }
@@ -116,10 +119,11 @@ export default function InstallWizard({ onComplete }: Props) {
     setSavingKey(true);
     try {
       await writeEnv(provider.key, apiKey.trim());
+      const finalModel = modelName.trim() || provider.defaultModel;
+      await setModelConfig(provider.configProvider, finalModel, provider.baseUrl).catch(() => {});
       await persist({ step: 4, api_key_saved: true });
       setStep(4);
       await startGateway().catch(() => {});
-      // Clear setup state on completion
       await writeFile(STATE_FILE, JSON.stringify({ step: 4, install_completed: true, api_key_saved: true, providerId: provider.id, timestamp: new Date().toISOString() })).catch(() => {});
       setTimeout(onComplete, 1500);
     } catch {
@@ -187,10 +191,10 @@ export default function InstallWizard({ onComplete }: Props) {
               <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>Choose your AI provider:</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
                 {PROVIDERS.map(p => (
-                  <button key={p.id} onClick={() => setProvider(p)}
+                  <button key={p.id} onClick={() => { setProvider(p); setModelName(p.defaultModel); }}
                     style={{ padding: '12px 14px', background: provider?.id === p.id ? 'var(--accent-green-dim)' : 'var(--bg2)', border: `1px solid ${provider?.id === p.id ? 'var(--accent-green)' : 'var(--border)'}`, borderRadius: 'var(--radius-md)', textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s' }}>
                     <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{p.label}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>{p.hint}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>{p.defaultModel}</div>
                   </button>
                 ))}
               </div>
@@ -202,10 +206,10 @@ export default function InstallWizard({ onComplete }: Props) {
 
           {step === 3 && provider && (
             <div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
                 {provider.label} API Key — <a href={provider.url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-blue)' }}>Get one here</a>
               </div>
-              <div style={{ position: 'relative', marginBottom: 18 }}>
+              <div style={{ position: 'relative', marginBottom: 14 }}>
                 <input
                   type={showKey ? 'text' : 'password'}
                   value={apiKey}
@@ -219,6 +223,15 @@ export default function InstallWizard({ onComplete }: Props) {
                   {showKey ? 'hide' : 'show'}
                 </button>
               </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Model name</div>
+              <input
+                type="text"
+                value={modelName}
+                onChange={e => setModelName(e.target.value)}
+                placeholder={provider.defaultModel}
+                className="input-field"
+                style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, marginBottom: 18 }}
+              />
               <button className="btn btn-primary" style={{ width: '100%' }} disabled={!apiKey.trim() || savingKey} onClick={saveKeyAndFinish}>
                 {savingKey ? 'Saving...' : 'Save and Launch'}
               </button>
