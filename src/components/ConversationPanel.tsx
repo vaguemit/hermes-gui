@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore, Message, ToolCall } from '../store';
-import { streamChat } from '../api/hermes';
+import { streamChat, checkHealth } from '../api/hermes';
 import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy,
@@ -135,7 +135,7 @@ function exportSessionToMarkdown(messages: Message[]): string {
 }
 
 export default function ConversationPanel() {
-  const { sessions, activeSessionId, activeModel, gatewayStatus, agentState, setAgentState, addMessage, updateLastMessage, addToolCall, clearToolCalls, setPaletteOpen, tokensUsed, contextWindow, setTokenUsage, clearActiveSession } = useStore();
+  const { messages, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection } = useStore();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -213,6 +213,8 @@ export default function ConversationPanel() {
       if ((err as Error)?.name !== 'AbortError') {
         updateLastMessage({ content: accumulated || 'Connection failed. Is the Hermes gateway running?', type: accumulated ? 'prose' : 'error', isStreaming: false });
         setAgentState('error');
+        // Re-check gateway health so the banner updates immediately
+        checkHealth().then(ok => setGatewayStatus(ok ? 'connected' : 'disconnected'));
       } else { updateLastMessage({ isStreaming: false }); setAgentState('idle'); }
     } finally { setIsRunning(false); abortRef.current = null; }
   };
