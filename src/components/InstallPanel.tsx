@@ -34,7 +34,7 @@ function ResultBlock({ result, streamLines }: { result: CommandResult | null; st
   );
 }
 
-export default function InstallPanel() {
+export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => void }) {
   const [status, setStatus] = useState<HermesInstallStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState<string | null>(null);
@@ -192,8 +192,13 @@ export default function InstallPanel() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
-          <button className="btn btn-primary" onClick={() => runAction('setup', () => runHermesCommand(['setup', '--quick', '--non-interactive'], 180))} disabled={running !== null} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontSize: 12.5 }}>
-            <Play size={13} /> Quick Setup
+          <button
+            className="btn btn-primary"
+            onClick={() => onOpenWizard?.()}
+            disabled={running !== null}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontSize: 12.5 }}
+          >
+            <Play size={13} /> Configure Provider
           </button>
           {safeAdminCommands.map((cmd) => (
             <button key={cmd.id} className="btn btn-ghost" onClick={() => runAction(cmd.id, () => runHermesCommand(cmd.args, cmd.id === 'doctor' ? 120 : 45))} disabled={running !== null} style={{ fontSize: 12.5 }}>

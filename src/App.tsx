@@ -185,7 +185,7 @@ export default function App() {
   const mainContent = () => {
     switch (activeSection) {
       case 'chat': return <ConversationPanel />;
-      case 'install': return <InstallPanel />;
+      case 'install': return <InstallPanel onOpenWizard={() => setShowWizard(true)} />;
       case 'commands': return <CommandCenterPanel />;
       case 'agents': return <AgentsPanel />;
       case 'gateway': return <GatewayPanel />;
