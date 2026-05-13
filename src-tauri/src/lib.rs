@@ -654,13 +654,24 @@ fn hermes_stream_install(
 ) -> Result<CommandResult, String> {
     #[cfg(windows)]
     let (program, args) = {
-        let script = "Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1' -OutFile \"$env:TEMP\\hermes-install.ps1\"; & \"$env:TEMP\\hermes-install.ps1\" -SkipSetup";
+        // Write a wrapper .ps1 to %TEMP% and run with -File to avoid PowerShell
+        // -Command string quoting issues with the installer script content.
+        // This matches the reference Electron app's runInstallWindows() strategy.
+        let wrapper = std::env::temp_dir().join("hermes-install-wrapper.ps1");
+        let content = "$ErrorActionPreference = 'Stop'\r\n\
+$ProgressPreference = 'SilentlyContinue'\r\n\
+Invoke-WebRequest -UseBasicParsing `\r\n\
+    -Uri 'https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1' `\r\n\
+    -OutFile \"$env:TEMP\\hermes-install.ps1\"\r\n\
+& \"$env:TEMP\\hermes-install.ps1\" -SkipSetup\r\n";
+        std::fs::write(&wrapper, content)
+            .map_err(|e| format!("Failed to write installer wrapper: {}", e))?;
         (PathBuf::from("powershell"), vec![
             String::from("-NoProfile"),
             String::from("-ExecutionPolicy"),
             String::from("Bypass"),
-            String::from("-Command"),
-            String::from(script),
+            String::from("-File"),
+            wrapper.to_string_lossy().to_string(),
         ])
     };
     #[cfg(not(windows))]
@@ -673,6 +684,7 @@ fn hermes_stream_install(
     );
     stream_spawn(&app_handle, program, &args, &event_id, 1800)
 }
+
 
 #[tauri::command]
 fn update_tray_status(app_handle: tauri::AppHandle, status: String) -> Result<(), String> {
