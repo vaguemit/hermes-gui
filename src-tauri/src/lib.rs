@@ -1,3 +1,4 @@
+use portable_pty::MasterPty;
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -18,6 +19,12 @@ use tauri::{
 };
 
 struct GatewayState(Mutex<Option<Child>>);
+
+struct PtyEntry {
+    master: Box<dyn MasterPty + Send>,
+    writer: Box<dyn std::io::Write + Send>,
+}
+struct PtyState(Mutex<HashMap<String, PtyEntry>>);
 
 #[derive(Serialize)]
 struct HermesInstallStatus {
@@ -75,6 +82,31 @@ struct UpdateInfo {
     latest_version: Option<String>,
     update_available: bool,
     release_url: Option<String>,
+}
+
+#[derive(Serialize)]
+struct SystemInfo {
+    ram_gb: u64,
+    cpu_count: u32,
+}
+
+#[derive(Serialize)]
+struct ProfileMeta {
+    name: String,
+    modified: String,
+}
+
+#[derive(Serialize)]
+struct MemoryFileMeta {
+    name: String,
+    size: u64,
+    modified: String,
+}
+
+#[derive(Serialize)]
+struct SessionMeta {
+    name: String,
+    modified: String,
 }
 
 fn env_path(name: &str) -> Option<PathBuf> {
@@ -870,6 +902,333 @@ fn check_update() -> Result<UpdateInfo, String> {
     Ok(UpdateInfo { current_version, latest_version, update_available, release_url })
 }
 
+// ── New IPC commands ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn get_system_info() -> SystemInfo {
+    use sysinfo::System;
+    let mut sys = System::new();
+    sys.refresh_memory();
+    sys.refresh_cpu_all();
+    let ram_gb = sys.total_memory() / 1_073_741_824;
+    let cpu_count = sys.cpus().len() as u32;
+    SystemInfo { ram_gb, cpu_count }
+}
+
+#[tauri::command]
+fn ollama_list_models() -> Vec<String> {
+    let result = run_command(PathBuf::from("ollama"), &[String::from("list")], 10)
+        .unwrap_or_else(|_| CommandResult {
+            success: false,
+            code: None,
+            command: String::new(),
+            stdout: String::new(),
+            stderr: String::new(),
+        });
+    result
+        .stdout
+        .lines()
+        .skip(1) // skip header
+        .filter_map(|l| l.split_whitespace().next().map(String::from))
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+#[tauri::command]
+fn ollama_pull_stream(
+    app_handle: tauri::AppHandle,
+    model: String,
+    event_id: String,
+) -> Result<CommandResult, String> {
+    stream_spawn(
+        &app_handle,
+        PathBuf::from("ollama"),
+        &[String::from("pull"), model],
+        &event_id,
+        1800,
+    )
+}
+
+#[tauri::command]
+fn list_profiles() -> Vec<ProfileMeta> {
+    let dir = hermes_home().join("profiles");
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                let modified = entry
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .map(|t| {
+                        t.duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs()
+                            .to_string()
+                    })
+                    .unwrap_or_default();
+                out.push(ProfileMeta { name, modified });
+            }
+        }
+    }
+    out
+}
+
+#[tauri::command]
+fn read_profile(name: String) -> Result<String, String> {
+    std::fs::read_to_string(
+        hermes_home()
+            .join("profiles")
+            .join(format!("{}.md", name)),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_profile(name: String, content: String) -> Result<(), String> {
+    let dir = hermes_home().join("profiles");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(format!("{}.md", name)), content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_profile(name: String) -> Result<(), String> {
+    std::fs::remove_file(
+        hermes_home()
+            .join("profiles")
+            .join(format!("{}.md", name)),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_memory_files() -> Vec<MemoryFileMeta> {
+    let dir = hermes_home().join("memory");
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let meta = entry.metadata().ok();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let modified = meta
+                .and_then(|m| m.modified().ok())
+                .map(|t| {
+                    t.duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()
+                        .to_string()
+                })
+                .unwrap_or_default();
+            out.push(MemoryFileMeta { name, size, modified });
+        }
+    }
+    out
+}
+
+#[tauri::command]
+fn read_memory_file(name: String) -> Result<String, String> {
+    std::fs::read_to_string(hermes_home().join("memory").join(&name))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_memory_file(name: String) -> Result<(), String> {
+    std::fs::remove_file(hermes_home().join("memory").join(&name))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_sessions_disk() -> Vec<SessionMeta> {
+    let dir = hermes_home().join("sessions");
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                let name = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                let modified = entry
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .map(|t| {
+                        t.duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs()
+                            .to_string()
+                    })
+                    .unwrap_or_default();
+                out.push(SessionMeta { name, modified });
+            }
+        }
+    }
+    out
+}
+
+#[tauri::command]
+fn read_session_disk(name: String) -> Result<String, String> {
+    std::fs::read_to_string(hermes_home().join("sessions").join(&name))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_session_disk(name: String, content: String) -> Result<(), String> {
+    let dir = hermes_home().join("sessions");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(&name), content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_session_disk(name: String) -> Result<(), String> {
+    std::fs::remove_file(hermes_home().join("sessions").join(&name))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn pty_spawn(
+    app_handle: tauri::AppHandle,
+    program: String,
+    args: Vec<String>,
+    rows: u16,
+    cols: u16,
+    event_id: String,
+    pty_state: tauri::State<PtyState>,
+) -> Result<String, String> {
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut cmd = CommandBuilder::new(&program);
+    for arg in &args {
+        cmd.arg(arg);
+    }
+    let home = hermes_home();
+    cmd.env("HERMES_HOME", &home);
+    cmd.env("PATH", enhanced_path(&home));
+
+    let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+
+    let pty_id = uuid::Uuid::new_v4().to_string();
+
+    // Stream PTY output via events
+    let app = app_handle.clone();
+    let eid = event_id.clone();
+    thread::spawn(move || {
+        let mut buf = BufReader::new(reader);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match buf.read_line(&mut line) {
+                Ok(0) => {
+                    let _ = app.emit(&eid, "__DONE__");
+                    break;
+                }
+                Ok(_) => {
+                    let _ = app.emit(
+                        &eid,
+                        line.trim_end_matches('\n')
+                            .trim_end_matches('\r')
+                            .to_string(),
+                    );
+                }
+                Err(_) => {
+                    let _ = app.emit(&eid, "__DONE__");
+                    break;
+                }
+            }
+        }
+    });
+
+    let entry = PtyEntry {
+        master: pair.master,
+        writer,
+    };
+    pty_state
+        .0
+        .lock()
+        .map_err(|_| "PTY lock poisoned".to_string())?
+        .insert(pty_id.clone(), entry);
+
+    Ok(pty_id)
+}
+
+#[tauri::command]
+fn pty_write(
+    pty_id: String,
+    data: String,
+    pty_state: tauri::State<PtyState>,
+) -> Result<(), String> {
+    use std::io::Write;
+    let mut lock = pty_state
+        .0
+        .lock()
+        .map_err(|_| "PTY lock poisoned".to_string())?;
+    if let Some(entry) = lock.get_mut(&pty_id) {
+        entry
+            .writer
+            .write_all(data.as_bytes())
+            .map_err(|e| e.to_string())
+    } else {
+        Err(format!("PTY {} not found", pty_id))
+    }
+}
+
+#[tauri::command]
+fn pty_resize(
+    pty_id: String,
+    rows: u16,
+    cols: u16,
+    pty_state: tauri::State<PtyState>,
+) -> Result<(), String> {
+    use portable_pty::PtySize;
+    let mut lock = pty_state
+        .0
+        .lock()
+        .map_err(|_| "PTY lock poisoned".to_string())?;
+    if let Some(entry) = lock.get_mut(&pty_id) {
+        entry
+            .master
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| e.to_string())
+    } else {
+        Err(format!("PTY {} not found", pty_id))
+    }
+}
+
+#[tauri::command]
+fn pty_kill(pty_id: String, pty_state: tauri::State<PtyState>) -> Result<(), String> {
+    let mut lock = pty_state
+        .0
+        .lock()
+        .map_err(|_| "PTY lock poisoned".to_string())?;
+    lock.remove(&pty_id);
+    Ok(())
+}
+
 // ── App entry point ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -882,6 +1241,7 @@ pub fn run() {
             None,
         ))
         .manage(GatewayState(Mutex::new(None)))
+        .manage(PtyState(Mutex::new(HashMap::new())))
         .setup(|app| {
             // System tray
             let open_item = MenuItem::with_id(app, "open", "Open Hermes", true, None::<&str>)?;
@@ -959,6 +1319,24 @@ pub fn run() {
             get_model_config,
             set_model_config,
             check_update,
+            get_system_info,
+            ollama_list_models,
+            ollama_pull_stream,
+            list_profiles,
+            read_profile,
+            write_profile,
+            delete_profile,
+            list_memory_files,
+            read_memory_file,
+            delete_memory_file,
+            list_sessions_disk,
+            read_session_disk,
+            write_session_disk,
+            delete_session_disk,
+            pty_spawn,
+            pty_write,
+            pty_resize,
+            pty_kill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
