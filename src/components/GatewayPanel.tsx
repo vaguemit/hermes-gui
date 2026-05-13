@@ -49,15 +49,27 @@ export default function GatewayPanel() {
 
   const startGateway = async () => {
     setGatewayStatus('connecting');
-    setGatewayLog((lines) => [...lines, '[info] Starting hermes gateway run']);
+    setGatewayLog((lines) => [...lines, '[info] Starting hermes gateway run --replace']);
     try {
       const result = await startGatewayNative();
       setGatewayLog((lines) => [...lines, result.stdout || result.stderr || '[info] Start command completed']);
-      window.setTimeout(async () => {
+
+      // Poll for health — gateway takes 3-8s to boot Python + bind port 8642
+      let attempts = 0;
+      const maxAttempts = 10;
+      const poll = setInterval(async () => {
+        attempts++;
         const healthy = await getGatewayStatus();
-        setGatewayStatus(healthy ? 'connected' : 'disconnected');
-        setGatewayLog((lines) => [...lines, healthy ? '[info] Gateway healthy at :8642' : '[warn] Gateway started, health check is still offline']);
-      }, 1200);
+        if (healthy) {
+          clearInterval(poll);
+          setGatewayStatus('connected');
+          setGatewayLog((lines) => [...lines, `[info] Gateway healthy at :8642 (after ${attempts * 1.5}s)`]);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(poll);
+          setGatewayStatus('error');
+          setGatewayLog((lines) => [...lines, '[error] Gateway did not become healthy within 15s — check logs/gateway-desktop.log']);
+        }
+      }, 1500);
     } catch (err) {
       setGatewayStatus('error');
       setGatewayLog((lines) => [...lines, `[error] ${err instanceof Error ? err.message : String(err)}`]);
