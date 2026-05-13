@@ -185,6 +185,12 @@ export async function checkUpdate(): Promise<UpdateInfo> {
   return invoke<UpdateInfo>('check_update');
 }
 
+export async function setModelConfig(provider: string, model: string, baseUrl: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('set_model_config', { provider, model, baseUrl });
+}
+
+
 export async function toggleAutostart(enable: boolean): Promise<void> {
   if (!isTauriApp()) return;
   return invoke<void>(enable ? 'plugin:autostart|enable' : 'plugin:autostart|disable');

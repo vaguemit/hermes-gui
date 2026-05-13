@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, Download, Play, RefreshCw, Settings, Terminal, XCircle } from 'lucide-react';
-import { CommandResult, HermesInstallStatus, getHermesInstallStatus, runHermesCommand, streamHermesCommand } from '../api/desktop';
+import { CommandResult, HermesInstallStatus, getHermesInstallStatus, runHermesCommand, streamInstallHermes } from '../api/desktop';
 import { CLI_COMMANDS } from '../data/hermesCatalog';
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
@@ -97,8 +97,8 @@ export default function InstallPanel() {
     setResult(null);
     setInstallLines([]);
     try {
-      const output = await streamHermesCommand(
-        ['install'],
+      // Use the official Nous Research install script (PS1 on Windows, bash on Unix)
+      const output = await streamInstallHermes(
         (line) => setInstallLines((prev) => [...prev, line]),
       );
       setResult(output);
@@ -107,7 +107,7 @@ export default function InstallPanel() {
       setResult({
         success: false,
         code: null,
-        command: 'hermes install',
+        command: 'Official Hermes Installer',
         stdout: '',
         stderr: err instanceof Error ? err.message : String(err),
       });
@@ -115,6 +115,7 @@ export default function InstallPanel() {
       setRunning(null);
     }
   };
+
 
   const installCommand = /win/i.test(status?.platform || '')
     ? 'irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1 | iex'

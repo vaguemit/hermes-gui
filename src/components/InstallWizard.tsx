@@ -1,474 +1,403 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronRight, Loader, Cpu, MemoryStick, Download, Check } from 'lucide-react';
+import {
+  ArrowRight, CheckCircle2, Download, ExternalLink, Eye, EyeOff,
+  Loader2, XCircle, ChevronLeft,
+} from 'lucide-react';
 import {
   getHermesInstallStatus, streamInstallHermes, writeEnv, setModelConfig,
-  startGateway, readFile, writeFile, getSystemInfo, streamOllamaPull,
+  HermesInstallStatus,
 } from '../api/desktop';
 
-// Providers — API key providers first, then Ollama (local/free)
-const PROVIDERS = [
-  { id: 'openrouter', label: 'OpenRouter',  key: 'OPENROUTER_API_KEY', hint: 'sk-or-...',  url: 'https://openrouter.ai/keys',             configProvider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1',          defaultModel: 'NousResearch/Hermes-3-Llama-3.1-405B', local: false },
-  { id: 'openai',    label: 'OpenAI',       key: 'OPENAI_API_KEY',     hint: 'sk-...',      url: 'https://platform.openai.com/api-keys',   configProvider: 'openai',     baseUrl: '',                                      defaultModel: 'gpt-4o',                              local: false },
-  { id: 'anthropic', label: 'Anthropic',    key: 'ANTHROPIC_API_KEY',  hint: 'sk-ant-...', url: 'https://console.anthropic.com/keys',      configProvider: 'anthropic',  baseUrl: '',                                      defaultModel: 'claude-3-5-sonnet-20241022',           local: false },
-  { id: 'nvidia',    label: 'NVIDIA NIM',   key: 'NVIDIA_API_KEY',     hint: 'nvapi-...',  url: 'https://build.nvidia.com',                configProvider: 'openai',     baseUrl: 'https://integrate.api.nvidia.com/v1',   defaultModel: 'meta/llama-3.1-405b-instruct',        local: false },
-  { id: 'google',    label: 'Google AI',    key: 'GOOGLE_API_KEY',     hint: 'AIza...',     url: 'https://aistudio.google.com/apikey',     configProvider: 'google',     baseUrl: '',                                      defaultModel: 'gemini-1.5-pro',                      local: false },
-  { id: 'nous',      label: 'Nous Portal',  key: 'NOUS_API_KEY',       hint: 'np-...',      url: 'https://portal.nousresearch.com',        configProvider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1',          defaultModel: 'NousResearch/Hermes-3-Llama-3.1-405B', local: false },
-  { id: 'ollama',    label: 'Ollama',       key: '',                   hint: '',            url: 'https://ollama.ai',                      configProvider: 'openai',     baseUrl: 'http://localhost:11434/v1',             defaultModel: 'hermes3:8b',                          local: true },
+// ── Provider catalogue (mirrored from reference app constants.ts) ─────────────
+
+interface ProviderDef {
+  id: string;
+  name: string;
+  desc: string;
+  tag?: string;
+  envKey: string;
+  url: string;
+  placeholder: string;
+  configProvider: string;
+  baseUrl: string;
+  needsKey: boolean;
+}
+
+const PROVIDERS: ProviderDef[] = [
+  {
+    id: 'openrouter', name: 'OpenRouter', tag: 'Recommended — 200+ models',
+    desc: 'Access hundreds of models through a single API key.',
+    envKey: 'OPENROUTER_API_KEY', url: 'https://openrouter.ai/keys',
+    placeholder: 'sk-or-v1-...', configProvider: 'openrouter',
+    baseUrl: 'https://openrouter.ai/api/v1', needsKey: true,
+  },
+  {
+    id: 'anthropic', name: 'Anthropic', desc: 'Direct Claude access.',
+    envKey: 'ANTHROPIC_API_KEY', url: 'https://console.anthropic.com/settings/keys',
+    placeholder: 'sk-ant-...', configProvider: 'anthropic', baseUrl: '', needsKey: true,
+  },
+  {
+    id: 'openai', name: 'OpenAI', desc: 'Direct GPT model access.',
+    envKey: 'OPENAI_API_KEY', url: 'https://platform.openai.com/api-keys',
+    placeholder: 'sk-...', configProvider: 'openai', baseUrl: '', needsKey: true,
+  },
+  {
+    id: 'google', name: 'Google (Gemini)', desc: 'Gemini models via AI Studio.',
+    envKey: 'GOOGLE_API_KEY', url: 'https://aistudio.google.com/app/apikey',
+    placeholder: 'AIza...', configProvider: 'google', baseUrl: '', needsKey: true,
+  },
+  {
+    id: 'xai', name: 'xAI (Grok)', desc: 'Grok models.',
+    envKey: 'XAI_API_KEY', url: 'https://console.x.ai',
+    placeholder: 'xai-...', configProvider: 'xai', baseUrl: '', needsKey: true,
+  },
+  {
+    id: 'nous', name: 'Nous Portal', tag: 'Free tier available',
+    desc: 'Run Hermes through the Nous research portal.',
+    envKey: '', url: '', placeholder: '', configProvider: 'nous', baseUrl: '', needsKey: false,
+  },
+  {
+    id: 'local', name: 'Local / Custom', tag: 'No API key required',
+    desc: 'Connect to LM Studio, Ollama, vLLM, or any OpenAI-compatible server.',
+    envKey: '', url: '', placeholder: 'sk-...',
+    configProvider: 'custom', baseUrl: 'http://localhost:1234/v1', needsKey: false,
+  },
 ];
 
-// Ollama model options with RAM requirements
-const OLLAMA_MODELS = [
-  { id: 'hermes3:8b',   label: 'Hermes 3 8B',   ram: 8,  description: 'Recommended for most computers', tag: 'recommended' },
-  { id: 'hermes3:70b',  label: 'Hermes 3 70B',  ram: 32, description: 'Most powerful, needs 32GB+ RAM or GPU', tag: 'powerful' },
-  { id: 'hermes2-pro',  label: 'Hermes 2 Pro',  ram: 16, description: 'Balanced performance (16GB RAM)', tag: 'balanced' },
+const LOCAL_PRESETS = [
+  { id: 'lmstudio', name: 'LM Studio', baseUrl: 'http://localhost:1234/v1' },
+  { id: 'ollama', name: 'Ollama', baseUrl: 'http://localhost:11434/v1' },
+  { id: 'vllm', name: 'vLLM', baseUrl: 'http://localhost:8000/v1' },
+  { id: 'llamacpp', name: 'llama.cpp', baseUrl: 'http://localhost:8080/v1' },
 ];
 
-const STATE_FILE = 'gui-setup-state.json';
+// ── Step identifiers ──────────────────────────────────────────────────────────
+type Step = 'detect' | 'install' | 'provider' | 'apikey' | 'done';
 
-interface SetupState {
-  step: number;
-  providerId: string | null;
-  ollamaModel?: string;
-  install_completed: boolean;
-  api_key_saved: boolean;
-  timestamp?: string;
+// ── Persisted state ───────────────────────────────────────────────────────────
+const STATE_KEY = 'hermes-wizard-state';
+interface PersistedState { step: Step; provider: string }
+function loadState(): PersistedState {
+  try { return JSON.parse(localStorage.getItem(STATE_KEY) ?? '{}'); } catch { return {} as PersistedState; }
+}
+function saveState(s: PersistedState) {
+  localStorage.setItem(STATE_KEY, JSON.stringify(s));
 }
 
-async function loadSetupState(): Promise<SetupState | null> {
-  try {
-    const raw = await readFile(STATE_FILE);
-    return JSON.parse(raw) as SetupState;
-  } catch {
-    return null;
-  }
-}
-
-async function saveSetupState(s: SetupState): Promise<void> {
-  await writeFile(STATE_FILE, JSON.stringify({ ...s, timestamp: new Date().toISOString() }, null, 2)).catch(() => {});
-}
-
-interface Props {
-  onComplete: () => void;
-}
+// ── Component ─────────────────────────────────────────────────────────────────
+interface Props { onComplete: () => void }
 
 export default function InstallWizard({ onComplete }: Props) {
-  // Core state
-  const [step, setStep] = useState(0);
-  const [installed, setInstalled] = useState(false);
+  const persisted = loadState();
+
+  const [step, setStep] = useState<Step>(persisted.step || 'detect');
+  const [status, setStatus] = useState<HermesInstallStatus | null>(null);
+  const [installLines, setInstallLines] = useState<string[]>([]);
   const [installing, setInstalling] = useState(false);
-  const [installLog, setInstallLog] = useState<string[]>([]);
-  const [provider, setProvider] = useState<typeof PROVIDERS[0] | null>(null);
+  const [installError, setInstallError] = useState('');
+
+  const [selectedProvider, setSelectedProvider] = useState(persisted.provider || 'openrouter');
   const [apiKey, setApiKey] = useState('');
-  const [modelName, setModelName] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [savingKey, setSavingKey] = useState(false);
-  const [resumeLoaded, setResumeLoaded] = useState(false);
+  const [baseUrl, setBaseUrl] = useState('http://localhost:1234/v1');
+  const [modelName, setModelName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
-  // Ollama-specific state
-  const [ramGb, setRamGb] = useState<number | null>(null);
-  const [cpuCount, setCpuCount] = useState<number | null>(null);
-  const [ollamaModel, setOllamaModel] = useState(OLLAMA_MODELS[0]);
-  const [pulling, setPulling] = useState(false);
-  const [pullLog, setPullLog] = useState<string[]>([]);
-  const [pullDone, setPullDone] = useState(false);
+  const provider = PROVIDERS.find((p) => p.id === selectedProvider) ?? PROVIDERS[0];
+  const isLocal = selectedProvider === 'local';
 
-  // Steps:
-  // 0 = env check (is hermes installed?)
-  // 1 = install hermes (streaming)
-  // 2 = provider selection
-  // 3 = api key input (non-ollama) OR ollama hardware check
-  // 4 = ollama pull progress (ollama only)
-  // 5 = done
-
-  // On mount: detect install status and resume
+  // ── Step 1: detect existing install ──────────────────────────────────────
   useEffect(() => {
-    (async () => {
-      const [status, saved] = await Promise.all([
-        getHermesInstallStatus().catch(() => null),
-        loadSetupState(),
-      ]);
-      const isInstalled = status?.installed ?? false;
-      const isModelConfigured = status?.model_configured ?? false;
-      setInstalled(isInstalled);
-
-      if (saved && saved.step < 5) {
-        setStep(saved.step);
-        if (saved.providerId) {
-          const p = PROVIDERS.find(x => x.id === saved.providerId);
-          if (p) { setProvider(p); setModelName(p.defaultModel); }
-        }
-        if (saved.ollamaModel) {
-          const m = OLLAMA_MODELS.find(m => m.id === saved.ollamaModel);
-          if (m) setOllamaModel(m);
-        }
-      } else if (isInstalled && !isModelConfigured) {
-        setStep(2);
-      } else if (isInstalled) {
-        setStep(2);
+    if (step !== 'detect') return;
+    getHermesInstallStatus().then((s) => {
+      setStatus(s);
+      if (s.installed && s.configured) {
+        // Already set up, skip straight to provider step
+        goTo('provider');
+      } else if (s.installed) {
+        goTo('provider');
+      } else {
+        goTo('install');
       }
-      setResumeLoaded(true);
-    })();
+    }).catch(() => goTo('install'));
   }, []);
 
-  // Load system info when provider = ollama and we reach the hardware step
-  useEffect(() => {
-    if (provider?.id === 'ollama' && step === 3 && ramGb === null) {
-      getSystemInfo().then(info => {
-        setRamGb(info.ram_gb);
-        setCpuCount(info.cpu_count);
-        // Auto-select recommended model based on RAM
-        if (info.ram_gb < 12) setOllamaModel(OLLAMA_MODELS[0]); // 8B
-        else if (info.ram_gb < 24) setOllamaModel(OLLAMA_MODELS[2]); // hermes2-pro
-        else setOllamaModel(OLLAMA_MODELS[1]); // 70B
-      }).catch(() => {});
-    }
-  }, [step, provider, ramGb]);
+  function goTo(s: Step) {
+    setStep(s);
+    saveState({ step: s, provider: selectedProvider });
+  }
 
-  const persist = async (patch: Partial<SetupState>) => {
-    await saveSetupState({
-      step,
-      providerId: provider?.id ?? null,
-      ollamaModel: ollamaModel.id,
-      install_completed: installed,
-      api_key_saved: false,
-      ...patch,
-    });
-  };
-
-  const goTo = async (nextStep: number) => {
-    setStep(nextStep);
-    await persist({ step: nextStep });
-  };
-
-  const runInstall = async () => {
+  // ── Step 2: run installer ────────────────────────────────────────────────
+  async function runInstall() {
     setInstalling(true);
-    setInstallLog(['Starting installer…']);
-    await persist({ step: 1 });
+    setInstallError('');
+    setInstallLines([]);
     try {
-      const result = await streamInstallHermes((line) => {
-        setInstallLog(prev => [...prev, line]);
-      });
-      if (result.success) {
-        setInstalled(true);
-        await persist({ step: 2, install_completed: true });
-        setTimeout(() => goTo(2), 1200);
+      const result = await streamInstallHermes((line) => setInstallLines((prev) => [...prev, line]));
+      if (result.success || result.stdout.toLowerCase().includes('installed')) {
+        goTo('provider');
       } else {
-        setInstallLog(prev => [...prev, '[error] Installation failed. Check the output above.']);
+        setInstallError(result.stderr || 'Installation failed. Check the log above.');
       }
     } catch (e) {
-      setInstallLog(prev => [...prev, `[error] ${String(e)}`]);
+      setInstallError(e instanceof Error ? e.message : String(e));
     } finally {
       setInstalling(false);
     }
-  };
+  }
 
-  // For API-key providers
-  const saveKeyAndFinish = async () => {
-    if (!provider || !apiKey.trim()) return;
-    setSavingKey(true);
-    try {
-      await writeEnv(provider.key, apiKey.trim());
-      const finalModel = modelName.trim() || provider.defaultModel;
-      await setModelConfig(provider.configProvider, finalModel, provider.baseUrl).catch(() => {});
-      await persist({ step: 5, api_key_saved: true });
-      setStep(5);
-      await startGateway().catch(() => {});
-      await writeFile(STATE_FILE, JSON.stringify({
-        step: 5, install_completed: true, api_key_saved: true,
-        providerId: provider.id, timestamp: new Date().toISOString()
-      })).catch(() => {});
-      setTimeout(onComplete, 1500);
-    } catch {
-      setSavingKey(false);
+  // ── Step 4: save API key + model config ──────────────────────────────────
+  async function handleSave() {
+    if (provider.needsKey && !apiKey.trim()) {
+      setSaveError('Please enter your API key.');
+      return;
     }
-  };
-
-  // For Ollama: pull the model then finish
-  const runOllamaPull = async () => {
-    setPulling(true);
-    setPullLog([`Pulling ${ollamaModel.id}…`]);
+    setSaving(true);
+    setSaveError('');
     try {
-      const result = await streamOllamaPull(ollamaModel.id, (line) => {
-        setPullLog(prev => [...prev, line]);
-      });
-      if (result.success || result.stdout.includes('success') || pullLog.some(l => l.includes('success'))) {
-        setPullDone(true);
-        setPullLog(prev => [...prev, `✓ ${ollamaModel.id} ready`]);
-        setTimeout(() => goTo(5), 1200);
-      } else {
-        setPullLog(prev => [...prev, '[error] Pull may have failed. You can continue anyway.']);
-        setPullDone(true); // allow continue
+      if (provider.needsKey && provider.envKey) {
+        await writeEnv(provider.envKey, apiKey.trim());
+      } else if (isLocal && apiKey.trim()) {
+        await writeEnv('CUSTOM_API_KEY', apiKey.trim());
       }
+      const configProvider = isLocal ? 'custom' : provider.configProvider;
+      const configBase = isLocal ? baseUrl.trim() : provider.baseUrl;
+      await setModelConfig(configProvider, modelName.trim(), configBase);
+      localStorage.removeItem(STATE_KEY);
+      goTo('done');
     } catch (e) {
-      setPullLog(prev => [...prev, `[error] ${String(e)}`]);
-      setPullDone(true);
+      setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
-      setPulling(false);
+      setSaving(false);
     }
-  };
+  }
 
-  // For Ollama: finish without pulling (if model already exists)
-  const finishOllama = async () => {
-    setSavingKey(true);
-    try {
-      await setModelConfig('openai', ollamaModel.id, 'http://localhost:11434/v1').catch(() => {});
-      await persist({ step: 5, api_key_saved: true });
-      setStep(5);
-      await startGateway().catch(() => {});
-      await writeFile(STATE_FILE, JSON.stringify({
-        step: 5, install_completed: true, api_key_saved: true,
-        providerId: 'ollama', ollamaModel: ollamaModel.id, timestamp: new Date().toISOString()
-      })).catch(() => {});
-      setTimeout(onComplete, 1500);
-    } catch {
-      setSavingKey(false);
-    }
-  };
-
-  if (!resumeLoaded) return null;
-
-  const isOllama = provider?.id === 'ollama';
-  const stepLabels = isOllama
-    ? ['Environment', 'Install', 'Provider', 'Hardware', 'Download', 'Ready']
-    : ['Environment', 'Install', 'Provider', 'API Key', '', 'Ready'];
-  const progressDots = isOllama ? [0, 1, 2, 3, 4, 5] : [0, 1, 2, 3, 5];
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'var(--bg0)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-      <div style={{ width: 580, background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-        {/* Header */}
-        <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>Hermes Desktop Setup</div>
-          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 3 }}>
-            {stepLabels[step] ?? 'Done'}
-          </div>
-          {/* Progress dots */}
-          <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
-            {progressDots.map((s, i) => (
-              <div key={i} style={{
-                width: s === step ? 20 : 7, height: 7, borderRadius: 99,
-                background: s <= step ? 'var(--accent-green)' : 'var(--bg3)',
-                transition: 'all 0.2s'
-              }} />
-            ))}
+    <div style={{
+      position: 'fixed', inset: 0, background: 'var(--bg0)', display: 'flex',
+      alignItems: 'center', justifyContent: 'center', zIndex: 100,
+    }}>
+      <div style={{
+        width: '100%', maxWidth: 560, background: 'var(--bg1)',
+        border: '1px solid var(--border)', borderRadius: 16, padding: '36px 40px',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+      }}>
+        {/* Logo + title */}
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{
+            width: 52, height: 52, borderRadius: 14, margin: '0 auto 14px',
+            background: 'linear-gradient(135deg, #7c6af7 0%, #3b9eff 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 26, boxShadow: '0 8px 24px rgba(124,106,247,0.4)',
+          }}>🤖</div>
+          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em' }}>Hermes Desktop</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
+            {step === 'detect' && 'Checking environment…'}
+            {step === 'install' && 'Install Hermes Agent'}
+            {step === 'provider' && 'Choose your AI provider'}
+            {step === 'apikey' && 'Enter your API key'}
+            {step === 'done' && 'All set!'}
           </div>
         </div>
 
-        {/* Body */}
-        <div style={{ padding: '24px 28px', minHeight: 200 }}>
+        {/* ── detect ── */}
+        {step === 'detect' && (
+          <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '20px 0' }}>
+            <Loader2 size={28} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 12px' }} />
+            Checking for existing Hermes installation…
+          </div>
+        )}
 
-          {/* Step 0: Environment check */}
-          {step === 0 && (
-            <div>
-              <div style={{ marginBottom: 18 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'var(--bg2)', borderRadius: 'var(--radius-md)', marginBottom: 8 }}>
-                  <span style={{ color: installed ? 'var(--accent-green)' : 'var(--accent-red)', fontSize: 18 }}>{installed ? '✓' : '✕'}</span>
-                  <div>
-                    <div style={{ fontSize: 13.5, color: 'var(--text-primary)' }}>Hermes Agent — {installed ? 'installed' : 'not found'}</div>
-                    {!installed && <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>The Hermes CLI will be installed in the next step</div>}
+        {/* ── install ── */}
+        {step === 'install' && (
+          <>
+            <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.6 }}>
+              Hermes Agent is not yet installed. Click below to run the official Nous Research installer — it handles Python, dependencies, and the agent itself automatically.
+            </div>
+            {installLines.length > 0 && (
+              <pre style={{
+                background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 8,
+                padding: '10px 12px', fontSize: 11.5, lineHeight: 1.55, maxHeight: 200,
+                overflow: 'auto', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap',
+                marginBottom: 16,
+              }}>
+                {installLines.join('\n')}
+              </pre>
+            )}
+            {installError && (
+              <div style={{ color: 'var(--accent-red)', fontSize: 13, marginBottom: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <XCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                {installError}
+              </div>
+            )}
+            <button
+              className="btn btn-primary"
+              onClick={runInstall}
+              disabled={installing}
+              style={{ width: '100%', justifyContent: 'center', gap: 8, fontSize: 14 }}
+            >
+              {installing
+                ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />Installing…</>
+                : <><Download size={14} />Install Hermes Agent</>
+              }
+            </button>
+          </>
+        )}
+
+        {/* ── provider ── */}
+        {step === 'provider' && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 24 }}>
+              {PROVIDERS.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => { setSelectedProvider(p.id); saveState({ step: 'provider', provider: p.id }); }}
+                  style={{
+                    background: selectedProvider === p.id ? 'rgba(124,106,247,0.18)' : 'var(--bg2)',
+                    border: `1.5px solid ${selectedProvider === p.id ? '#7c6af7' : 'var(--border)'}`,
+                    borderRadius: 10, padding: '12px 14px', textAlign: 'left', cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{p.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.4 }}>{p.desc}</div>
+                  {p.tag && (
+                    <div style={{
+                      marginTop: 6, display: 'inline-block', fontSize: 10, fontWeight: 600,
+                      background: 'rgba(124,106,247,0.2)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px',
+                    }}>{p.tag}</div>
+                  )}
+                </button>
+              ))}
+            </div>
+            <button
+              className="btn btn-primary"
+              onClick={() => goTo('apikey')}
+              style={{ width: '100%', justifyContent: 'center', gap: 8, fontSize: 14 }}
+            >
+              Continue <ArrowRight size={14} />
+            </button>
+          </>
+        )}
+
+        {/* ── apikey ── */}
+        {step === 'apikey' && (
+          <>
+            <button
+              onClick={() => goTo('provider')}
+              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 20 }}
+            >
+              <ChevronLeft size={14} /> Back
+            </button>
+
+            {isLocal ? (
+              <>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Quick presets</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {LOCAL_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        onClick={() => setBaseUrl(preset.baseUrl)}
+                        style={{
+                          background: baseUrl === preset.baseUrl ? 'rgba(124,106,247,0.18)' : 'var(--bg2)',
+                          border: `1px solid ${baseUrl === preset.baseUrl ? '#7c6af7' : 'var(--border)'}`,
+                          borderRadius: 7, padding: '5px 12px', fontSize: 12.5, cursor: 'pointer', color: 'var(--text-primary)',
+                        }}
+                      >{preset.name}</button>
+                    ))}
                   </div>
                 </div>
-              </div>
-              {installed ? (
-                <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => goTo(2)}>
-                  Continue <ChevronRight size={14} />
-                </button>
-              ) : (
-                <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => goTo(1)}>
-                  Install Hermes Agent
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Step 1: Install */}
-          {step === 1 && (
-            <div>
-              <div style={{ background: 'var(--bg0)', borderRadius: 'var(--radius-md)', padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 220, overflowY: 'auto', marginBottom: 16 }}>
-                {installLog.map((l, i) => (
-                  <div key={i} style={{ color: l.includes('[error]') ? 'var(--accent-red)' : l.startsWith('✓') || l.startsWith('→') ? 'var(--accent-green)' : 'inherit' }}>{l}</div>
-                ))}
-                {installing && <div style={{ color: 'var(--accent-green)' }}>▌</div>}
-              </div>
-              {!installing && installLog.length === 0 && (
-                <button className="btn btn-primary" style={{ width: '100%' }} onClick={runInstall}>Start Installation</button>
-              )}
-              {installing && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)', fontSize: 13 }}>
-                  <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> Installing… this takes 2–5 minutes
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Step 2: Provider selection */}
-          {step === 2 && (
-            <div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>Choose your AI provider:</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
-                {PROVIDERS.map(p => (
-                  <button key={p.id} onClick={() => { setProvider(p); setModelName(p.defaultModel); }}
-                    style={{
-                      padding: '12px 14px', textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s',
-                      background: provider?.id === p.id ? 'var(--accent-green-dim)' : 'var(--bg2)',
-                      border: `1px solid ${provider?.id === p.id ? 'var(--accent-green)' : 'var(--border)'}`,
-                      borderRadius: 'var(--radius-md)',
-                    }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{p.label}</div>
-                      {p.local && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--accent-green-dim)', color: 'var(--accent-green)', borderRadius: 99, border: '1px solid var(--accent-green)' }}>Free</span>}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
-                      {p.local ? 'Runs locally, no internet needed' : p.defaultModel}
-                    </div>
-                  </button>
-                ))}
-              </div>
-              <button className="btn btn-primary" style={{ width: '100%' }} disabled={!provider}
-                onClick={async () => {
-                  await persist({ step: 3, providerId: provider?.id ?? null });
-                  goTo(3);
-                }}>
-                Continue <ChevronRight size={14} />
-              </button>
-            </div>
-          )}
-
-          {/* Step 3: API key (non-ollama) */}
-          {step === 3 && provider && !isOllama && (
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                {provider.label} API Key — <a href={provider.url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-blue)' }}>Get one here</a>
-              </div>
-              <div style={{ position: 'relative', marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 6 }}>Server URL</label>
                 <input
-                  type={showKey ? 'text' : 'password'}
-                  value={apiKey}
-                  onChange={e => setApiKey(e.target.value)}
-                  placeholder={provider.hint}
-                  className="input-field"
-                  style={{ paddingRight: 44, fontFamily: 'var(--font-mono)', fontSize: 13 }}
-                  autoFocus
+                  className="input"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="http://localhost:1234/v1"
+                  style={{ width: '100%', marginBottom: 14 }}
                 />
-                <button onClick={() => setShowKey(!showKey)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12 }}>
-                  {showKey ? 'hide' : 'show'}
-                </button>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Model name</div>
-              <input
-                type="text"
-                value={modelName}
-                onChange={e => setModelName(e.target.value)}
-                placeholder={provider.defaultModel}
-                className="input-field"
-                style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, marginBottom: 18 }}
-              />
-              <button className="btn btn-primary" style={{ width: '100%' }} disabled={!apiKey.trim() || savingKey} onClick={saveKeyAndFinish}>
-                {savingKey ? 'Saving...' : 'Save and Launch'}
-              </button>
-            </div>
-          )}
-
-          {/* Step 3: Ollama hardware check + model selection */}
-          {step === 3 && isOllama && (
-            <div>
-              {/* System info */}
-              <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
-                <div style={{ flex: 1, padding: '12px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Cpu size={16} style={{ color: 'var(--accent-green)', flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>CPU Cores</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{cpuCount ?? '—'}</div>
-                  </div>
+                <label style={{ display: 'block', fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Model name <span style={{ opacity: 0.5 }}>(optional)</span>
+                </label>
+                <input
+                  className="input"
+                  value={modelName}
+                  onChange={(e) => setModelName(e.target.value)}
+                  placeholder="e.g. llama-3.3-70b-instruct"
+                  style={{ width: '100%', marginBottom: 20 }}
+                />
+              </>
+            ) : (
+              <>
+                <label style={{ display: 'block', fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  {provider.name} API Key
+                </label>
+                <div style={{ position: 'relative', marginBottom: 8 }}>
+                  <input
+                    className="input"
+                    type={showKey ? 'text' : 'password'}
+                    value={apiKey}
+                    onChange={(e) => { setApiKey(e.target.value); setSaveError(''); }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+                    placeholder={provider.placeholder}
+                    autoFocus
+                    style={{ width: '100%', paddingRight: 44 }}
+                  />
+                  <button
+                    onClick={() => setShowKey(!showKey)}
+                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                  >
+                    {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
                 </div>
-                <div style={{ flex: 1, padding: '12px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <MemoryStick size={16} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>RAM</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{ramGb !== null ? `${ramGb} GB` : '—'}</div>
-                  </div>
-                </div>
-              </div>
+                {provider.url && (
+                  <a href={provider.url} target="_blank" rel="noreferrer"
+                    style={{ fontSize: 12.5, color: 'var(--accent-blue)', display: 'inline-flex', alignItems: 'center', gap: 4, marginBottom: 20, textDecoration: 'none' }}
+                  >
+                    Get your {provider.name} API key <ExternalLink size={11} />
+                  </a>
+                )}
+              </>
+            )}
 
-              {/* Model selection */}
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>Select a model to use:</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
-                {OLLAMA_MODELS.map(m => {
-                  const fits = ramGb !== null ? ramGb >= m.ram : true;
-                  return (
-                    <button key={m.id} onClick={() => setOllamaModel(m)}
-                      style={{
-                        padding: '12px 16px', textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s',
-                        background: ollamaModel.id === m.id ? 'var(--accent-green-dim)' : 'var(--bg2)',
-                        border: `1px solid ${ollamaModel.id === m.id ? 'var(--accent-green)' : 'var(--border)'}`,
-                        borderRadius: 'var(--radius-md)',
-                        opacity: fits ? 1 : 0.6,
-                      }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text-primary)' }}>{m.label}</div>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          {m.tag === 'recommended' && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--accent-green-dim)', color: 'var(--accent-green)', border: '1px solid var(--accent-green)', borderRadius: 99 }}>Recommended</span>}
-                          {!fits && <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--accent-amber-dim)', color: 'var(--accent-amber)', border: '1px solid var(--accent-amber)', borderRadius: 99 }}>Needs {m.ram}GB RAM</span>}
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 3 }}>{m.description}</div>
-                    </button>
-                  );
-                })}
+            {saveError && (
+              <div style={{ color: 'var(--accent-red)', fontSize: 13, marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <XCircle size={14} />{saveError}
               </div>
+            )}
+            <button
+              className="btn btn-primary"
+              onClick={handleSave}
+              disabled={saving || (provider.needsKey && !apiKey.trim()) || (isLocal && !baseUrl.trim())}
+              style={{ width: '100%', justifyContent: 'center', gap: 8, fontSize: 14 }}
+            >
+              {saving
+                ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />Saving…</>
+                : <>Save & Continue <ArrowRight size={14} /></>
+              }
+            </button>
+          </>
+        )}
 
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={finishOllama} disabled={savingKey}>
-                  Skip Download (already installed)
-                </button>
-                <button className="btn btn-primary" style={{ flex: 2 }}
-                  onClick={async () => { await persist({ step: 4, ollamaModel: ollamaModel.id }); goTo(4); }}>
-                  <Download size={14} /> Download Model
-                </button>
-              </div>
+        {/* ── done ── */}
+        {step === 'done' && (
+          <div style={{ textAlign: 'center' }}>
+            <CheckCircle2 size={48} style={{ color: 'var(--accent-green)', margin: '0 auto 16px' }} />
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Hermes is ready!</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 28, lineHeight: 1.6 }}>
+              Your provider and API key have been saved. Start the Gateway from the Gateway tab, then head to the Chat tab to start a conversation.
             </div>
-          )}
-
-          {/* Step 4: Ollama pull progress */}
-          {step === 4 && isOllama && (
-            <div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>
-                Downloading <span style={{ color: 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>{ollamaModel.id}</span>…
-              </div>
-              <div style={{ background: 'var(--bg0)', borderRadius: 'var(--radius-md)', padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 200, overflowY: 'auto', marginBottom: 16 }}>
-                {pullLog.map((l, i) => (
-                  <div key={i} style={{ color: l.startsWith('✓') ? 'var(--accent-green)' : l.includes('[error]') ? 'var(--accent-red)' : 'inherit' }}>{l}</div>
-                ))}
-                {pulling && <div style={{ color: 'var(--accent-green)' }}>▌</div>}
-              </div>
-              {!pulling && pullLog.length === 0 && (
-                <button className="btn btn-primary" style={{ width: '100%' }} onClick={runOllamaPull}>
-                  <Download size={14} /> Start Download
-                </button>
-              )}
-              {pulling && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)', fontSize: 13 }}>
-                  <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> Downloading model… this may take a while
-                </div>
-              )}
-              {pullDone && !pulling && (
-                <button className="btn btn-primary" style={{ width: '100%' }} onClick={finishOllama}>
-                  <Check size={14} /> Continue
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Step 5: Done */}
-          {step === 5 && (
-            <div style={{ textAlign: 'center', padding: '16px 0' }}>
-              <div style={{ fontSize: 40, marginBottom: 12, color: 'var(--accent-green)' }}>✓</div>
-              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, color: 'var(--text-primary)' }}>Hermes is ready</div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Starting gateway and entering the app…</div>
-            </div>
-          )}
-
-        </div>
+            <button
+              className="btn btn-primary"
+              onClick={onComplete}
+              style={{ width: '100%', justifyContent: 'center', gap: 8, fontSize: 14 }}
+            >
+              Open Hermes <ArrowRight size={14} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
