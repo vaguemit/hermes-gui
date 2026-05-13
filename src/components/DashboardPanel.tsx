@@ -87,12 +87,40 @@ export default function DashboardPanel() {
     setChatLoading(true);
     setChatResponse(null);
     setChatError(null);
-    const result = await runHermesCommand(['chat', '--message', trimmed], 60);
+
+    // Prefer HTTP API (same as chat panel) — faster and streaming-capable
+    if (isRunning) {
+      try {
+        const res = await fetch('http://localhost:8642/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: modelConfig?.model || 'auto',
+            messages: [{ role: 'user', content: trimmed }],
+            stream: false,
+          }),
+          signal: AbortSignal.timeout(60000),
+        });
+        if (res.ok) {
+          const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+          const text = data.choices?.[0]?.message?.content ?? '(no response)';
+          setChatResponse(text);
+          setMessage('');
+          setChatLoading(false);
+          return;
+        }
+      } catch {
+        // fall through to CLI fallback
+      }
+    }
+
+    // CLI fallback: hermes -z "prompt" (one-shot mode, correct flag per hermes --help)
+    const result = await runHermesCommand(['-z', trimmed], 60);
     setChatLoading(false);
     if (result.success) {
       setChatResponse(result.stdout || '(no output)');
     } else {
-      setChatError(result.stderr || result.stdout || 'Unknown error');
+      setChatError(result.stderr || result.stdout || 'Unknown error. Is the Gateway running?');
     }
     setMessage('');
   };

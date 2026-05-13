@@ -281,6 +281,37 @@ fn read_env_file(home: &Path) -> HashMap<String, String> {
     envs
 }
 
+/// Ensure config.yaml has the api_server platform enabled so the HTTP API
+/// runs on port 8642 every time the gateway starts (not just via env var).
+fn ensure_api_server_config(home: &Path) {
+    let config_path = home.join("config.yaml");
+    let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+
+    // Check if api_server section already exists and is enabled
+    if content.contains("api_server:") && content.contains("enabled: true") {
+        return; // already configured
+    }
+
+    // Patch: if platforms: section exists, insert api_server under it
+    // Otherwise append the whole block
+    let new_content = if content.contains("platforms:") {
+        // Replace "platforms:" line to inject api_server beneath it
+        content.replacen(
+            "platforms:",
+            "platforms:\n  api_server:\n    enabled: true\n    host: 127.0.0.1\n    port: 8642",
+            1,
+        )
+    } else {
+        // Append platforms block
+        format!(
+            "{}\nplatforms:\n  api_server:\n    enabled: true\n    host: 127.0.0.1\n    port: 8642\n",
+            content.trim_end()
+        )
+    };
+
+    let _ = std::fs::write(&config_path, new_content);
+}
+
 fn parse_model_config(content: &str) -> ModelConfig {
     let provider = content.lines()
         .find_map(|l| {
@@ -470,24 +501,36 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
         .lock()
         .map_err(|_| String::from("Gateway process lock is poisoned"))?;
 
+    // If we have a managed child that's still alive, it's already running
     if let Some(child) = lock.as_mut() {
         if child.try_wait().map_err(|err| err.to_string())?.is_none() {
             return Ok(CommandResult {
                 success: true,
                 code: None,
-                command: String::from("hermes gateway run"),
+                command: String::from("hermes gateway run --replace"),
                 stdout: String::from("Gateway is already managed by this desktop app."),
                 stderr: String::new(),
             });
         }
+        // Dead child — clear it so we respawn below
+        *lock = None;
     }
 
     let home = hermes_home();
+
+    // Ensure config.yaml has api_server enabled so it persists across restarts
+    ensure_api_server_config(&home);
+
     let mut cmd = Command::new(command_program());
-    cmd.args(["gateway", "run"])
+
+    // --replace: kill any existing gateway instance (stale PID file, previous crash, etc.)
+    // GATEWAY_ALLOW_ALL_USERS: the desktop is a local client, no allowlist needed
+    // API_SERVER_ENABLED: expose the HTTP API on :8642 so the chat UI can connect
+    cmd.args(["gateway", "run", "--replace", "--accept-hooks"])
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
-        .env("API_SERVER_ENABLED", "true");
+        .env("API_SERVER_ENABLED", "true")
+        .env("GATEWAY_ALLOW_ALL_USERS", "true");
 
     for (k, v) in read_env_file(&home) {
         cmd.env(k, v);
@@ -504,11 +547,12 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
     Ok(CommandResult {
         success: true,
         code: None,
-        command: String::from("hermes gateway run"),
-        stdout: String::from("Gateway process started. Health polling will mark it connected once port 8642 is ready."),
+        command: String::from("hermes gateway run --replace"),
+        stdout: String::from("Gateway starting… it will appear connected once port 8642 is ready (usually 3–5 seconds)."),
         stderr: String::new(),
     })
 }
+
 
 #[tauri::command]
 fn hermes_stop_gateway(state: tauri::State<GatewayState>) -> Result<CommandResult, String> {

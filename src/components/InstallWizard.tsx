@@ -21,46 +21,87 @@ interface ProviderDef {
   configProvider: string;
   baseUrl: string;
   needsKey: boolean;
+  steps?: { text: string; url?: string }[];
 }
 
 const PROVIDERS: ProviderDef[] = [
   {
-    id: 'openrouter', name: 'OpenRouter', tag: 'Recommended — 200+ models',
-    desc: 'Access hundreds of models through a single API key.',
+    id: 'openrouter', name: 'OpenRouter', tag: '⭐ Recommended — 200+ models',
+    desc: 'One key, hundreds of models. Best starting point.',
     envKey: 'OPENROUTER_API_KEY', url: 'https://openrouter.ai/keys',
     placeholder: 'sk-or-v1-...', configProvider: 'openrouter',
     baseUrl: 'https://openrouter.ai/api/v1', needsKey: true,
+    steps: [
+      { text: 'Go to openrouter.ai and create a free account', url: 'https://openrouter.ai' },
+      { text: 'Click "Keys" in the top-right menu', url: 'https://openrouter.ai/keys' },
+      { text: 'Click "Create Key", give it a name, and copy it' },
+      { text: 'Paste the key (starts with sk-or-v1-) below' },
+    ],
   },
   {
-    id: 'anthropic', name: 'Anthropic', desc: 'Direct Claude access.',
+    id: 'anthropic', name: 'Anthropic', desc: 'Claude Opus, Sonnet, Haiku. Best reasoning.',
     envKey: 'ANTHROPIC_API_KEY', url: 'https://console.anthropic.com/settings/keys',
     placeholder: 'sk-ant-...', configProvider: 'anthropic', baseUrl: '', needsKey: true,
+    steps: [
+      { text: 'Go to console.anthropic.com and sign in', url: 'https://console.anthropic.com' },
+      { text: 'Click "API Keys" in the left sidebar', url: 'https://console.anthropic.com/settings/keys' },
+      { text: 'Click "Create Key", name it, copy the sk-ant-... key' },
+      { text: 'Paste the key below' },
+    ],
   },
   {
-    id: 'openai', name: 'OpenAI', desc: 'Direct GPT model access.',
+    id: 'openai', name: 'OpenAI', desc: 'GPT-4o, o1, o3. Most widely supported.',
     envKey: 'OPENAI_API_KEY', url: 'https://platform.openai.com/api-keys',
     placeholder: 'sk-...', configProvider: 'openai', baseUrl: '', needsKey: true,
+    steps: [
+      { text: 'Go to platform.openai.com and sign in', url: 'https://platform.openai.com' },
+      { text: 'Click your profile → "API keys"', url: 'https://platform.openai.com/api-keys' },
+      { text: 'Click "Create new secret key" and copy it' },
+      { text: 'Paste the key (starts with sk-) below' },
+    ],
   },
   {
-    id: 'google', name: 'Google (Gemini)', desc: 'Gemini models via AI Studio.',
+    id: 'google', name: 'Google Gemini', desc: 'Gemini 2.0 Flash is fast and free.',
     envKey: 'GOOGLE_API_KEY', url: 'https://aistudio.google.com/app/apikey',
     placeholder: 'AIza...', configProvider: 'google', baseUrl: '', needsKey: true,
+    steps: [
+      { text: 'Go to Google AI Studio and sign in', url: 'https://aistudio.google.com' },
+      { text: 'Click "Get API key" on the left', url: 'https://aistudio.google.com/app/apikey' },
+      { text: 'Click "Create API key in new project"' },
+      { text: 'Copy the AIza... key and paste it below' },
+    ],
   },
   {
-    id: 'xai', name: 'xAI (Grok)', desc: 'Grok models.',
+    id: 'xai', name: 'xAI (Grok)', desc: 'Grok 3, Grok Vision.',
     envKey: 'XAI_API_KEY', url: 'https://console.x.ai',
     placeholder: 'xai-...', configProvider: 'xai', baseUrl: '', needsKey: true,
+    steps: [
+      { text: 'Go to console.x.ai and sign in with your X account', url: 'https://console.x.ai' },
+      { text: 'Click "API Keys" → "Create API Key"' },
+      { text: 'Copy the xai-... key and paste it below' },
+    ],
   },
   {
-    id: 'nous', name: 'Nous Portal', tag: 'Free tier available',
+    id: 'nous', name: 'Nous Portal', tag: '🆓 Free tier available',
     desc: 'Run Hermes through the Nous research portal.',
-    envKey: '', url: '', placeholder: '', configProvider: 'nous', baseUrl: '', needsKey: false,
+    envKey: '', url: 'https://hermes-agent.nousresearch.com', placeholder: '', configProvider: 'nous', baseUrl: '', needsKey: false,
+    steps: [
+      { text: 'Sign in at hermes-agent.nousresearch.com', url: 'https://hermes-agent.nousresearch.com' },
+      { text: 'Your credentials are stored via hermes login — no key needed here' },
+      { text: 'Click Save & Continue to proceed' },
+    ],
   },
   {
-    id: 'local', name: 'Local / Custom', tag: 'No API key required',
-    desc: 'Connect to LM Studio, Ollama, vLLM, or any OpenAI-compatible server.',
+    id: 'local', name: 'Local / Custom', tag: '🔒 Fully private',
+    desc: 'LM Studio, Ollama, vLLM, or any OpenAI-compatible server.',
     envKey: '', url: '', placeholder: 'sk-...',
     configProvider: 'custom', baseUrl: 'http://localhost:1234/v1', needsKey: false,
+    steps: [
+      { text: 'Install LM Studio (easiest) or Ollama', url: 'https://lmstudio.ai' },
+      { text: 'Download a model inside the app (e.g. Llama 3.3 70B)' },
+      { text: 'Start the local server — LM Studio: click "Start Server" button' },
+      { text: 'Select a preset below or enter your custom server URL' },
+    ],
   },
 ];
 
@@ -70,6 +111,7 @@ const LOCAL_PRESETS = [
   { id: 'vllm', name: 'vLLM', baseUrl: 'http://localhost:8000/v1' },
   { id: 'llamacpp', name: 'llama.cpp', baseUrl: 'http://localhost:8080/v1' },
 ];
+
 
 // ── Step identifiers ──────────────────────────────────────────────────────────
 type Step = 'detect' | 'install' | 'provider' | 'apikey' | 'done';
@@ -315,6 +357,25 @@ export default function InstallWizard({ onComplete }: Props) {
             >
               <ChevronLeft size={14} /> Back
             </button>
+
+            {/* Setup steps */}
+            {provider.steps && provider.steps.length > 0 && (
+              <div style={{ marginBottom: 20, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 10 }}>How to get your {provider.name} key</div>
+                <ol style={{ margin: 0, paddingLeft: 18, listStyle: 'none', counterReset: 'steps' }}>
+                  {provider.steps.map((s, i) => (
+                    <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8, fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      <span style={{ minWidth: 20, height: 20, borderRadius: '50%', background: 'rgba(124,106,247,0.2)', color: '#a78bfa', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
+                      {s.url ? (
+                        <a href={s.url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-blue)', textDecoration: 'none' }}>{s.text} ↗</a>
+                      ) : (
+                        <span>{s.text}</span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
 
             {isLocal ? (
               <>
