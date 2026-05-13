@@ -730,33 +730,57 @@ fn chat_stream(
         };
 
         let reader = BufReader::new(response.into_reader());
+        let mut current_event_type = String::new();
+
         for line in reader.lines() {
             let line = match line {
                 Ok(l) => l,
                 Err(_) => break,
             };
-            if !line.starts_with("data: ") {
+
+            // Blank line = end of SSE block; reset event type
+            if line.is_empty() {
+                current_event_type.clear();
                 continue;
             }
-            let data = line.trim_start_matches("data: ");
-            if data == "[DONE]" {
-                let _ = app_handle.emit(&format!("chat-done-{}", eid), "");
-                return;
+
+            // Capture named event type
+            if let Some(et) = line.strip_prefix("event: ") {
+                current_event_type = et.trim().to_string();
+                continue;
             }
-            // Parse the SSE data as JSON and extract delta content
-            if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(data) {
-                // Check for embedded error
-                if let Some(err_msg) = chunk["error"]["message"].as_str() {
-                    emit_error(err_msg.to_string());
-                    return;
-                }
-                if let Some(content) = chunk["choices"][0]["delta"]["content"].as_str() {
-                    let _ = app_handle.emit(&format!("chat-chunk-{}", eid), content);
-                }
-                // finish_reason == "stop" → done (will be followed by [DONE] but handle it anyway)
-                if chunk["choices"][0]["finish_reason"].as_str() == Some("stop") {
-                    let _ = app_handle.emit(&format!("chat-done-{}", eid), "");
-                    return;
+
+            // Only process data: lines
+            if let Some(data) = line.strip_prefix("data: ") {
+                if current_event_type == "hermes.tool.progress" {
+                    if let Ok(payload) = serde_json::from_str::<serde_json::Value>(data) {
+                        let emoji = payload["emoji"].as_str().unwrap_or("🔧");
+                        let label = payload["label"].as_str()
+                            .or_else(|| payload["tool"].as_str())
+                            .unwrap_or("tool");
+                        let _ = app_handle.emit(
+                            &format!("tool-progress-{}", eid),
+                            format!("{} {}", emoji, label),
+                        );
+                    }
+                } else {
+                    if data == "[DONE]" {
+                        let _ = app_handle.emit(&format!("chat-done-{}", eid), "");
+                        return;
+                    }
+                    if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(data) {
+                        if let Some(err_msg) = chunk["error"]["message"].as_str() {
+                            emit_error(err_msg.to_string());
+                            return;
+                        }
+                        if let Some(content) = chunk["choices"][0]["delta"]["content"].as_str() {
+                            let _ = app_handle.emit(&format!("chat-chunk-{}", eid), content);
+                        }
+                        if chunk["choices"][0]["finish_reason"].as_str() == Some("stop") {
+                            let _ = app_handle.emit(&format!("chat-done-{}", eid), "");
+                            return;
+                        }
+                    }
                 }
             }
         }
