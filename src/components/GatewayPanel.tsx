@@ -1,7 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
-import { getGatewayStatus, startGateway as startGatewayNative, stopGateway as stopGatewayNative, writeEnv } from '../api/desktop';
+import { getGatewayStatus, runHermesCommand, startGateway as startGatewayNative, stopGateway as stopGatewayNative, writeEnv } from '../api/desktop';
+
+interface ToolPlatform {
+  id: string;
+  name: string;
+  description: string;
+}
+
+const TOOL_PLATFORMS: ToolPlatform[] = [
+  { id: 'browser',   name: 'Browser',          description: 'Chrome DevTools Protocol browser control' },
+  { id: 'web_search', name: 'Web Search',       description: 'Live web search and page retrieval' },
+  { id: 'shell',     name: 'Shell',             description: 'System shell command execution' },
+  { id: 'file',      name: 'File',              description: 'File read/write operations' },
+  { id: 'image_gen', name: 'Image Generation',  description: 'AI image generation' },
+];
+
+type ToolToggleState = {
+  enabled: boolean;
+  loading: boolean;
+  feedback: string | null; // 'ok' | error message
+};
 
 const PLATFORM_ICONS: Record<string, string> = {
   Telegram: 'TG',
@@ -34,6 +54,40 @@ export default function GatewayPanel() {
   const { platforms, gatewayStatus, setGatewayStatus } = useStore();
   const [configPlatform, setConfigPlatform] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [toolStates, setToolStates] = useState<Record<string, ToolToggleState>>(() =>
+    Object.fromEntries(
+      TOOL_PLATFORMS.map((t) => [t.id, { enabled: false, loading: false, feedback: null }])
+    )
+  );
+
+  const toggleTool = async (platformId: string, enable: boolean) => {
+    setToolStates((prev) => ({
+      ...prev,
+      [platformId]: { ...prev[platformId], loading: true, feedback: null },
+    }));
+    try {
+      const result = await runHermesCommand([
+        'config', 'set', `platforms.${platformId}.enabled`, enable ? 'true' : 'false',
+      ]);
+      setToolStates((prev) => ({
+        ...prev,
+        [platformId]: { enabled: result.success ? enable : prev[platformId].enabled, loading: false, feedback: result.success ? 'ok' : (result.stderr || result.stdout || 'Command failed') },
+      }));
+    } catch (err) {
+      setToolStates((prev) => ({
+        ...prev,
+        [platformId]: { ...prev[platformId], loading: false, feedback: err instanceof Error ? err.message : 'IPC unavailable in browser mode' },
+      }));
+    }
+    // Clear feedback after 3 seconds
+    setTimeout(() => {
+      setToolStates((prev) => ({
+        ...prev,
+        [platformId]: { ...prev[platformId], feedback: null },
+      }));
+    }, 3000);
+  };
+
   const [gatewayLog, setGatewayLog] = useState<string[]>([
     '[ready] Desktop gateway controls initialized',
     '[ready] Health endpoint: http://127.0.0.1:8642/health',
@@ -122,6 +176,46 @@ export default function GatewayPanel() {
             </div>
           </div>
           {isConnected && <span className="badge badge-success"><CheckCircle2 size={11} /> Healthy</span>}
+        </div>
+
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tools</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+          {TOOL_PLATFORMS.map((tool) => {
+            const ts = toolStates[tool.id];
+            return (
+              <div
+                key={tool.id}
+                style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 12 }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{tool.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 1 }}>{tool.description}</div>
+                </div>
+                {ts.feedback && ts.feedback !== 'ok' && (
+                  <div style={{ fontSize: 11, color: 'var(--accent-red)', maxWidth: 180, textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={ts.feedback}>
+                    {ts.feedback}
+                  </div>
+                )}
+                {ts.feedback === 'ok' && (
+                  <div style={{ fontSize: 11, color: 'var(--accent-green)' }}>Saved</div>
+                )}
+                <span
+                  className={ts.enabled ? 'badge badge-connected' : 'badge badge-idle'}
+                  style={{ flexShrink: 0 }}
+                >
+                  {ts.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+                <button
+                  className={`btn btn-sm ${ts.enabled ? 'btn-danger' : 'btn-ghost'}`}
+                  disabled={ts.loading}
+                  onClick={() => toggleTool(tool.id, !ts.enabled)}
+                  style={{ flexShrink: 0, opacity: ts.loading ? 0.6 : 1 }}
+                >
+                  {ts.loading ? '...' : ts.enabled ? 'Disable' : 'Enable'}
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Platform Connections</div>

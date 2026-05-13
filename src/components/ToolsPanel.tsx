@@ -13,26 +13,26 @@ const TOOL_GROUPS = [
 
 function LiveToolCard({ tc }: { tc: { id: string; name: string; input: string; output?: string; status: string; timestamp: number } }) {
   const [expanded, setExpanded] = useState(false);
-  const statusColors: Record<string, string> = { pending: 'var(--text-muted)', running: 'var(--tool-blue)', done: 'var(--success)', error: 'var(--error)' };
-  const color = statusColors[tc.status] || 'var(--text-muted)';
+  const statusColors: Record<string, string> = { pending: 'var(--text-secondary)', running: 'var(--accent-blue)', done: 'var(--accent-green)', error: 'var(--accent-red)' };
+  const color = statusColors[tc.status] || 'var(--text-secondary)';
   return (
-    <div style={{ border: '1px solid var(--border)', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '9px 12px', marginBottom: 8, background: 'var(--bg-elevated)', fontSize: 12 }}>
+    <div style={{ border: '1px solid var(--border)', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '9px 12px', marginBottom: 8, background: 'var(--bg2)', fontSize: 12 }}>
       <button onClick={() => setExpanded(!expanded)} style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color }}>
         <Terminal size={12} />
-        <span style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 11.5, flex: 1, textAlign: 'left' }}>{tc.name}</span>
-        <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-muted)', marginRight: 4 }}>
+        <span style={{ fontWeight: 600, fontFamily: 'var(--font-mono)', fontSize: 11.5, flex: 1, textAlign: 'left' }}>{tc.name}</span>
+        <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', marginRight: 4 }}>
           {tc.status === 'running' && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
-          {tc.status === 'done' && <CheckCircle2 size={11} style={{ color: 'var(--success)' }} />}
-          {tc.status === 'error' && <XCircle size={11} style={{ color: 'var(--error)' }} />}
+          {tc.status === 'done' && <CheckCircle2 size={11} style={{ color: 'var(--accent-green)' }} />}
+          {tc.status === 'error' && <XCircle size={11} style={{ color: 'var(--accent-red)' }} />}
         </span>
-        {expanded ? <ChevronDown size={11} style={{ color: 'var(--text-muted)' }} /> : <ChevronRight size={11} style={{ color: 'var(--text-muted)' }} />}
+        {expanded ? <ChevronDown size={11} style={{ color: 'var(--text-secondary)' }} /> : <ChevronRight size={11} style={{ color: 'var(--text-secondary)' }} />}
       </button>
       {expanded && (
-        <div style={{ marginTop: 7, fontFamily: 'monospace', fontSize: 11 }}>
-          <div style={{ color: 'var(--text-muted)', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Input</div>
+        <div style={{ marginTop: 7, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Input</div>
           <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-secondary)', maxHeight: 80, overflowY: 'auto' }}>{tc.input.slice(0, 200)}</pre>
           {tc.output && <>
-            <div style={{ color: 'var(--text-muted)', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 7, marginBottom: 3 }}>Output</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 7, marginBottom: 3 }}>Output</div>
             <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-primary)', maxHeight: 80, overflowY: 'auto' }}>{tc.output.slice(0, 200)}</pre>
           </>}
         </div>
@@ -51,7 +51,7 @@ export default function ToolsPanel() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-surface)', borderLeft: '1px solid var(--border)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg1)', borderLeft: '1px solid var(--border)' }}>
       {/* Header */}
       <div style={{ padding: '14px 14px 0', borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10, paddingLeft: 2 }}>Tools</div>
@@ -65,7 +65,7 @@ export default function ToolsPanel() {
         {activeTab === 'live' && (
           <>
             {activeToolCalls.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 160, gap: 10, color: 'var(--text-muted)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 160, gap: 10, color: 'var(--text-secondary)' }}>
                 <Wrench size={24} style={{ opacity: 0.3 }} />
                 <span style={{ fontSize: 12 }}>No active tool calls</span>
               </div>
@@ -77,7 +77,7 @@ export default function ToolsPanel() {
 
         {activeTab === 'config' && (
           <div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>Toggle tool categories. Changes apply to new sessions.</div>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 10 }}>Toggle tool categories. Changes apply to new sessions.</div>
             {toolGroups.map((g, idx) => (
               <div key={g.name} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ flex: 1 }}>
@@ -85,7 +85,7 @@ export default function ToolsPanel() {
                     <span style={{ fontSize: 14 }}>{g.icon}</span>
                     <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{g.name}</span>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{g.tools.join(', ')}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{g.tools.join(', ')}</div>
                 </div>
                 <label className="toggle" style={{ marginTop: 2 }}>
                   <input type="checkbox" checked={g.enabled} onChange={() => toggleGroup(idx)} />
