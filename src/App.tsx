@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useStore } from './store';
 import { checkHealth, startHealthPolling } from './api/hermes';
-import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand } from './api/desktop';
+import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus } from './api/desktop';
 import type { UpdateInfo } from './api/desktop';
 import Sidebar from './components/Sidebar';
 import ConversationPanel from './components/ConversationPanel';
@@ -67,6 +67,11 @@ export default function App() {
     });
     startHealthPolling();
   }, []);
+
+  // Mirror gateway status to system tray menu
+  useEffect(() => {
+    updateTrayStatus(gatewayStatus).catch(() => {});
+  }, [gatewayStatus]);
 
   // Check for updates after 3s
   useEffect(() => {
