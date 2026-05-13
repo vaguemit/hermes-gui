@@ -208,23 +208,26 @@ export default function ConversationPanel() {
       const { listen } = await import('@tauri-apps/api/event');
 
       await new Promise<void>((resolve, reject) => {
-        listen<{ event_id: string; type: string; content?: string; error?: string }>('chat-chunk', (ev) => {
-          if (ev.payload.event_id !== eventId) return;
-          if (aborted) { resolve(); return; }
-
-          if (ev.payload.type === 'delta' && ev.payload.content) {
-            accumulated += ev.payload.content;
+        Promise.all([
+          listen<string>(`chat-chunk-${eventId}`, (ev) => {
+            if (aborted) return;
+            accumulated += ev.payload;
             updateLastMessage({ content: accumulated, isStreaming: true });
-          } else if (ev.payload.type === 'done') {
+          }),
+          listen<string>(`chat-done-${eventId}`, () => {
+            if (aborted) return;
             updateLastMessage({ isStreaming: false });
             setAgentState('idle');
+            cleanup();
             resolve();
-          } else if (ev.payload.type === 'error') {
-            reject(new Error(ev.payload.error || 'Unknown gateway error'));
-          }
-        }).then(u => {
-          cleanupRef.fn = u;
-          // Start the stream (fire IPC — Rust picks it up in a thread)
+          }),
+          listen<string>(`chat-error-${eventId}`, (ev) => {
+            if (aborted) return;
+            cleanup();
+            reject(new Error(ev.payload || 'Unknown gateway error'));
+          }),
+        ]).then(([u1, u2, u3]) => {
+          cleanupRef.fn = () => { u1(); u2(); u3(); };
           chatStream(eventId, history, activeModel).catch(reject);
         }).catch(reject);
       });

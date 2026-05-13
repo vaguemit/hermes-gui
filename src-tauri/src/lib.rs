@@ -687,14 +687,6 @@ fn hermes_gateway_status(_state: tauri::State<GatewayState>) -> Result<bool, Str
 // The Tauri WebView cannot fetch() http://localhost:8642 due to origin restrictions.
 // We proxy the SSE stream through Rust (no such restrictions) and emit events back.
 
-#[derive(Serialize, Clone)]
-struct ChatChunk {
-    event_id: String,
-    #[serde(rename = "type")]
-    kind: String, // "delta" | "done" | "error"
-    content: Option<String>,
-    error: Option<String>,
-}
 
 #[tauri::command]
 fn chat_stream(
@@ -713,12 +705,7 @@ fn chat_stream(
         });
 
         let emit_error = |msg: String| {
-            let _ = app_handle.emit("chat-chunk", ChatChunk {
-                event_id: eid.clone(),
-                kind: "error".into(),
-                content: None,
-                error: Some(msg),
-            });
+            let _ = app_handle.emit(&format!("chat-error-{}", eid), msg);
         };
 
         let response = match ureq::post(url)
@@ -753,12 +740,7 @@ fn chat_stream(
             }
             let data = line.trim_start_matches("data: ");
             if data == "[DONE]" {
-                let _ = app_handle.emit("chat-chunk", ChatChunk {
-                    event_id: eid.clone(),
-                    kind: "done".into(),
-                    content: None,
-                    error: None,
-                });
+                let _ = app_handle.emit(&format!("chat-done-{}", eid), "");
                 return;
             }
             // Parse the SSE data as JSON and extract delta content
@@ -769,32 +751,17 @@ fn chat_stream(
                     return;
                 }
                 if let Some(content) = chunk["choices"][0]["delta"]["content"].as_str() {
-                    let _ = app_handle.emit("chat-chunk", ChatChunk {
-                        event_id: eid.clone(),
-                        kind: "delta".into(),
-                        content: Some(content.to_string()),
-                        error: None,
-                    });
+                    let _ = app_handle.emit(&format!("chat-chunk-{}", eid), content);
                 }
                 // finish_reason == "stop" → done (will be followed by [DONE] but handle it anyway)
                 if chunk["choices"][0]["finish_reason"].as_str() == Some("stop") {
-                    let _ = app_handle.emit("chat-chunk", ChatChunk {
-                        event_id: eid.clone(),
-                        kind: "done".into(),
-                        content: None,
-                        error: None,
-                    });
+                    let _ = app_handle.emit(&format!("chat-done-{}", eid), "");
                     return;
                 }
             }
         }
         // Stream ended without [DONE] — emit done anyway
-        let _ = app_handle.emit("chat-chunk", ChatChunk {
-            event_id: eid,
-            kind: "done".into(),
-            content: None,
-            error: None,
-        });
+        let _ = app_handle.emit(&format!("chat-done-{}", eid), "");
     });
     Ok(())
 }
