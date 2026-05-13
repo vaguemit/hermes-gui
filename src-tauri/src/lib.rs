@@ -30,6 +30,7 @@ struct HermesInstallStatus {
     binary_path: Option<String>,
     platform: String,
     last_error: Option<String>,
+    model_configured: bool,
 }
 
 #[derive(Serialize)]
@@ -45,6 +46,13 @@ struct CommandResult {
 struct ApiKeyStatus {
     has_keys: bool,
     providers: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct ModelConfig {
+    provider: String,
+    model: String,
+    base_url: String,
 }
 
 #[derive(Serialize)]
@@ -241,6 +249,28 @@ fn read_env_file(home: &Path) -> HashMap<String, String> {
     envs
 }
 
+fn parse_model_config(content: &str) -> ModelConfig {
+    let provider = content.lines()
+        .find_map(|l| {
+            let t = l.trim();
+            t.strip_prefix("provider:").map(|v| v.trim().trim_matches('"').trim_matches('\'').to_string())
+        })
+        .unwrap_or_else(|| "auto".to_string());
+    let model = content.lines()
+        .find_map(|l| {
+            let t = l.trim();
+            t.strip_prefix("default:").map(|v| v.trim().trim_matches('"').trim_matches('\'').to_string())
+        })
+        .unwrap_or_default();
+    let base_url = content.lines()
+        .find_map(|l| {
+            let t = l.trim();
+            t.strip_prefix("base_url:").map(|v| v.trim().trim_matches('"').trim_matches('\'').to_string())
+        })
+        .unwrap_or_default();
+    ModelConfig { provider, model, base_url }
+}
+
 fn api_healthy() -> bool {
     let addr: SocketAddr = match "127.0.0.1:8642".parse() {
         Ok(addr) => addr,
@@ -340,6 +370,15 @@ fn hermes_install_status() -> HermesInstallStatus {
         }
     });
 
+    let config_yaml = home.join("config.yaml");
+    let model_configured = if config_yaml.is_file() {
+        let content = std::fs::read_to_string(&config_yaml).unwrap_or_default();
+        let mc = parse_model_config(&content);
+        !mc.model.is_empty()
+    } else {
+        false
+    };
+
     HermesInstallStatus {
         installed: binary.is_some() || repo.is_dir(),
         configured,
@@ -352,6 +391,7 @@ fn hermes_install_status() -> HermesInstallStatus {
         binary_path: binary.map(|p| p.to_string_lossy().to_string()),
         platform: env::consts::OS.to_string(),
         last_error,
+        model_configured,
     }
 }
 
@@ -743,6 +783,62 @@ fn run_hermes_doctor() -> Result<DoctorResult, String> {
 }
 
 #[tauri::command]
+fn get_model_config() -> ModelConfig {
+    let content = std::fs::read_to_string(hermes_home().join("config.yaml")).unwrap_or_default();
+    parse_model_config(&content)
+}
+
+#[tauri::command]
+fn set_model_config(provider: String, model: String, base_url: String) -> Result<(), String> {
+    let path = hermes_home().join("config.yaml");
+    if let Some(p) = path.parent() {
+        std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+    }
+
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+
+    // If config has no provider field yet, write a fresh minimal config
+    if !existing.lines().any(|l| l.trim().starts_with("provider:")) {
+        let content = format!(
+            "model:\n  provider: \"{}\"\n  default: \"{}\"\n  base_url: \"{}\"\nsmart_model_routing:\n  enabled: false\nstreaming: true\n",
+            provider, model, base_url
+        );
+        return std::fs::write(&path, content).map_err(|e| e.to_string());
+    }
+
+    // Patch existing config in-place
+    let mut lines: Vec<String> = existing.lines().map(String::from).collect();
+    let mut provider_done = false;
+    let mut model_done = false;
+    let mut base_url_done = false;
+
+    for line in &mut lines {
+        let trimmed = line.trim();
+        let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+        if !provider_done && trimmed.starts_with("provider:") {
+            *line = format!("{}provider: \"{}\"", indent, provider);
+            provider_done = true;
+        } else if !model_done && trimmed.starts_with("default:") {
+            *line = format!("{}default: \"{}\"", indent, model);
+            model_done = true;
+        } else if !base_url_done && trimmed.starts_with("base_url:") {
+            *line = format!("{}base_url: \"{}\"", indent, base_url);
+            base_url_done = true;
+        }
+    }
+
+    // If base_url wasn't found and we have one, insert after the provider line
+    if !base_url_done && !base_url.is_empty() {
+        if let Some(pos) = lines.iter().position(|l| l.trim().starts_with("provider:")) {
+            let indent: String = lines[pos].chars().take_while(|c| c.is_whitespace()).collect();
+            lines.insert(pos + 1, format!("{}base_url: \"{}\"", indent, base_url));
+        }
+    }
+
+    std::fs::write(&path, lines.join("\n") + "\n").map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn check_update() -> Result<UpdateInfo, String> {
     let current_version = hermes_binary().and_then(|bin| {
         run_command(bin, &[String::from("--version")], 8)
@@ -860,6 +956,8 @@ pub fn run() {
             read_file,
             write_file,
             run_hermes_doctor,
+            get_model_config,
+            set_model_config,
             check_update,
         ])
         .run(tauri::generate_context!())
