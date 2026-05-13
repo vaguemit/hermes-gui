@@ -208,7 +208,8 @@ async function _streamViaEvent<T>(
     listen<string>(eventId, (ev) => {
       if (ev.payload !== '__DONE__' && ev.payload !== '__TIMEOUT__') onLine(ev.payload);
     }).then((unlisten) => {
-      invoke<T>(commandName, { ...commandArgs, event_id: eventId })
+      // Tauri v2: JS must use camelCase keys — the framework converts them to snake_case for Rust
+      invoke<T>(commandName, { ...commandArgs, eventId })
         .then((r) => { unlisten(); resolve(r); })
         .catch((e) => { unlisten(); reject(e); });
     }).catch(reject);
@@ -222,7 +223,7 @@ export async function streamHermesCommand(
 ): Promise<CommandResult> {
   return _streamViaEvent<CommandResult>(
     'hermes_stream_command',
-    { args, timeout_secs: timeoutSecs },
+    { args, timeoutSecs },
     onLine,
     browserOnlyResult(['hermes', ...args].join(' ')),
   );
