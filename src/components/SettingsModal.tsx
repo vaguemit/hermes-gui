@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff } from 'lucide-react';
+import { readEnv, writeEnv } from '../api/desktop';
 
 const PROVIDERS_KEYS = [
   { label: 'OpenAI', key: 'OPENAI_API_KEY', hint: 'sk-...' },
@@ -11,23 +12,27 @@ const PROVIDERS_KEYS = [
   { label: 'Nous Portal', key: 'NOUS_API_KEY', hint: 'np-...' },
 ];
 
-function MaskedInput({ placeholder, id }: { placeholder: string; id: string }) {
+function MaskedInput({ placeholder, id, value, onChange }: {
+  placeholder: string;
+  id: string;
+  value: string;
+  onChange: (val: string) => void;
+}) {
   const [show, setShow] = useState(false);
-  const [val, setVal] = useState('');
   return (
     <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
       <input
         id={id}
         type={show ? 'text' : 'password'}
-        value={val}
-        onChange={e => setVal(e.target.value)}
+        value={value}
+        onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         className="input-field"
         style={{ paddingRight: 38 }}
       />
       <button
         onClick={() => setShow(!show)}
-        style={{ position: 'absolute', right: 10, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+        style={{ position: 'absolute', right: 10, background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
       >
         {show ? <EyeOff size={14} /> : <Eye size={14} />}
       </button>
@@ -49,6 +54,38 @@ export default function SettingsModal() {
   const [tab, setTab] = useState<SettingsTab>('api-keys');
   const [workingDir, setWorkingDir] = useState('~/workspace');
   const [terminalBackend, setTerminalBackend] = useState('Local');
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+
+  useEffect(() => {
+    if (settingsOpen && tab === 'api-keys') {
+      readEnv().then(env => {
+        const keys: Record<string, string> = {};
+        PROVIDERS_KEYS.forEach(p => { if (env[p.key]) keys[p.key] = env[p.key]; });
+        setApiKeys(keys);
+      }).catch(() => {});
+    }
+  }, [settingsOpen, tab]);
+
+  const saveApiKeys = async () => {
+    setSaving(true);
+    setSaveMsg('');
+    try {
+      for (const p of PROVIDERS_KEYS) {
+        const val = apiKeys[p.key];
+        if (val && val.trim()) {
+          await writeEnv(p.key, val.trim());
+        }
+      }
+      setSaveMsg('Saved');
+    } catch {
+      setSaveMsg('Error saving');
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSaveMsg(''), 2500);
+    }
+  };
 
   if (!settingsOpen) return null;
 
@@ -57,13 +94,13 @@ export default function SettingsModal() {
       <div
         className="animate-in"
         onClick={e => e.stopPropagation()}
-        style={{ width: 680, maxHeight: '80vh', background: 'var(--bg-elevated)', border: '1px solid var(--border-bright)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 32px 80px rgba(0,0,0,0.8)', display: 'flex', flexDirection: 'column' }}
+        style={{ width: 680, maxHeight: '80vh', background: 'var(--bg2)', border: '1px solid var(--border-active)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 32px 80px rgba(0,0,0,0.8)', display: 'flex', flexDirection: 'column' }}
       >
         {/* Header */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <Settings size={18} style={{ color: 'var(--accent)' }} />
+          <Settings size={18} style={{ color: 'var(--accent-green)' }} />
           <span style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>Settings</span>
-          <button onClick={() => setSettingsOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={17} /></button>
+          <button onClick={() => setSettingsOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><X size={17} /></button>
         </div>
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -86,21 +123,21 @@ export default function SettingsModal() {
             {tab === 'api-keys' && (
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>API Keys</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 18 }}>Stored in ~/.hermes/.env — never logged or transmitted</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Stored in ~/.hermes/.env — never logged or transmitted</div>
                 {PROVIDERS_KEYS.map((p) => (
                   <div key={p.key} style={{ marginBottom: 14 }}>
                     <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>{p.label}</label>
-                    <MaskedInput id={`key-${p.key}`} placeholder={p.hint} />
+                    <MaskedInput id={`key-${p.key}`} placeholder={p.hint} value={apiKeys[p.key] || ''} onChange={val => setApiKeys(prev => ({ ...prev, [p.key]: val }))} />
                   </div>
                 ))}
-                <button className="btn-primary" style={{ marginTop: 8, fontSize: 13 }}>Save API Keys</button>
+                <button className="btn btn-primary" onClick={saveApiKeys} disabled={saving} style={{ marginTop: 8, fontSize: 13 }}>{saving ? 'Saving...' : saveMsg || 'Save API Keys'}</button>
               </div>
             )}
 
             {tab === 'personality' && (
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Personality</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 18 }}>Hermes personality files from ~/.hermes/personalities/</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Hermes personality files from ~/.hermes/personalities/</div>
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Active Personality</label>
                   <select className="input-field" style={{ cursor: 'pointer' }}>
@@ -119,41 +156,41 @@ export default function SettingsModal() {
                     defaultValue="# Hermes Personality\n\nYou are Hermes, a powerful AI agent..."
                   />
                 </div>
-                <button className="btn-primary" style={{ marginTop: 10, fontSize: 13 }}>Save Personality</button>
+                <button className="btn btn-primary" style={{ marginTop: 10, fontSize: 13 }}>Save Personality</button>
               </div>
             )}
 
             {tab === 'memory' && (
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Memory</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 18 }}>Agent memory files and nudge settings</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Agent memory files and nudge settings</div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 500 }}>Memory Nudges</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Hermes proactively recalls relevant memories</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Hermes proactively recalls relevant memories</div>
                   </div>
                   <label className="toggle"><input type="checkbox" defaultChecked /><span className="toggle-slider" /></label>
                 </div>
                 <div style={{ marginBottom: 12 }}>
                   <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>MEMORY.md (read-only)</label>
-                  <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontFamily: 'monospace', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 140, overflowY: 'auto' }}>
+                  <div style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontFamily: 'monospace', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 140, overflowY: 'auto' }}>
                     # Memory{'\n\n'}No memories recorded yet. Hermes will populate this automatically.
                   </div>
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>USER.md</label>
-                  <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontFamily: 'monospace', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 100, overflowY: 'auto' }}>
+                  <div style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontFamily: 'monospace', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 100, overflowY: 'auto' }}>
                     # User Profile{'\n\n'}No user profile recorded yet.
                   </div>
                 </div>
-                <button className="btn-ghost" style={{ marginTop: 12, fontSize: 12.5 }}>Open in System Editor</button>
+                <button className="btn btn-ghost" style={{ marginTop: 12, fontSize: 12.5 }}>Open in System Editor</button>
               </div>
             )}
 
             {tab === 'workspace' && (
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Workspace</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 18 }}>Working directory and execution environment</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Working directory and execution environment</div>
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Working Directory</label>
                   <input className="input-field" value={workingDir} onChange={e => setWorkingDir(e.target.value)} style={{ fontFamily: 'monospace' }} />
@@ -168,9 +205,9 @@ export default function SettingsModal() {
                     <option>Modal</option>
                     <option>Singularity</option>
                   </select>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Controls where Hermes executes shell commands</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Controls where Hermes executes shell commands</div>
                 </div>
-                <button className="btn-primary" style={{ fontSize: 13 }}>Save Workspace Config</button>
+                <button className="btn btn-primary" style={{ fontSize: 13 }}>Save Workspace Config</button>
               </div>
             )}
           </div>

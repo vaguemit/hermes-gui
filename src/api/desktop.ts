@@ -20,6 +20,30 @@ export interface CommandResult {
   stderr: string;
 }
 
+export interface ApiKeyStatus {
+  has_keys: boolean;
+  providers: string[];
+}
+
+export interface DoctorCheck {
+  name: string;
+  passed: boolean;
+  message: string;
+}
+
+export interface DoctorResult {
+  ok: boolean;
+  checks: DoctorCheck[];
+  raw: string;
+}
+
+export interface UpdateInfo {
+  current_version: string | null;
+  latest_version: string | null;
+  update_available: boolean;
+  release_url: string | null;
+}
+
 function hasTauriBridge(): boolean {
   return typeof window !== 'undefined' && Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
 }
@@ -75,4 +99,59 @@ export async function stopGateway(): Promise<CommandResult> {
 export async function getGatewayStatus(): Promise<boolean> {
   if (!hasTauriBridge()) return false;
   return invoke<boolean>('hermes_gateway_status');
+}
+
+export async function detectApiKeys(): Promise<ApiKeyStatus> {
+  if (!hasTauriBridge()) return { has_keys: false, providers: [] };
+  return invoke<ApiKeyStatus>('detect_api_keys');
+}
+
+export async function readEnv(): Promise<Record<string, string>> {
+  if (!hasTauriBridge()) return {};
+  return invoke<Record<string, string>>('read_env');
+}
+
+export async function writeEnv(key: string, value: string): Promise<void> {
+  if (!hasTauriBridge()) return;
+  return invoke<void>('write_env', { key, value });
+}
+
+export async function readConfig(): Promise<string> {
+  if (!hasTauriBridge()) return '';
+  return invoke<string>('read_config');
+}
+
+export async function writeConfig(content: string): Promise<void> {
+  if (!hasTauriBridge()) return;
+  return invoke<void>('write_config', { content });
+}
+
+export async function readFile(relPath: string): Promise<string> {
+  if (!hasTauriBridge()) return '';
+  return invoke<string>('read_file', { rel_path: relPath });
+}
+
+export async function writeFile(relPath: string, content: string): Promise<void> {
+  if (!hasTauriBridge()) return;
+  return invoke<void>('write_file', { rel_path: relPath, content });
+}
+
+export async function runHermesDoctor(): Promise<DoctorResult> {
+  if (!hasTauriBridge()) return { ok: false, checks: [], raw: 'Tauri not available' };
+  return invoke<DoctorResult>('run_hermes_doctor');
+}
+
+export async function checkUpdate(): Promise<UpdateInfo> {
+  if (!hasTauriBridge()) return { current_version: null, latest_version: null, update_available: false, release_url: null };
+  return invoke<UpdateInfo>('check_update');
+}
+
+export async function toggleAutostart(enable: boolean): Promise<void> {
+  if (!hasTauriBridge()) return;
+  return invoke<void>(enable ? 'plugin:autostart|enable' : 'plugin:autostart|disable');
+}
+
+export async function getAutostartEnabled(): Promise<boolean> {
+  if (!hasTauriBridge()) return false;
+  return invoke<boolean>('plugin:autostart|is_enabled');
 }

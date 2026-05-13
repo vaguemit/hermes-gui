@@ -25,3 +25,5 @@ dist-ssr
 
 # Local AI context — never commit
 CLAUDE.md
+# Added by code-review-graph
+.code-review-graph/

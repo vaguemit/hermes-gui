@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::{
+    collections::HashMap,
     env,
     ffi::OsString,
     net::{SocketAddr, TcpStream},
@@ -8,6 +9,11 @@ use std::{
     sync::Mutex,
     thread,
     time::{Duration, Instant},
+};
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager,
 };
 
 struct GatewayState(Mutex<Option<Child>>);
@@ -32,6 +38,34 @@ struct CommandResult {
     command: String,
     stdout: String,
     stderr: String,
+}
+
+#[derive(Serialize)]
+struct ApiKeyStatus {
+    has_keys: bool,
+    providers: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct DoctorCheck {
+    name: String,
+    passed: bool,
+    message: String,
+}
+
+#[derive(Serialize)]
+struct DoctorResult {
+    ok: bool,
+    checks: Vec<DoctorCheck>,
+    raw: String,
+}
+
+#[derive(Serialize)]
+struct UpdateInfo {
+    current_version: Option<String>,
+    latest_version: Option<String>,
+    update_available: bool,
+    release_url: Option<String>,
 }
 
 fn env_path(name: &str) -> Option<PathBuf> {
@@ -248,6 +282,8 @@ fn run_command(program: PathBuf, args: &[String], timeout_secs: u64) -> Result<C
     }
 }
 
+// ── Existing commands ─────────────────────────────────────────────────────────
+
 #[tauri::command]
 fn hermes_install_status() -> HermesInstallStatus {
     let home = hermes_home();
@@ -415,18 +451,243 @@ fn hermes_gateway_status(state: tauri::State<GatewayState>) -> Result<bool, Stri
     Ok(api_healthy())
 }
 
+// ── New commands ──────────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn detect_api_keys() -> ApiKeyStatus {
+    let env_file = hermes_home().join(".env");
+    let known = [
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "NVIDIA_API_KEY",
+        "GOOGLE_API_KEY",
+        "NOUS_API_KEY",
+    ];
+    let content = std::fs::read_to_string(&env_file).unwrap_or_default();
+    let providers: Vec<String> = known
+        .iter()
+        .filter(|k| {
+            let prefix = format!("{}=", k);
+            content
+                .lines()
+                .find(|l| l.starts_with(&prefix))
+                .map(|l| !l[prefix.len()..].trim().trim_matches('"').is_empty())
+                .unwrap_or(false)
+        })
+        .map(|k| k.to_string())
+        .collect();
+    ApiKeyStatus { has_keys: !providers.is_empty(), providers }
+}
+
+#[tauri::command]
+fn read_env() -> HashMap<String, String> {
+    let path = hermes_home().join(".env");
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut map = HashMap::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(idx) = line.find('=') {
+            let key = line[..idx].trim().to_string();
+            let val = line[idx + 1..].trim().trim_matches('"').to_string();
+            map.insert(key, val);
+        }
+    }
+    map
+}
+
+#[tauri::command]
+fn write_env(key: String, value: String) -> Result<(), String> {
+    let path = hermes_home().join(".env");
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = content.lines().map(String::from).collect();
+    let prefix = format!("{}=", key);
+    let new_line = format!("{}={}", key, value);
+    let mut found = false;
+    for line in &mut lines {
+        if line.starts_with(&prefix) {
+            *line = new_line.clone();
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        lines.push(new_line);
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, lines.join("\n") + "\n").map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn read_config() -> Result<String, String> {
+    std::fs::read_to_string(hermes_home().join("config.yaml")).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_config(content: String) -> Result<(), String> {
+    let path = hermes_home().join("config.yaml");
+    if let Some(p) = path.parent() {
+        std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn read_file(rel_path: String) -> Result<String, String> {
+    std::fs::read_to_string(hermes_home().join(&rel_path)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_file(rel_path: String, content: String) -> Result<(), String> {
+    let path = hermes_home().join(&rel_path);
+    if let Some(p) = path.parent() {
+        std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn run_hermes_doctor() -> Result<DoctorResult, String> {
+    let result = run_command(command_program(), &[String::from("doctor")], 30)?;
+    let raw = format!("{}\n{}", result.stdout.trim(), result.stderr.trim())
+        .trim()
+        .to_string();
+    let checks = raw
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            let t = l.trim();
+            let passed = t.starts_with('✓')
+                || t.starts_with("OK")
+                || t.to_lowercase().contains(": ok")
+                || t.to_lowercase().contains("pass");
+            DoctorCheck { name: t.to_string(), passed, message: t.to_string() }
+        })
+        .collect();
+    Ok(DoctorResult { ok: result.success, checks, raw })
+}
+
+#[tauri::command]
+fn check_update() -> Result<UpdateInfo, String> {
+    let current_version = hermes_binary().and_then(|bin| {
+        run_command(bin, &[String::from("--version")], 8)
+            .ok()
+            .filter(|r| r.success)
+            .map(|r| {
+                if r.stdout.trim().is_empty() {
+                    r.stderr.trim().to_string()
+                } else {
+                    r.stdout.trim().to_string()
+                }
+            })
+    });
+
+    let response = ureq::get(
+        "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest",
+    )
+    .set("User-Agent", "hermes-gui/0.1.0")
+    .call()
+    .map_err(|e| e.to_string())?;
+
+    let json: serde_json::Value = response.into_json().map_err(|e| e.to_string())?;
+    let latest_version = json["tag_name"].as_str().map(String::from);
+    let release_url = json["html_url"].as_str().map(String::from);
+    let update_available = matches!(
+        (&current_version, &latest_version),
+        (Some(c), Some(l)) if c != l
+    );
+    Ok(UpdateInfo { current_version, latest_version, update_available, release_url })
+}
+
+// ── App entry point ───────────────────────────────────────────────────────────
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(GatewayState(Mutex::new(None)))
+        .setup(|app| {
+            // System tray
+            let open_item = MenuItem::with_id(app, "open", "Open Hermes", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let sep = PredefinedMenuItem::separator(app)?;
+            let menu = Menu::with_items(app, &[&open_item, &sep, &quit_item])?;
+
+            TrayIconBuilder::new()
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .icon(app.default_window_icon().unwrap().clone())
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "open" => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // Global shortcut Ctrl+Shift+H — toggle window visibility
+            use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+            let ctrl_shift_h =
+                Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyH);
+            app.global_shortcut().on_shortcut(ctrl_shift_h, |app, _shortcut, event| {
+                if event.state() == ShortcutState::Pressed {
+                    if let Some(window) = app.get_webview_window("main") {
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
+            })?;
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             hermes_install_status,
             hermes_run_command,
             hermes_install,
             hermes_start_gateway,
             hermes_stop_gateway,
-            hermes_gateway_status
+            hermes_gateway_status,
+            detect_api_keys,
+            read_env,
+            write_env,
+            read_config,
+            write_config,
+            read_file,
+            write_file,
+            run_hermes_doctor,
+            check_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

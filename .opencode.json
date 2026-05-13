@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "uvx",
+      "args": [
+        "code-review-graph",
+        "serve"
+      ],
+      "cwd": "C:\\Users\\Mit\\.gemini\\antigravity\\scratch\\hermes-gui",
+      "type": "stdio",
+      "env": []
+    }
+  }
+}
