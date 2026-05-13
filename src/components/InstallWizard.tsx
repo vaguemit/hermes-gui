@@ -1,22 +1,45 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronRight, Loader } from 'lucide-react';
-import { getHermesInstallStatus, installHermes, writeEnv, startGateway } from '../api/desktop';
+import { getHermesInstallStatus, streamInstallHermes, writeEnv, startGateway, readFile, writeFile } from '../api/desktop';
 
 const PROVIDERS = [
-  { id: 'openrouter', label: 'OpenRouter', key: 'OPENROUTER_API_KEY', hint: 'sk-or-...', url: 'https://openrouter.ai/keys' },
-  { id: 'openai', label: 'OpenAI', key: 'OPENAI_API_KEY', hint: 'sk-...', url: 'https://platform.openai.com/api-keys' },
-  { id: 'anthropic', label: 'Anthropic', key: 'ANTHROPIC_API_KEY', hint: 'sk-ant-...', url: 'https://console.anthropic.com/keys' },
-  { id: 'nvidia', label: 'NVIDIA NIM', key: 'NVIDIA_API_KEY', hint: 'nvapi-...', url: 'https://build.nvidia.com' },
-  { id: 'google', label: 'Google AI', key: 'GOOGLE_API_KEY', hint: 'AIza...', url: 'https://aistudio.google.com/apikey' },
-  { id: 'nous', label: 'Nous Portal', key: 'NOUS_API_KEY', hint: 'np-...', url: 'https://portal.nousresearch.com' },
+  { id: 'openrouter', label: 'OpenRouter',  key: 'OPENROUTER_API_KEY', hint: 'sk-or-...',  url: 'https://openrouter.ai/keys' },
+  { id: 'openai',    label: 'OpenAI',       key: 'OPENAI_API_KEY',     hint: 'sk-...',      url: 'https://platform.openai.com/api-keys' },
+  { id: 'anthropic', label: 'Anthropic',    key: 'ANTHROPIC_API_KEY',  hint: 'sk-ant-...', url: 'https://console.anthropic.com/keys' },
+  { id: 'nvidia',    label: 'NVIDIA NIM',   key: 'NVIDIA_API_KEY',     hint: 'nvapi-...',  url: 'https://build.nvidia.com' },
+  { id: 'google',    label: 'Google AI',    key: 'GOOGLE_API_KEY',     hint: 'AIza...',     url: 'https://aistudio.google.com/apikey' },
+  { id: 'nous',      label: 'Nous Portal',  key: 'NOUS_API_KEY',       hint: 'np-...',      url: 'https://portal.nousresearch.com' },
 ];
+
+const STATE_FILE = 'gui-setup-state.json';
+
+interface SetupState {
+  step: number;
+  providerId: string | null;
+  install_completed: boolean;
+  api_key_saved: boolean;
+  timestamp: string;
+}
+
+async function loadSetupState(): Promise<SetupState | null> {
+  try {
+    const raw = await readFile(STATE_FILE);
+    return JSON.parse(raw) as SetupState;
+  } catch {
+    return null;
+  }
+}
+
+async function saveSetupState(s: SetupState): Promise<void> {
+  await writeFile(STATE_FILE, JSON.stringify({ ...s, timestamp: new Date().toISOString() }, null, 2)).catch(() => {});
+}
 
 interface Props {
   onComplete: () => void;
 }
 
 export default function InstallWizard({ onComplete }: Props) {
-  const [step, setStep] = useState(0); // 0=check, 1=install, 2=provider, 3=key, 4=done
+  const [step, setStep] = useState(0);
   const [installed, setInstalled] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installLog, setInstallLog] = useState<string[]>([]);
@@ -24,24 +47,60 @@ export default function InstallWizard({ onComplete }: Props) {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
+  const [resumeLoaded, setResumeLoaded] = useState(false);
 
+  // On mount: check install status and resume from saved state
   useEffect(() => {
-    getHermesInstallStatus().then(s => {
-      setInstalled(s.installed);
-      if (s.installed) setStep(2); // skip install step
-    });
+    (async () => {
+      const [status, saved] = await Promise.all([
+        getHermesInstallStatus().catch(() => null),
+        loadSetupState(),
+      ]);
+      const isInstalled = status?.installed ?? false;
+      setInstalled(isInstalled);
+
+      if (saved) {
+        // Resume from last saved point
+        const resumeStep = saved.step;
+        setStep(resumeStep);
+        if (saved.providerId) {
+          const p = PROVIDERS.find(x => x.id === saved.providerId);
+          if (p) setProvider(p);
+        }
+      } else if (isInstalled) {
+        setStep(2); // Skip install step if already installed
+      }
+      setResumeLoaded(true);
+    })();
   }, []);
+
+  const persist = async (patch: Partial<SetupState>) => {
+    await saveSetupState({
+      step,
+      providerId: provider?.id ?? null,
+      install_completed: installed,
+      api_key_saved: false,
+      ...patch,
+    });
+  };
+
+  const goTo = async (nextStep: number) => {
+    setStep(nextStep);
+    await persist({ step: nextStep });
+  };
 
   const runInstall = async () => {
     setInstalling(true);
-    setInstallLog(['Starting installer...']);
+    setInstallLog(['Starting installer…']);
+    await persist({ step: 1 });
     try {
-      const result = await installHermes();
-      const lines = (result.stdout + '\n' + result.stderr).trim().split('\n').filter(Boolean);
-      setInstallLog(lines.length ? lines : ['Installation completed.']);
+      const result = await streamInstallHermes((line) => {
+        setInstallLog(prev => [...prev, line]);
+      });
       if (result.success) {
         setInstalled(true);
-        setTimeout(() => setStep(2), 1200);
+        await persist({ step: 2, install_completed: true });
+        setTimeout(() => goTo(2), 1200);
       } else {
         setInstallLog(prev => [...prev, '[error] Installation failed. Check the output above.']);
       }
@@ -57,14 +116,18 @@ export default function InstallWizard({ onComplete }: Props) {
     setSavingKey(true);
     try {
       await writeEnv(provider.key, apiKey.trim());
+      await persist({ step: 4, api_key_saved: true });
       setStep(4);
-      // Auto-start gateway
       await startGateway().catch(() => {});
+      // Clear setup state on completion
+      await writeFile(STATE_FILE, JSON.stringify({ step: 4, install_completed: true, api_key_saved: true, providerId: provider.id, timestamp: new Date().toISOString() })).catch(() => {});
       setTimeout(onComplete, 1500);
     } catch {
       setSavingKey(false);
     }
   };
+
+  if (!resumeLoaded) return null; // Wait for resume check before rendering
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--bg0)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
@@ -75,7 +138,6 @@ export default function InstallWizard({ onComplete }: Props) {
           <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 3 }}>
             {['Environment check', 'Install Hermes', 'Choose provider', 'API key', 'All set'][step]}
           </div>
-          {/* Step dots */}
           <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
             {[0, 1, 2, 3, 4].map(i => (
               <div key={i} style={{ width: i === step ? 20 : 7, height: 7, borderRadius: 99, background: i <= step ? 'var(--accent-green)' : 'var(--bg3)', transition: 'all 0.2s' }} />
@@ -94,9 +156,9 @@ export default function InstallWizard({ onComplete }: Props) {
                 </div>
               </div>
               {installed ? (
-                <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => setStep(2)}>Continue <ChevronRight size={14} /></button>
+                <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => goTo(2)}>Continue <ChevronRight size={14} /></button>
               ) : (
-                <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => setStep(1)}>Install Hermes Agent</button>
+                <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => goTo(1)}>Install Hermes Agent</button>
               )}
             </div>
           )}
@@ -104,7 +166,9 @@ export default function InstallWizard({ onComplete }: Props) {
           {step === 1 && (
             <div>
               <div style={{ background: 'var(--bg0)', borderRadius: 'var(--radius-md)', padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 220, overflowY: 'auto', marginBottom: 16 }}>
-                {installLog.map((l, i) => <div key={i} style={{ color: l.includes('[error]') ? 'var(--accent-red)' : 'inherit' }}>{l}</div>)}
+                {installLog.map((l, i) => (
+                  <div key={i} style={{ color: l.includes('[error]') ? 'var(--accent-red)' : l.startsWith('✓') || l.startsWith('→') ? 'var(--accent-green)' : 'inherit' }}>{l}</div>
+                ))}
                 {installing && <div style={{ color: 'var(--accent-green)' }}>▌</div>}
               </div>
               {!installing && installLog.length === 0 && (
@@ -130,7 +194,7 @@ export default function InstallWizard({ onComplete }: Props) {
                   </button>
                 ))}
               </div>
-              <button className="btn btn-primary" style={{ width: '100%' }} disabled={!provider} onClick={() => setStep(3)}>
+              <button className="btn btn-primary" style={{ width: '100%' }} disabled={!provider} onClick={async () => { await persist({ step: 3, providerId: provider?.id ?? null }); goTo(3); }}>
                 Continue <ChevronRight size={14} />
               </button>
             </div>
