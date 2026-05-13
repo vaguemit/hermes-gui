@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export type GatewayStatus = 'unchecked' | 'connecting' | 'connected' | 'disconnected' | 'error';
 export type AgentState = 'idle' | 'thinking' | 'running_tool' | 'error';
-export type NavSection = 'chat' | 'install' | 'commands' | 'agents' | 'gateway' | 'crons' | 'skills' | 'settings';
+export type NavSection = 'chat' | 'install' | 'commands' | 'agents' | 'gateway' | 'crons' | 'skills' | 'settings' | 'dashboard' | 'profiles';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageType = 'prose' | 'tool_call' | 'tool_output' | 'error' | 'info' | 'reasoning' | 'system';
 
@@ -142,7 +142,7 @@ export const useStore = create<AppState>((set, get) => ({
   setActiveModel: (m) => set({ activeModel: m }),
 
   // Navigation
-  activeSection: 'chat',
+  activeSection: 'dashboard',
   setActiveSection: (s) => set({ activeSection: s }),
   rightPanelOpen: true,
   setRightPanelOpen: (v) => set({ rightPanelOpen: v }),

@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useStore } from './store';
 import { checkHealth, startHealthPolling } from './api/hermes';
-import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp } from './api/desktop';
+import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp, listSessionsDisk, readSessionDisk, writeSessionDisk } from './api/desktop';
 import type { UpdateInfo } from './api/desktop';
 import Sidebar from './components/Sidebar';
 import ConversationPanel from './components/ConversationPanel';
@@ -16,6 +16,8 @@ import CronPanel from './components/CronPanel';
 import SkillsPanel from './components/SkillsPanel';
 import SettingsModal from './components/SettingsModal';
 import InstallWizard from './components/InstallWizard';
+import DashboardPanel from './components/DashboardPanel';
+import ProfilesPanel from './components/ProfilesPanel';
 import Toast from './components/Toast';
 import type { ToastMessage } from './components/Toast';
 import { PanelRightClose, PanelRight } from 'lucide-react';
@@ -26,6 +28,7 @@ export default function App() {
     gatewayStatus, setGatewayStatus,
     rightPanelOpen, setRightPanelOpen,
     paletteOpen, setPaletteOpen,
+    sessions,
   } = useStore();
 
   // Wizard state
@@ -144,6 +147,41 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  // Load persisted sessions on startup
+  useEffect(() => {
+    if (!isTauriApp()) return;
+    listSessionsDisk().then(metas => {
+      if (metas.length === 0) return;
+      Promise.all(metas.map(m => readSessionDisk(m.name).catch(() => null))).then(raws => {
+        const loaded = raws
+          .filter((r): r is string => r !== null)
+          .map(r => { try { return JSON.parse(r); } catch { return null; } })
+          .filter(Boolean);
+        if (loaded.length > 0) {
+          // Merge with existing empty sessions — replace if disk has data
+          useStore.setState(state => ({
+            sessions: loaded,
+            activeSessionId: loaded[0]?.id ?? state.activeSessionId,
+          }));
+        }
+      });
+    }).catch(() => {});
+  }, []);
+
+  // Persist sessions to disk when they change (debounced via ref)
+  const sessionsRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!isTauriApp()) return;
+    if (sessionsRef.current) clearTimeout(sessionsRef.current);
+    sessionsRef.current = setTimeout(() => {
+      sessions.forEach(s => {
+        if (s.messages.length > 0) {
+          writeSessionDisk(`${s.id}.json`, JSON.stringify(s)).catch(() => {});
+        }
+      });
+    }, 2000); // debounce 2s
+  }, [sessions]);
+
   const mainContent = () => {
     switch (activeSection) {
       case 'chat': return <ConversationPanel />;
@@ -153,6 +191,8 @@ export default function App() {
       case 'gateway': return <GatewayPanel />;
       case 'crons': return <CronPanel />;
       case 'skills': return <SkillsPanel />;
+      case 'dashboard': return <DashboardPanel />;
+      case 'profiles': return <ProfilesPanel />;
       default: return <ConversationPanel />;
     }
   };
@@ -199,6 +239,8 @@ export default function App() {
             {activeSection === 'crons' && 'Cron Scheduler'}
             {activeSection === 'skills' && 'Skills'}
             {activeSection === 'settings' && 'Settings'}
+            {activeSection === 'dashboard' && 'Dashboard'}
+            {activeSection === 'profiles' && 'Profiles & Memory'}
           </span>
 
           {/* Palette shortcut */}

@@ -1,5 +1,26 @@
 import { invoke } from '@tauri-apps/api/core';
 
+export interface SystemInfo {
+  ram_gb: number;
+  cpu_count: number;
+}
+
+export interface ProfileMeta {
+  name: string;
+  modified: string;
+}
+
+export interface MemoryFileMeta {
+  name: string;
+  size: number;
+  modified: string;
+}
+
+export interface SessionMeta {
+  name: string;
+  modified: string;
+}
+
 export interface HermesInstallStatus {
   installed: boolean;
   configured: boolean;
@@ -221,4 +242,107 @@ export async function streamInstallHermes(
 export async function updateTrayStatus(status: string): Promise<void> {
   if (!isTauriApp()) return;
   return invoke<void>('update_tray_status', { status });
+}
+
+export async function getSystemInfo(): Promise<SystemInfo> {
+  if (!isTauriApp()) return { ram_gb: 16, cpu_count: 8 };
+  return invoke<SystemInfo>('get_system_info');
+}
+
+export async function listOllamaModels(): Promise<string[]> {
+  if (!isTauriApp()) return [];
+  return invoke<string[]>('ollama_list_models');
+}
+
+export async function streamOllamaPull(
+  model: string,
+  onLine: (line: string) => void,
+): Promise<CommandResult> {
+  return _streamViaEvent<CommandResult>(
+    'ollama_pull_stream',
+    { model },
+    onLine,
+    browserOnlyResult(`ollama pull ${model}`),
+  );
+}
+
+export async function listProfiles(): Promise<ProfileMeta[]> {
+  if (!isTauriApp()) return [];
+  return invoke<ProfileMeta[]>('list_profiles');
+}
+
+export async function readProfile(name: string): Promise<string> {
+  if (!isTauriApp()) return '';
+  return invoke<string>('read_profile', { name });
+}
+
+export async function writeProfile(name: string, content: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('write_profile', { name, content });
+}
+
+export async function deleteProfile(name: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('delete_profile', { name });
+}
+
+export async function listMemoryFiles(): Promise<MemoryFileMeta[]> {
+  if (!isTauriApp()) return [];
+  return invoke<MemoryFileMeta[]>('list_memory_files');
+}
+
+export async function readMemoryFile(name: string): Promise<string> {
+  if (!isTauriApp()) return '';
+  return invoke<string>('read_memory_file', { name });
+}
+
+export async function deleteMemoryFile(name: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('delete_memory_file', { name });
+}
+
+export async function listSessionsDisk(): Promise<SessionMeta[]> {
+  if (!isTauriApp()) return [];
+  return invoke<SessionMeta[]>('list_sessions_disk');
+}
+
+export async function readSessionDisk(name: string): Promise<string> {
+  if (!isTauriApp()) return '';
+  return invoke<string>('read_session_disk', { name });
+}
+
+export async function writeSessionDisk(name: string, content: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('write_session_disk', { name, content });
+}
+
+export async function deleteSessionDisk(name: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('delete_session_disk', { name });
+}
+
+export async function ptySpawn(
+  program: string,
+  args: string[],
+  rows: number,
+  cols: number,
+  eventId: string,
+): Promise<string> {
+  if (!isTauriApp()) return '';
+  return invoke<string>('pty_spawn', { program, args, rows, cols, event_id: eventId });
+}
+
+export async function ptyWrite(ptyId: string, data: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('pty_write', { pty_id: ptyId, data });
+}
+
+export async function ptyResize(ptyId: string, rows: number, cols: number): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('pty_resize', { pty_id: ptyId, rows, cols });
+}
+
+export async function ptyKill(ptyId: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('pty_kill', { pty_id: ptyId });
 }

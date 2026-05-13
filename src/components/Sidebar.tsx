@@ -3,10 +3,11 @@ import { useStore } from '../store';
 import { formatTimestamp } from '../utils/parser';
 import {
   MessageSquare, Radio, Clock, Zap, Settings, Plus,
-  ChevronDown, ChevronRight, Cpu, Download, Terminal, Bot
+  ChevronDown, ChevronRight, Cpu, Download, Terminal, Bot, LayoutDashboard, Users
 } from 'lucide-react';
 
 const NAV_ITEMS = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'chat', label: 'Chat', icon: MessageSquare },
   { id: 'install', label: 'Install', icon: Download },
   { id: 'commands', label: 'Commands', icon: Terminal },
@@ -14,6 +15,7 @@ const NAV_ITEMS = [
   { id: 'gateway', label: 'Gateway', icon: Radio },
   { id: 'crons', label: 'Crons', icon: Clock },
   { id: 'skills', label: 'Skills', icon: Zap },
+  { id: 'profiles', label: 'Profiles', icon: Users },
 ] as const;
 
 export default function Sidebar() {
