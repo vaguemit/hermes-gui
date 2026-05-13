@@ -219,6 +219,28 @@ fn enhanced_path(home: &Path) -> OsString {
     env::join_paths(paths).unwrap_or_default()
 }
 
+fn read_env_file(home: &Path) -> HashMap<String, String> {
+    let mut envs = HashMap::new();
+    if let Ok(file) = std::fs::File::open(home.join(".env")) {
+        let reader = BufReader::new(file);
+        for line in reader.lines().flatten() {
+            let trimmed = line.trim();
+            if trimmed.starts_with('#') || trimmed.is_empty() {
+                continue;
+            }
+            if let Some((k, v)) = trimmed.split_once('=') {
+                let key = k.trim().to_string();
+                let mut val = v.trim();
+                if (val.starts_with('"') && val.ends_with('"')) || (val.starts_with('\'') && val.ends_with('\'')) {
+                    val = &val[1..val.len() - 1];
+                }
+                envs.insert(key, val.to_string());
+            }
+        }
+    }
+    envs
+}
+
 fn api_healthy() -> bool {
     let addr: SocketAddr = match "127.0.0.1:8642".parse() {
         Ok(addr) => addr,
@@ -389,10 +411,17 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
     }
 
     let home = hermes_home();
-    let child = Command::new(command_program())
-        .args(["gateway", "run"])
+    let mut cmd = Command::new(command_program());
+    cmd.args(["gateway", "run"])
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
+        .env("API_SERVER_ENABLED", "true");
+
+    for (k, v) in read_env_file(&home) {
+        cmd.env(k, v);
+    }
+
+    let child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
