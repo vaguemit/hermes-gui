@@ -24,8 +24,8 @@ export function renderMarkdown(text: string): React.ReactElement {
     if (line.startsWith('```')) {
       if (inCode) {
         elements.push(
-          <pre key={i} style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: '14px', overflowX: 'auto', margin: '10px 0' }}>
-            <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: 'var(--text-primary)' }}>
+          <pre key={i} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '14px', overflowX: 'auto', margin: '10px 0' }}>
+            <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, color: 'var(--text-primary)' }}>
               {codeBuffer.join('\n')}
             </code>
           </pre>
@@ -78,7 +78,7 @@ function inlineFormat(text: string): React.ReactNode {
     const candidates = [
       boldMatch && { idx: boldMatch.index!, len: boldMatch[0].length, node: <strong key={key++} style={{ fontWeight: 700 }}>{boldMatch[1]}</strong> },
       italicMatch && { idx: italicMatch.index!, len: italicMatch[0].length, node: <em key={key++}>{italicMatch[1]}</em> },
-      codeMatch && { idx: codeMatch.index!, len: codeMatch[0].length, node: <code key={key++} style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px', fontFamily: 'monospace', fontSize: 12, color: 'var(--accent)' }}>{codeMatch[1]}</code> },
+      codeMatch && { idx: codeMatch.index!, len: codeMatch[0].length, node: <code key={key++} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px', fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--accent-green)' }}>{codeMatch[1]}</code> },
     ].filter(Boolean) as Array<{ idx: number; len: number; node: React.ReactNode }>;
 
     if (candidates.length === 0) {
