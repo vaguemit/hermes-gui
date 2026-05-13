@@ -61,6 +61,7 @@ export default function InstallPanel() {
         binary_path: null,
         platform: 'unknown',
         last_error: err instanceof Error ? err.message : String(err),
+        model_configured: false,
       });
     } finally {
       setLoading(false);

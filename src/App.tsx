@@ -54,7 +54,7 @@ export default function App() {
       return;
     }
     getHermesInstallStatus().then(s => {
-      if (!s.installed && !s.configured) {
+      if (!s.installed || !s.model_configured) {
         setShowWizard(true);
       }
       setCheckingInstall(false);
