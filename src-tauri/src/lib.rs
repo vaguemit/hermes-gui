@@ -281,35 +281,27 @@ fn read_env_file(home: &Path) -> HashMap<String, String> {
     envs
 }
 
-/// Ensure config.yaml has the api_server platform enabled so the HTTP API
-/// runs on port 8642 every time the gateway starts (not just via env var).
-fn ensure_api_server_config(home: &Path) {
-    let config_path = home.join("config.yaml");
-    let content = std::fs::read_to_string(&config_path).unwrap_or_default();
-
-    // Check if api_server section already exists and is enabled
-    if content.contains("api_server:") && content.contains("enabled: true") {
-        return; // already configured
-    }
-
-    // Patch: if platforms: section exists, insert api_server under it
-    // Otherwise append the whole block
-    let new_content = if content.contains("platforms:") {
-        // Replace "platforms:" line to inject api_server beneath it
-        content.replacen(
-            "platforms:",
-            "platforms:\n  api_server:\n    enabled: true\n    host: 127.0.0.1\n    port: 8642",
-            1,
-        )
-    } else {
-        // Append platforms block
-        format!(
-            "{}\nplatforms:\n  api_server:\n    enabled: true\n    host: 127.0.0.1\n    port: 8642\n",
-            content.trim_end()
-        )
-    };
-
-    let _ = std::fs::write(&config_path, new_content);
+/// Ensure the api_server platform is enabled by using hermes config set,
+/// which handles YAML serialization correctly without risking corruption.
+fn ensure_api_server_config() {
+    // Use the hermes CLI — it is the only safe way to write config.yaml.
+    // These are idempotent: safe to run every time we start the gateway.
+    let prog = command_program();
+    let _ = run_command(
+        prog.clone(),
+        &["config".into(), "set".into(), "platforms.api_server.enabled".into(), "true".into()],
+        10,
+    );
+    let _ = run_command(
+        prog.clone(),
+        &["config".into(), "set".into(), "platforms.api_server.host".into(), "127.0.0.1".into()],
+        10,
+    );
+    let _ = run_command(
+        prog,
+        &["config".into(), "set".into(), "platforms.api_server.port".into(), "8642".into()],
+        10,
+    );
 }
 
 fn parse_model_config(content: &str) -> ModelConfig {
@@ -518,8 +510,8 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
 
     let home = hermes_home();
 
-    // Ensure config.yaml has api_server enabled so it persists across restarts
-    ensure_api_server_config(&home);
+    // Persist api_server config so the HTTP API starts on every gateway launch
+    ensure_api_server_config();
 
     let mut cmd = Command::new(command_program());
 
