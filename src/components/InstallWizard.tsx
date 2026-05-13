@@ -39,6 +39,16 @@ const PROVIDERS: ProviderDef[] = [
     ],
   },
   {
+    id: 'nous', name: 'Nous Portal', tag: '🆓 Free tier available',
+    desc: 'Nous Research subscription. Free tier included.',
+    envKey: '', url: 'https://hermes-agent.nousresearch.com', placeholder: '', configProvider: 'nous', baseUrl: '', needsKey: false,
+    steps: [
+      { text: 'Sign in at hermes-agent.nousresearch.com', url: 'https://hermes-agent.nousresearch.com' },
+      { text: 'Your credentials are stored via hermes login — no key needed here' },
+      { text: 'Click Save & Continue to proceed' },
+    ],
+  },
+  {
     id: 'anthropic', name: 'Anthropic', desc: 'Claude Opus, Sonnet, Haiku. Best reasoning.',
     envKey: 'ANTHROPIC_API_KEY', url: 'https://console.anthropic.com/settings/keys',
     placeholder: 'sk-ant-...', configProvider: 'anthropic', baseUrl: '', needsKey: true,
@@ -50,7 +60,7 @@ const PROVIDERS: ProviderDef[] = [
     ],
   },
   {
-    id: 'openai', name: 'OpenAI', desc: 'GPT-4o, o1, o3. Most widely supported.',
+    id: 'openai', name: 'OpenAI', desc: 'GPT-4o, o1, o3, Codex. Most widely supported.',
     envKey: 'OPENAI_API_KEY', url: 'https://platform.openai.com/api-keys',
     placeholder: 'sk-...', configProvider: 'openai', baseUrl: '', needsKey: true,
     steps: [
@@ -61,7 +71,7 @@ const PROVIDERS: ProviderDef[] = [
     ],
   },
   {
-    id: 'google', name: 'Google Gemini', desc: 'Gemini 2.0 Flash is fast and free.',
+    id: 'google', name: 'Google Gemini', desc: 'Gemini 2.5 Flash/Pro. Free tier available.',
     envKey: 'GOOGLE_API_KEY', url: 'https://aistudio.google.com/app/apikey',
     placeholder: 'AIza...', configProvider: 'google', baseUrl: '', needsKey: true,
     steps: [
@@ -69,6 +79,17 @@ const PROVIDERS: ProviderDef[] = [
       { text: 'Click "Get API key" on the left', url: 'https://aistudio.google.com/app/apikey' },
       { text: 'Click "Create API key in new project"' },
       { text: 'Copy the AIza... key and paste it below' },
+    ],
+  },
+  {
+    id: 'deepseek', name: 'DeepSeek', desc: 'DeepSeek-V3, R1, Coder. Very affordable.',
+    envKey: 'DEEPSEEK_API_KEY', url: 'https://platform.deepseek.com/api_keys',
+    placeholder: 'sk-...', configProvider: 'deepseek', baseUrl: 'https://api.deepseek.com/v1', needsKey: true,
+    steps: [
+      { text: 'Go to platform.deepseek.com and sign up', url: 'https://platform.deepseek.com' },
+      { text: 'Click "API Keys" in the sidebar', url: 'https://platform.deepseek.com/api_keys' },
+      { text: 'Create a new key and copy it' },
+      { text: 'Paste the key below' },
     ],
   },
   {
@@ -82,25 +103,101 @@ const PROVIDERS: ProviderDef[] = [
     ],
   },
   {
-    id: 'nous', name: 'Nous Portal', tag: '🆓 Free tier available',
-    desc: 'Run Hermes through the Nous research portal.',
-    envKey: '', url: 'https://hermes-agent.nousresearch.com', placeholder: '', configProvider: 'nous', baseUrl: '', needsKey: false,
+    id: 'github-copilot', name: 'GitHub Copilot', desc: 'Uses GITHUB_TOKEN or gh auth token.',
+    envKey: 'GITHUB_TOKEN', url: 'https://github.com/settings/tokens',
+    placeholder: 'ghp_...', configProvider: 'github-copilot', baseUrl: '', needsKey: true,
     steps: [
-      { text: 'Sign in at hermes-agent.nousresearch.com', url: 'https://hermes-agent.nousresearch.com' },
-      { text: 'Your credentials are stored via hermes login — no key needed here' },
-      { text: 'Click Save & Continue to proceed' },
+      { text: 'Go to GitHub Settings → Developer settings → Tokens', url: 'https://github.com/settings/tokens' },
+      { text: 'Generate a new token with copilot scope' },
+      { text: 'Or run "gh auth token" in terminal to get your current token' },
+      { text: 'Paste the token below' },
     ],
   },
   {
-    id: 'local', name: 'Local / Custom', tag: '🔒 Fully private',
-    desc: 'LM Studio, Ollama, vLLM, or any OpenAI-compatible server.',
+    id: 'huggingface', name: 'Hugging Face', desc: '20+ open models via Inference Providers.',
+    envKey: 'HF_TOKEN', url: 'https://huggingface.co/settings/tokens',
+    placeholder: 'hf_...', configProvider: 'huggingface', baseUrl: '', needsKey: true,
+    steps: [
+      { text: 'Go to huggingface.co and sign in', url: 'https://huggingface.co' },
+      { text: 'Click your profile → "Access Tokens"', url: 'https://huggingface.co/settings/tokens' },
+      { text: 'Create a new token with inference permission' },
+      { text: 'Paste the hf_... token below' },
+    ],
+  },
+  {
+    id: 'nvidia', name: 'NVIDIA NIM', desc: 'Nemotron models via build.nvidia.com.',
+    envKey: 'NVIDIA_API_KEY', url: 'https://build.nvidia.com',
+    placeholder: 'nvapi-...', configProvider: 'nvidia', baseUrl: '', needsKey: true,
+    steps: [
+      { text: 'Go to build.nvidia.com and sign in', url: 'https://build.nvidia.com' },
+      { text: 'Navigate to any model → "Get API Key"' },
+      { text: 'Copy the nvapi-... key and paste it below' },
+    ],
+  },
+  {
+    id: 'aws-bedrock', name: 'AWS Bedrock', desc: 'Claude, Nova, Llama, DeepSeek on AWS.',
+    envKey: 'AWS_ACCESS_KEY_ID', url: 'https://console.aws.amazon.com/bedrock',
+    placeholder: 'AKIA...', configProvider: 'aws-bedrock', baseUrl: '', needsKey: true,
+    steps: [
+      { text: 'Go to AWS Console → Bedrock', url: 'https://console.aws.amazon.com/bedrock' },
+      { text: 'Enable model access for your desired models' },
+      { text: 'Create an IAM user with Bedrock permissions' },
+      { text: 'Paste the Access Key ID below (also set AWS_SECRET_ACCESS_KEY in .env)' },
+    ],
+  },
+  {
+    id: 'azure', name: 'Azure AI Foundry', desc: 'OpenAI or Anthropic via Azure deployment.',
+    envKey: 'AZURE_API_KEY', url: 'https://ai.azure.com',
+    placeholder: '', configProvider: 'azure', baseUrl: '', needsKey: true,
+    steps: [
+      { text: 'Go to Azure AI Foundry and sign in', url: 'https://ai.azure.com' },
+      { text: 'Deploy a model (GPT-4o, Claude, etc.)' },
+      { text: 'Copy the API key from your deployment' },
+      { text: 'Paste the key below and set your endpoint in base URL' },
+    ],
+  },
+  {
+    id: 'ollama-cloud', name: 'Ollama Cloud', desc: 'Cloud-hosted open models via ollama.com.',
+    envKey: 'OLLAMA_API_KEY', url: 'https://ollama.com',
+    placeholder: '', configProvider: 'ollama-cloud', baseUrl: '', needsKey: true,
+    steps: [
+      { text: 'Go to ollama.com and create an account', url: 'https://ollama.com' },
+      { text: 'Get your API key from account settings' },
+      { text: 'Paste the key below' },
+    ],
+  },
+  {
+    id: 'qwen', name: 'Qwen / DashScope', desc: 'Qwen models + multi-provider coding tier.',
+    envKey: 'DASHSCOPE_API_KEY', url: 'https://dashscope.console.aliyun.com',
+    placeholder: 'sk-...', configProvider: 'qwen', baseUrl: '', needsKey: true,
+    steps: [
+      { text: 'Go to DashScope console and sign in', url: 'https://dashscope.console.aliyun.com' },
+      { text: 'Navigate to API Key management' },
+      { text: 'Create a new key and copy it' },
+      { text: 'Paste the key below' },
+    ],
+  },
+  {
+    id: 'lmstudio', name: 'LM Studio', tag: '🔒 Local — no key needed',
+    desc: 'Local desktop app with built-in model server.',
+    envKey: '', url: 'https://lmstudio.ai', placeholder: '',
+    configProvider: 'lmstudio', baseUrl: 'http://localhost:1234/v1', needsKey: false,
+    steps: [
+      { text: 'Download and install LM Studio', url: 'https://lmstudio.ai' },
+      { text: 'Open it and download a model (e.g. Llama 3.3 70B)' },
+      { text: 'Click "Start Server" in the Local Server tab' },
+      { text: 'Click Save & Continue — default URL is pre-filled' },
+    ],
+  },
+  {
+    id: 'local', name: 'Custom Endpoint', tag: '🔒 Advanced',
+    desc: 'Ollama, vLLM, llama.cpp, or any OpenAI-compatible server.',
     envKey: '', url: '', placeholder: 'sk-...',
     configProvider: 'custom', baseUrl: 'http://localhost:1234/v1', needsKey: false,
     steps: [
-      { text: 'Install LM Studio (easiest) or Ollama', url: 'https://lmstudio.ai' },
-      { text: 'Download a model inside the app (e.g. Llama 3.3 70B)' },
-      { text: 'Start the local server — LM Studio: click "Start Server" button' },
+      { text: 'Start your local server (Ollama, vLLM, etc.)' },
       { text: 'Select a preset below or enter your custom server URL' },
+      { text: 'Click Save & Continue to finish setup' },
     ],
   },
 ];
@@ -111,6 +208,7 @@ const LOCAL_PRESETS = [
   { id: 'vllm', name: 'vLLM', baseUrl: 'http://localhost:8000/v1' },
   { id: 'llamacpp', name: 'llama.cpp', baseUrl: 'http://localhost:8080/v1' },
 ];
+
 
 
 // ── Step identifiers ──────────────────────────────────────────────────────────
@@ -147,7 +245,7 @@ export default function InstallWizard({ onComplete }: Props) {
   const [saveError, setSaveError] = useState('');
 
   const provider = PROVIDERS.find((p) => p.id === selectedProvider) ?? PROVIDERS[0];
-  const isLocal = selectedProvider === 'local';
+  const isLocal = selectedProvider === 'local' || selectedProvider === 'lmstudio';
 
   // ── Step 1: detect existing install ──────────────────────────────────────
   useEffect(() => {
