@@ -44,7 +44,7 @@ export interface UpdateInfo {
   release_url: string | null;
 }
 
-function hasTauriBridge(): boolean {
+export function isTauriApp(): boolean {
   return typeof window !== 'undefined' && Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
 }
 
@@ -59,7 +59,7 @@ function browserOnlyResult(command: string): CommandResult {
 }
 
 export async function getHermesInstallStatus(): Promise<HermesInstallStatus> {
-  if (!hasTauriBridge()) {
+  if (!isTauriApp()) {
     return {
       installed: false,
       configured: false,
@@ -77,82 +77,82 @@ export async function getHermesInstallStatus(): Promise<HermesInstallStatus> {
 }
 
 export async function runHermesCommand(args: string[], timeoutSecs = 45): Promise<CommandResult> {
-  if (!hasTauriBridge()) return browserOnlyResult(['hermes', ...args].join(' '));
+  if (!isTauriApp()) return browserOnlyResult(['hermes', ...args].join(' '));
   return invoke<CommandResult>('hermes_run_command', { args, timeout_secs: timeoutSecs });
 }
 
 export async function installHermes(): Promise<CommandResult> {
-  if (!hasTauriBridge()) return browserOnlyResult('official Hermes installer');
+  if (!isTauriApp()) return browserOnlyResult('official Hermes installer');
   return invoke<CommandResult>('hermes_install', { timeout_secs: 1800 });
 }
 
 export async function startGateway(): Promise<CommandResult> {
-  if (!hasTauriBridge()) return browserOnlyResult('hermes gateway run');
+  if (!isTauriApp()) return browserOnlyResult('hermes gateway run');
   return invoke<CommandResult>('hermes_start_gateway');
 }
 
 export async function stopGateway(): Promise<CommandResult> {
-  if (!hasTauriBridge()) return browserOnlyResult('hermes gateway stop');
+  if (!isTauriApp()) return browserOnlyResult('hermes gateway stop');
   return invoke<CommandResult>('hermes_stop_gateway');
 }
 
 export async function getGatewayStatus(): Promise<boolean> {
-  if (!hasTauriBridge()) return false;
+  if (!isTauriApp()) return false;
   return invoke<boolean>('hermes_gateway_status');
 }
 
 export async function detectApiKeys(): Promise<ApiKeyStatus> {
-  if (!hasTauriBridge()) return { has_keys: false, providers: [] };
+  if (!isTauriApp()) return { has_keys: false, providers: [] };
   return invoke<ApiKeyStatus>('detect_api_keys');
 }
 
 export async function readEnv(): Promise<Record<string, string>> {
-  if (!hasTauriBridge()) return {};
+  if (!isTauriApp()) return {};
   return invoke<Record<string, string>>('read_env');
 }
 
 export async function writeEnv(key: string, value: string): Promise<void> {
-  if (!hasTauriBridge()) return;
+  if (!isTauriApp()) return;
   return invoke<void>('write_env', { key, value });
 }
 
 export async function readConfig(): Promise<string> {
-  if (!hasTauriBridge()) return '';
+  if (!isTauriApp()) return '';
   return invoke<string>('read_config');
 }
 
 export async function writeConfig(content: string): Promise<void> {
-  if (!hasTauriBridge()) return;
+  if (!isTauriApp()) return;
   return invoke<void>('write_config', { content });
 }
 
 export async function readFile(relPath: string): Promise<string> {
-  if (!hasTauriBridge()) return '';
+  if (!isTauriApp()) return '';
   return invoke<string>('read_file', { rel_path: relPath });
 }
 
 export async function writeFile(relPath: string, content: string): Promise<void> {
-  if (!hasTauriBridge()) return;
+  if (!isTauriApp()) return;
   return invoke<void>('write_file', { rel_path: relPath, content });
 }
 
 export async function runHermesDoctor(): Promise<DoctorResult> {
-  if (!hasTauriBridge()) return { ok: false, checks: [], raw: 'Tauri not available' };
+  if (!isTauriApp()) return { ok: false, checks: [], raw: 'Tauri not available' };
   return invoke<DoctorResult>('run_hermes_doctor');
 }
 
 export async function checkUpdate(): Promise<UpdateInfo> {
-  if (!hasTauriBridge()) return { current_version: null, latest_version: null, update_available: false, release_url: null };
+  if (!isTauriApp()) return { current_version: null, latest_version: null, update_available: false, release_url: null };
   return invoke<UpdateInfo>('check_update');
 }
 
 export async function toggleAutostart(enable: boolean): Promise<void> {
-  if (!hasTauriBridge()) return;
+  if (!isTauriApp()) return;
   return invoke<void>(enable ? 'plugin:autostart|enable' : 'plugin:autostart|disable');
 }
 
 export async function getAutostartEnabled(): Promise<boolean> {
-  if (!hasTauriBridge()) return false;
+  if (!isTauriApp()) return false;
   return invoke<boolean>('plugin:autostart|is_enabled');
 }
 
@@ -162,7 +162,7 @@ async function _streamViaEvent<T>(
   onLine: (line: string) => void,
   fallback: T,
 ): Promise<T> {
-  if (!hasTauriBridge()) return fallback;
+  if (!isTauriApp()) return fallback;
   const { listen } = await import('@tauri-apps/api/event');
   const eventId = `stream-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return new Promise((resolve, reject) => {
@@ -201,6 +201,6 @@ export async function streamInstallHermes(
 }
 
 export async function updateTrayStatus(status: string): Promise<void> {
-  if (!hasTauriBridge()) return;
+  if (!isTauriApp()) return;
   return invoke<void>('update_tray_status', { status });
 }

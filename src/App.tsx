@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useStore } from './store';
 import { checkHealth, startHealthPolling } from './api/hermes';
-import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus } from './api/desktop';
+import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp } from './api/desktop';
 import type { UpdateInfo } from './api/desktop';
 import Sidebar from './components/Sidebar';
 import ConversationPanel from './components/ConversationPanel';
@@ -47,8 +47,12 @@ export default function App() {
   const failureCount = useRef(0);
   const gatewayPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Check install status on mount — show wizard if not installed/configured
+  // Check install status on mount — show wizard only in Tauri desktop mode
   useEffect(() => {
+    if (!isTauriApp()) {
+      setCheckingInstall(false); // browser preview: skip wizard entirely
+      return;
+    }
     getHermesInstallStatus().then(s => {
       if (!s.installed && !s.configured) {
         setShowWizard(true);
