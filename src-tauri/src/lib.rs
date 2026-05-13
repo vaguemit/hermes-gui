@@ -654,22 +654,36 @@ fn hermes_stream_install(
 ) -> Result<CommandResult, String> {
     #[cfg(windows)]
     let (program, args) = {
-        // Write a wrapper .ps1 to %TEMP% and run with -File to avoid PowerShell
-        // -Command string quoting issues with the installer script content.
-        // This matches the reference Electron app's runInstallWindows() strategy.
+        // Write a wrapper .ps1 to %TEMP% and run with -File.
+        // Critical: Windows PowerShell 5.1 reads BOM-less files using the
+        // legacy ANSI codepage, which mangles the non-ASCII characters (✓, →, —)
+        // in install.ps1 and produces parse errors. The wrapper downloads the
+        // script as raw bytes, re-saves with a UTF-8 BOM so PS 5.1 reads it
+        // correctly. This matches the reference Electron app (issue #149).
         let wrapper = std::env::temp_dir().join("hermes-install-wrapper.ps1");
-        let content = "$ErrorActionPreference = 'Stop'\r\n\
-$ProgressPreference = 'SilentlyContinue'\r\n\
-Invoke-WebRequest -UseBasicParsing `\r\n\
-    -Uri 'https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1' `\r\n\
-    -OutFile \"$env:TEMP\\hermes-install.ps1\"\r\n\
-& \"$env:TEMP\\hermes-install.ps1\" -SkipSetup\r\n";
+        let home = hermes_home();
+        let hermes_home_str = home.to_string_lossy().replace('\'', "''");
+        let content = format!(
+"$ErrorActionPreference = 'Stop'\r
+try {{ [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }} catch {{}}\r
+$url = 'https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1'\r
+$installer = Join-Path $env:TEMP (\"hermes-install-script-\" + [guid]::NewGuid().ToString() + \".ps1\")\r
+$resp = Invoke-WebRequest -Uri $url -UseBasicParsing\r
+$text = if ($resp.Content -is [byte[]]) {{ [System.Text.Encoding]::UTF8.GetString($resp.Content) }} else {{ [string]$resp.Content }}\r
+if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) {{ $text = $text.Substring(1) }}\r
+[System.IO.File]::WriteAllText($installer, $text, (New-Object System.Text.UTF8Encoding $true))\r
+& $installer -SkipSetup -HermesHome '{}'\r
+$exit = $LASTEXITCODE\r
+Remove-Item -Force -ErrorAction SilentlyContinue $installer\r
+exit $exit\r
+", hermes_home_str);
         std::fs::write(&wrapper, content)
             .map_err(|e| format!("Failed to write installer wrapper: {}", e))?;
         (PathBuf::from("powershell"), vec![
-            String::from("-NoProfile"),
             String::from("-ExecutionPolicy"),
             String::from("Bypass"),
+            String::from("-NoProfile"),
+            String::from("-NonInteractive"),
             String::from("-File"),
             wrapper.to_string_lossy().to_string(),
         ])
