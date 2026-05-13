@@ -493,22 +493,28 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
         .lock()
         .map_err(|_| String::from("Gateway process lock is poisoned"))?;
 
-    // If we have a managed child that's still alive, it's already running
+    // If we already have a managed child that's still alive, don't start another
     if let Some(child) = lock.as_mut() {
         if child.try_wait().map_err(|err| err.to_string())?.is_none() {
-            return Ok(CommandResult {
-                success: true,
-                code: None,
-                command: String::from("hermes gateway run --replace"),
-                stdout: String::from("Gateway is already managed by this desktop app."),
-                stderr: String::new(),
-            });
+            // Also check that the API is actually responding
+            if api_healthy() {
+                return Ok(CommandResult {
+                    success: true,
+                    code: None,
+                    command: String::from("hermes gateway run"),
+                    stdout: String::from("Gateway is already running and healthy."),
+                    stderr: String::new(),
+                });
+            }
         }
-        // Dead child — clear it so we respawn below
+        // Dead or unhealthy child — clear it
         *lock = None;
     }
 
     let home = hermes_home();
+
+    // Kill any existing gateway process via PID file (prevents "already running" errors)
+    kill_existing_gateway(&home);
 
     // Write API_SERVER_ENABLED to .env so it persists even when launched outside this app
     let env_path = home.join(".env");
@@ -520,7 +526,7 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
         let _ = std::fs::write(&env_path, lines.join("\n") + "\n");
     }
 
-    // Log stderr to a file for debugging gateway crashes
+    // Log stderr to a file for debugging
     let log_file = home.join("logs").join("gateway-desktop.log");
     let _ = std::fs::create_dir_all(home.join("logs"));
     let stderr_file = std::fs::File::create(&log_file)
@@ -528,9 +534,8 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
 
     let mut cmd = Command::new(command_program());
 
-    // --replace: kill any existing gateway instance (stale PID file, previous crash, etc.)
-    // --accept-hooks: don't prompt for hook approval (no TTY)
-    cmd.args(["gateway", "run", "--replace", "--accept-hooks"])
+    // Use 'gateway run' (not just 'gateway') with --accept-hooks (no TTY for prompts)
+    cmd.args(["gateway", "run", "--accept-hooks"])
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
         .env("API_SERVER_ENABLED", "true")
@@ -562,12 +567,53 @@ fn hermes_start_gateway(state: tauri::State<GatewayState>) -> Result<CommandResu
     Ok(CommandResult {
         success: true,
         code: None,
-        command: String::from("hermes gateway run --replace"),
-        stdout: String::from("Gateway starting… it will appear connected once port 8642 is ready (usually 3–5 seconds)."),
+        command: String::from("hermes gateway run"),
+        stdout: String::from("Gateway starting… health polling will detect it once port 8642 is ready."),
         stderr: String::new(),
     })
 }
 
+/// Kill any existing gateway by reading the PID file and sending a kill signal.
+fn kill_existing_gateway(home: &Path) {
+    let pid_file = home.join("gateway.pid");
+    if !pid_file.exists() {
+        return;
+    }
+    if let Ok(content) = std::fs::read_to_string(&pid_file) {
+        let pid: Option<u32> = if content.trim().starts_with('{') {
+            // JSON format: {"pid": 1234, ...}
+            content.split("\"pid\"")
+                .nth(1)
+                .and_then(|s| s.trim_start_matches(|c: char| c == ':' || c == ' ').split(|c: char| !c.is_ascii_digit()).next())
+                .and_then(|s| s.parse().ok())
+        } else {
+            content.trim().parse().ok()
+        };
+
+        if let Some(pid) = pid {
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                let _ = Command::new("taskkill")
+                    .args(["/F", "/PID", &pid.to_string()])
+                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+            #[cfg(not(windows))]
+            {
+                unsafe {
+                    libc::kill(pid as i32, libc::SIGTERM);
+                }
+            }
+            // Wait a moment for the process to die
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    }
+    // Remove the stale PID file
+    let _ = std::fs::remove_file(&pid_file);
+}
 
 #[tauri::command]
 fn hermes_stop_gateway(state: tauri::State<GatewayState>) -> Result<CommandResult, String> {
@@ -576,27 +622,33 @@ fn hermes_stop_gateway(state: tauri::State<GatewayState>) -> Result<CommandResul
         .lock()
         .map_err(|_| String::from("Gateway process lock is poisoned"))?;
 
+    // Kill our managed child if we have one
     if let Some(mut child) = lock.take() {
         let _ = child.kill();
         let _ = child.wait();
-        return Ok(CommandResult {
-            success: true,
-            code: None,
-            command: String::from("kill managed gateway"),
-            stdout: String::from("Managed gateway process stopped."),
-            stderr: String::new(),
-        });
     }
 
-    run_command(
-        command_program(),
-        &[String::from("gateway"), String::from("stop")],
-        15,
-    )
+    // Also kill via PID file (handles externally-started gateways)
+    let home = hermes_home();
+    kill_existing_gateway(&home);
+
+    Ok(CommandResult {
+        success: true,
+        code: None,
+        command: String::from("gateway stop"),
+        stdout: String::from("Gateway stopped."),
+        stderr: String::new(),
+    })
 }
 
 #[tauri::command]
 fn hermes_gateway_status(state: tauri::State<GatewayState>) -> Result<bool, String> {
+    // Primary check: HTTP health endpoint (the only reliable way)
+    if api_healthy() {
+        return Ok(true);
+    }
+
+    // Secondary: check if our managed child is still alive
     let mut lock = state
         .0
         .lock()
@@ -604,12 +656,14 @@ fn hermes_gateway_status(state: tauri::State<GatewayState>) -> Result<bool, Stri
 
     if let Some(child) = lock.as_mut() {
         if child.try_wait().map_err(|err| err.to_string())?.is_none() {
-            return Ok(true);
+            // Process is alive but API not ready yet — still "starting"
+            return Ok(false);
         }
+        // Dead child
         *lock = None;
     }
 
-    Ok(api_healthy())
+    Ok(false)
 }
 
 // ── Streaming helpers ─────────────────────────────────────────────────────────
