@@ -28,6 +28,8 @@ struct PtyEntry {
 }
 struct PtyState(Mutex<HashMap<String, PtyEntry>>);
 
+struct HermesChatState(Mutex<HashMap<String, std::process::ChildStdin>>);
+
 #[derive(Serialize)]
 struct HermesInstallStatus {
     installed: bool,
@@ -1663,6 +1665,126 @@ fn pty_kill(pty_id: String, pty_state: tauri::State<PtyState>) -> Result<(), Str
     Ok(())
 }
 
+// ── Chrome launcher ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn launch_chrome(port: u16) -> Result<String, String> {
+    let local_app_data = env_path("LOCALAPPDATA");
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(ref base) = local_app_data {
+        candidates.push(base.join("Google").join("Chrome").join("Application").join("chrome.exe"));
+    }
+    candidates.push(PathBuf::from(r"C:\Program Files\Google\Chrome\Application\chrome.exe"));
+    candidates.push(PathBuf::from(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"));
+    if let Some(ref base) = local_app_data {
+        candidates.push(base.join("Chromium").join("Application").join("chrome.exe"));
+    }
+
+    let port_arg = format!("--remote-debugging-port={}", port);
+    for path in &candidates {
+        if path.exists() {
+            Command::new(path)
+                .args([port_arg.as_str(), "--no-first-run", "--no-default-browser-check"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            return Ok(format!("ws://127.0.0.1:{}/json", port));
+        }
+    }
+
+    // Try PATH fallbacks
+    for name in &["chromium", "chrome"] {
+        if Command::new(name)
+            .args([port_arg.as_str(), "--no-first-run", "--no-default-browser-check"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .is_ok()
+        {
+            return Ok(format!("ws://127.0.0.1:{}/json", port));
+        }
+    }
+
+    Err("Chrome not found. Install Google Chrome or Chromium.".to_string())
+}
+
+// ── Hermes interactive chat (stdin/stdout pipes) ───────────────────────────────
+
+#[tauri::command]
+fn start_hermes_pty_chat(
+    app_handle: tauri::AppHandle,
+    chat_state: tauri::State<HermesChatState>,
+    event_id: String,
+) -> Result<String, String> {
+    let home = hermes_home();
+    let binary = hermes_binary().ok_or_else(|| "hermes binary not found".to_string())?;
+    let pty_id = format!("hermes-chat-{}", event_id);
+
+    let mut child = Command::new(&binary)
+        .arg("chat")
+        .env("HERMES_HOME", &home)
+        .env("PATH", enhanced_path(&home))
+        .env("NO_COLOR", "1")
+        .env("TERM", "dumb")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to start hermes chat: {}", e))?;
+
+    let stdin = child.stdin.take()
+        .ok_or_else(|| "Failed to open stdin".to_string())?;
+    let stdout = child.stdout.take()
+        .ok_or_else(|| "Failed to open stdout".to_string())?;
+
+    {
+        let mut map = chat_state.0.lock().map_err(|_| "Chat state lock poisoned".to_string())?;
+        map.insert(pty_id.clone(), stdin);
+    }
+
+    let eid = event_id.clone();
+    let ah = app_handle.clone();
+    thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            let raw = match line {
+                Ok(l) => l,
+                Err(_) => break,
+            };
+            let cleaned = strip_ansi(&raw);
+            let trimmed = cleaned.trim_end_matches('\r').to_string();
+            if !trimmed.trim().is_empty() && !is_cli_noise(&trimmed) {
+                let _ = ah.emit(&format!("pty-chat-{}", eid), trimmed);
+            }
+        }
+        // Process ended or stdout closed
+        let _ = ah.emit(&format!("pty-chat-done-{}", eid), "");
+        // Let child reap itself (we moved it into this thread scope implicitly via stdout)
+        let _ = child.wait();
+    });
+
+    Ok(pty_id)
+}
+
+#[tauri::command]
+fn send_hermes_pty_message(
+    pty_id: String,
+    message: String,
+    chat_state: tauri::State<HermesChatState>,
+) -> Result<(), String> {
+    use std::io::Write;
+    let mut map = chat_state.0.lock().map_err(|_| "Chat state lock poisoned".to_string())?;
+    if let Some(stdin) = map.get_mut(&pty_id) {
+        stdin.write_all(format!("{}\n", message).as_bytes()).map_err(|e| e.to_string())
+    } else {
+        Err(format!("Chat session {} not found", pty_id))
+    }
+}
+
 // ── App entry point ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1676,6 +1798,7 @@ pub fn run() {
         ))
         .manage(GatewayState)
         .manage(PtyState(Mutex::new(HashMap::new())))
+        .manage(HermesChatState(Mutex::new(HashMap::new())))
         .setup(|app| {
             // System tray
             let open_item = MenuItem::with_id(app, "open", "Open Hermes", true, None::<&str>)?;
@@ -1773,6 +1896,9 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            launch_chrome,
+            start_hermes_pty_chat,
+            send_hermes_pty_message,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
