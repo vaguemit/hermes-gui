@@ -380,3 +380,25 @@ export async function ptyKill(ptyId: string): Promise<void> {
   if (!isTauriApp()) return;
   return invoke<void>('pty_kill', { pty_id: ptyId });
 }
+
+/** Launch Chrome/Chromium with remote debugging on the given port. Returns CDP WebSocket URL. */
+export async function launchChrome(port = 9222): Promise<string> {
+  if (!isTauriApp()) return `ws://127.0.0.1:${port}/json`;
+  return invoke<string>('launch_chrome', { port });
+}
+
+/**
+ * Start a persistent hermes chat session backed by a child process.
+ * Returns a session ID used with sendHermesPtyMessage.
+ * Output lines are emitted as pty-chat-{eventId} Tauri events.
+ */
+export async function startHermesPtyChat(eventId: string): Promise<string> {
+  if (!isTauriApp()) throw new Error('Tauri not available');
+  return invoke<string>('start_hermes_pty_chat', { eventId });
+}
+
+/** Send a message (line) to the running hermes chat session. */
+export async function sendHermesPtyMessage(ptyId: string, message: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('send_hermes_pty_message', { ptyId, message });
+}
