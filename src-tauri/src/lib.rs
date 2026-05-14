@@ -835,10 +835,12 @@ fn hermes_chat_stream(
             }
         }
 
+        let dot_env = read_env_file(&home);
         let mut child = match Command::new(&binary)
             .args(&args)
             .env("HERMES_HOME", &home)
             .env("PATH", enhanced_path(&home))
+            .envs(&dot_env)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
