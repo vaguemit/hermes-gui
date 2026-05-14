@@ -88,6 +88,11 @@ export default function GatewayPanel() {
     }, 3000);
   };
 
+  const [cdpUrl, setCdpUrl] = useState('ws://localhost:9222');
+  const [browserConnected, setBrowserConnected] = useState(false);
+  const [browserConnecting, setBrowserConnecting] = useState(false);
+  const [browserLog, setBrowserLog] = useState('');
+
   const [gatewayLog, setGatewayLog] = useState<string[]>([
     '[ready] Desktop gateway controls initialized',
     '[ready] Health endpoint: http://127.0.0.1:8642/health',
@@ -141,6 +146,40 @@ export default function GatewayPanel() {
       setGatewayLog((lines) => [...lines, `[error] ${err instanceof Error ? err.message : String(err)}`]);
     }
   };
+
+  async function handleBrowserConnect() {
+    if (browserConnecting) return;
+    setBrowserConnecting(true);
+    setBrowserLog('');
+    try {
+      const { runHermesCommand } = await import('../api/desktop');
+      const result = await runHermesCommand(['browser', 'connect', cdpUrl], 15);
+      if (result.success) {
+        setBrowserConnected(true);
+        setBrowserLog(result.stdout || 'Browser connected.');
+      } else {
+        setBrowserLog(
+          result.stderr ||
+          'Could not connect via CLI. Start Chrome with: chrome --remote-debugging-port=9222\nThen try again, or use natural language in chat: "navigate to google.com"'
+        );
+      }
+    } catch (e) {
+      setBrowserLog(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBrowserConnecting(false);
+    }
+  }
+
+  async function handleBrowserDisconnect() {
+    try {
+      const { runHermesCommand } = await import('../api/desktop');
+      await runHermesCommand(['browser', 'disconnect'], 10);
+      setBrowserConnected(false);
+      setBrowserLog('Browser disconnected.');
+    } catch {
+      setBrowserConnected(false);
+    }
+  }
 
   const isConnected = gatewayStatus === 'connected';
   const isConnecting = gatewayStatus === 'connecting';
@@ -247,6 +286,54 @@ export default function GatewayPanel() {
           {gatewayLog.map((line, i) => (
             <div key={`${line}-${i}`} style={{ color: line.includes('[error]') ? 'var(--accent-red)' : line.includes('[warn]') ? 'var(--accent-amber)' : line.includes('[info]') ? 'var(--text-secondary)' : 'var(--text-primary)' }}>{line}</div>
           ))}
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <div className="section-label">Browser Connection</div>
+          <div className="card" style={{ padding: '12px 14px' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10 }}>
+              Connect Chrome/Chromium via CDP so the agent can control your browser.
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <input
+                className="input-field"
+                value={cdpUrl}
+                onChange={e => setCdpUrl(e.target.value)}
+                placeholder="ws://localhost:9222"
+                style={{ flex: 1, fontSize: 12 }}
+                disabled={browserConnected || browserConnecting}
+              />
+              {!browserConnected ? (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleBrowserConnect}
+                  disabled={browserConnecting || !cdpUrl.trim()}
+                >
+                  {browserConnecting ? 'Connecting…' : 'Connect'}
+                </button>
+              ) : (
+                <button className="btn btn-danger btn-sm" onClick={handleBrowserDisconnect}>
+                  Disconnect
+                </button>
+              )}
+            </div>
+            {browserConnected && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--accent-green)' }}>
+                <span className="dot dot-green" />
+                Browser connected — agent can use browser tools
+              </div>
+            )}
+            {browserLog && (
+              <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', background: 'var(--bg2)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', whiteSpace: 'pre-wrap' }}>
+                {browserLog}
+              </div>
+            )}
+            {!browserConnected && !browserLog && (
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                Start Chrome with: <code style={{ fontFamily: 'var(--font-mono)' }}>chrome --remote-debugging-port=9222</code>
+              </div>
+            )}
+          </div>
         </div>
 
         {configPlatform && (
