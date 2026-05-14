@@ -66,6 +66,14 @@ interface AppState {
   setActiveModel: (m: string) => void;
   setHermesSessionId: (id: string | null) => void;
 
+  // Local browser and PTY chat state
+  localBrowserUrl: string | null;
+  setLocalBrowserUrl: (url: string | null) => void;
+  ptySessionId: string | null;
+  setPtySessionId: (id: string | null) => void;
+  ptyEventId: string | null;
+  setPtyEventId: (id: string | null) => void;
+
   // Navigation
   activeSection: NavSection;
   setActiveSection: (s: NavSection) => void;
@@ -144,6 +152,12 @@ export const useStore = create<AppState>((set, get) => ({
   setAgentState: (s) => set({ agentState: s }),
   setActiveModel: (m) => set({ activeModel: m }),
   setHermesSessionId: (id) => set({ hermesSessionId: id }),
+  localBrowserUrl: null,
+  setLocalBrowserUrl: (url) => set({ localBrowserUrl: url }),
+  ptySessionId: null,
+  setPtySessionId: (id) => set({ ptySessionId: id }),
+  ptyEventId: null,
+  setPtyEventId: (id) => set({ ptyEventId: id }),
 
   // Navigation
   activeSection: 'dashboard',
