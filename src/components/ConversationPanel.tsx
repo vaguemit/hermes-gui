@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore, Message, ToolCall } from '../store';
-import { getGatewayStatus, chatStream } from '../api/desktop';
+import { getGatewayStatus, chatStream, chatCli } from '../api/desktop';
 import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy,
@@ -135,7 +135,7 @@ function exportSessionToMarkdown(messages: Message[]): string {
 }
 
 export default function ConversationPanel() {
-  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen } = useStore();
+  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId } = useStore();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<{ abort: () => void } | null>(null);
@@ -166,6 +166,8 @@ export default function ConversationPanel() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/tools', '/version']);
 
   const sendMessage = async () => {
     if (!input.trim() || isRunning) return;
@@ -276,9 +278,20 @@ export default function ConversationPanel() {
             addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() });
             setAgentState('running_tool');
           }),
-        ]).then(([u1, u2, u3, u4, u5]) => {
-          cleanupRef.fn = () => { u1(); u2(); u3(); u4(); u5(); };
-          chatStream(eventId, history, activeModel).catch(reject);
+          listen<string>(`chat-session-${eventId}`, (ev) => {
+            if (ev.payload && !aborted) {
+              setHermesSessionId(ev.payload);
+            }
+          }),
+        ]).then(([u1, u2, u3, u4, u5, u6]) => {
+          cleanupRef.fn = () => { u1(); u2(); u3(); u4(); u5(); u6(); };
+          // Slash commands not handled locally go to the hermes CLI (supports TUI commands like /browser, /web, /shell, etc.)
+          const isTuiSlashCommand = userContent.startsWith('/') && !LOCAL_COMMANDS.has(userContent.split(/\s+/)[0].toLowerCase());
+          if (isTuiSlashCommand) {
+            chatCli(eventId, userContent, hermesSessionId).catch(reject);
+          } else {
+            chatStream(eventId, history, activeModel).catch(reject);
+          }
         }).catch(reject);
       });
 
