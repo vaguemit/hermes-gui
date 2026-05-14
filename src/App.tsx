@@ -18,6 +18,8 @@ import SettingsModal from './components/SettingsModal';
 import InstallWizard from './components/InstallWizard';
 import DashboardPanel from './components/DashboardPanel';
 import ProfilesPanel from './components/ProfilesPanel';
+import SessionsPanel from './components/SessionsPanel';
+import ModelsPanel from './components/ModelsPanel';
 import Toast from './components/Toast';
 import type { ToastMessage } from './components/Toast';
 import { PanelRightClose, PanelRight } from 'lucide-react';
