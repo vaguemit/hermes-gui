@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
-import { ChevronRight, ChevronDown, Terminal, CheckCircle2, XCircle, Loader2, Wrench, ToggleLeft, ToggleRight } from 'lucide-react';
+import { ChevronRight, ChevronDown, Terminal, CheckCircle2, XCircle, Loader2, Wrench } from 'lucide-react';
 
 const TOOL_GROUPS = [
   { name: 'File System', tools: ['read_file', 'write_file', 'list_dir', 'delete_file'], icon: '📁', enabled: true },
@@ -11,17 +11,40 @@ const TOOL_GROUPS = [
   { name: 'MCP', tools: ['(dynamic — connect a server)'], icon: '🔌', enabled: false },
 ];
 
+function toolLabel(name: string): { emoji: string; label: string } {
+  const map: Record<string, { emoji: string; label: string }> = {
+    browser_navigate: { emoji: '🌐', label: 'Opening URL' },
+    browser_click: { emoji: '🖱️', label: 'Clicking element' },
+    browser_snapshot: { emoji: '📸', label: 'Taking screenshot' },
+    browser_type: { emoji: '⌨️', label: 'Typing text' },
+    browser_scroll: { emoji: '📜', label: 'Scrolling' },
+    web_search: { emoji: '🔍', label: 'Searching web' },
+    search_web: { emoji: '🔍', label: 'Searching web' },
+    read_file: { emoji: '📄', label: 'Reading file' },
+    write_file: { emoji: '✏️', label: 'Writing file' },
+    run_command: { emoji: '⚡', label: 'Running command' },
+    bash: { emoji: '💻', label: 'Running shell' },
+    computer_use: { emoji: '🖥️', label: 'Computer control' },
+    generate_image: { emoji: '🎨', label: 'Generating image' },
+  };
+  return map[name] || { emoji: '🔧', label: name.replace(/_/g, ' ') };
+}
+
 function LiveToolCard({ tc }: { tc: { id: string; name: string; input: string; output?: string; status: string; timestamp: number } }) {
   const [expanded, setExpanded] = useState(false);
-  const statusColors: Record<string, string> = { pending: 'var(--text-secondary)', running: 'var(--accent-blue)', done: 'var(--accent-green)', error: 'var(--accent-red)' };
+  const statusColors: Record<string, string> = { pending: 'var(--text-secondary)', running: 'var(--accent-amber)', done: 'var(--accent-green)', error: 'var(--accent-red)' };
   const color = statusColors[tc.status] || 'var(--text-secondary)';
+  const { emoji, label } = toolLabel(tc.name);
   return (
     <div style={{ border: '1px solid var(--border)', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '9px 12px', marginBottom: 8, background: 'var(--bg2)', fontSize: 12 }}>
-      <button onClick={() => setExpanded(!expanded)} style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color }}>
-        <Terminal size={12} />
-        <span style={{ fontWeight: 600, fontFamily: 'var(--font-mono)', fontSize: 11.5, flex: 1, textAlign: 'left' }}>{tc.name}</span>
-        <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', marginRight: 4 }}>
-          {tc.status === 'running' && <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />}
+      <button onClick={() => setExpanded(!expanded)} style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+        <span style={{ fontSize: 14, lineHeight: 1 }}>{emoji}</span>
+        <div style={{ flex: 1, textAlign: 'left' }}>
+          <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary)' }}>{label}</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-secondary)', marginTop: 1 }}>{tc.name}</div>
+        </div>
+        <span style={{ display: 'flex', alignItems: 'center', marginRight: 4 }}>
+          {tc.status === 'running' && <Loader2 size={11} style={{ color: 'var(--accent-amber)', animation: 'spin 1s linear infinite' }} />}
           {tc.status === 'done' && <CheckCircle2 size={11} style={{ color: 'var(--accent-green)' }} />}
           {tc.status === 'error' && <XCircle size={11} style={{ color: 'var(--accent-red)' }} />}
         </span>
@@ -42,7 +65,7 @@ function LiveToolCard({ tc }: { tc: { id: string; name: string; input: string; o
 }
 
 export default function ToolsPanel() {
-  const { activeToolCalls } = useStore();
+  const { activeToolCalls, agentState } = useStore();
   const [activeTab, setActiveTab] = useState<'live' | 'config'>('live');
   const [toolGroups, setToolGroups] = useState(TOOL_GROUPS);
 
@@ -64,10 +87,27 @@ export default function ToolsPanel() {
       <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
         {activeTab === 'live' && (
           <>
+            {activeToolCalls.length > 0 && agentState === 'running_tool' && (
+              <div className="animate-in" style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'var(--accent-amber-dim)',
+                border: '1px solid var(--accent-amber)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '8px 11px',
+                marginBottom: 10,
+                fontSize: 12,
+                color: 'var(--accent-amber)',
+                fontWeight: 500,
+              }}>
+                <span className="dot dot-amber" style={{ flexShrink: 0, animation: 'pulse 1.4s ease-in-out infinite' }} />
+                Agent is using tools...
+              </div>
+            )}
             {activeToolCalls.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 160, gap: 10, color: 'var(--text-secondary)' }}>
-                <Wrench size={24} style={{ opacity: 0.3 }} />
-                <span style={{ fontSize: 12 }}>No active tool calls</span>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 160, gap: 8, color: 'var(--text-secondary)' }}>
+                <Wrench size={24} style={{ opacity: 0.25 }} />
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>No active tools</span>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'center', lineHeight: 1.5, maxWidth: 160 }}>Tools used during this conversation will appear here.</span>
               </div>
             ) : (
               activeToolCalls.map((tc) => <LiveToolCard key={tc.id} tc={tc} />)
