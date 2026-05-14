@@ -79,6 +79,18 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/debug', desc: 'Upload a debug report', category: 'Info' },
   { cmd: '/profile', desc: 'Show active profile and home', category: 'Info' },
   { cmd: '/quit', desc: 'Exit the CLI', category: 'Exit' },
+  { cmd: '/web', desc: 'Search the web', category: 'Tools' },
+  { cmd: '/browse', desc: 'Navigate the browser to a URL', category: 'Tools' },
+  { cmd: '/shell', desc: 'Run a shell command', category: 'Tools' },
+  { cmd: '/file', desc: 'Read or write files', category: 'Tools' },
+  { cmd: '/code', desc: 'Write or execute code', category: 'Tools' },
+  { cmd: '/btw', desc: 'Ask a side question without affecting context', category: 'Info' },
+  { cmd: '/approve', desc: 'Approve a pending agent action', category: 'Session' },
+  { cmd: '/deny', desc: 'Deny a pending agent action', category: 'Session' },
+  { cmd: '/status', desc: 'Show current agent status', category: 'Info' },
+  { cmd: '/compact', desc: 'Compact and summarize the conversation', category: 'Session' },
+  { cmd: '/memory', desc: 'Show agent memory', category: 'Info' },
+  { cmd: '/persona', desc: 'Show current persona', category: 'Config' },
 ];
 
 export const CLI_COMMANDS: CliCommand[] = [

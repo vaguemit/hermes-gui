@@ -60,9 +60,11 @@ interface AppState {
   gatewayStatus: GatewayStatus;
   agentState: AgentState;
   activeModel: string;
+  hermesSessionId: string | null;
   setGatewayStatus: (s: GatewayStatus) => void;
   setAgentState: (s: AgentState) => void;
   setActiveModel: (m: string) => void;
+  setHermesSessionId: (id: string | null) => void;
 
   // Navigation
   activeSection: NavSection;
@@ -137,9 +139,11 @@ export const useStore = create<AppState>((set, get) => ({
   gatewayStatus: 'unchecked',
   agentState: 'idle',
   activeModel: 'hermes-agent',
+  hermesSessionId: null,
   setGatewayStatus: (s) => set({ gatewayStatus: s }),
   setAgentState: (s) => set({ agentState: s }),
   setActiveModel: (m) => set({ activeModel: m }),
+  setHermesSessionId: (id) => set({ hermesSessionId: id }),
 
   // Navigation
   activeSection: 'dashboard',

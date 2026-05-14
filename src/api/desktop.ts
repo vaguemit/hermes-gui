@@ -144,6 +144,21 @@ export async function chatStream(
   return invoke<void>('chat_stream', { eventId, messages, model });
 }
 
+/**
+ * Stream a chat message through the hermes CLI (hermes chat -q <message>).
+ * Used for TUI slash commands (/browser, /web, /shell, etc.) that only work
+ * via the hermes REPL, not the HTTP gateway API.
+ * Emits the same events as chatStream: chat-chunk-{eventId}, chat-done-{eventId},
+ * chat-error-{eventId}, plus chat-session-{eventId} for session ID tracking.
+ */
+export async function chatCli(
+  eventId: string,
+  message: string,
+  sessionId?: string | null,
+): Promise<void> {
+  if (!isTauriApp()) throw new Error('Tauri not available');
+  return invoke<void>('hermes_chat_stream', { eventId, message, sessionId: sessionId ?? null });
+}
 
 export async function detectApiKeys(): Promise<ApiKeyStatus> {
   if (!isTauriApp()) return { has_keys: false, providers: [] };
