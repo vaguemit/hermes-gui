@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Play, Radio, Settings, Square } from 'lucide-react';
+import { CheckCircle2, Globe, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
-import { getGatewayStatus, runHermesCommand, startGateway as startGatewayNative, stopGateway as stopGatewayNative, writeEnv } from '../api/desktop';
+import { getGatewayStatus, launchChrome, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv } from '../api/desktop';
 
 interface ToolPlatform {
   id: string;
@@ -51,7 +51,7 @@ const PLATFORM_FIELDS: Record<string, Array<{ label: string; key: string; type: 
 };
 
 export default function GatewayPanel() {
-  const { platforms, gatewayStatus, setGatewayStatus } = useStore();
+  const { platforms, gatewayStatus, setGatewayStatus, setLocalBrowserUrl, setPtySessionId, setPtyEventId } = useStore();
   const [configPlatform, setConfigPlatform] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [toolStates, setToolStates] = useState<Record<string, ToolToggleState>>(() =>
@@ -147,16 +147,38 @@ export default function GatewayPanel() {
     }
   };
 
+  async function handleLaunchChrome() {
+    setBrowserConnecting(true);
+    try {
+      const url = await launchChrome(9222);
+      setCdpUrl(url);
+      setBrowserLog('Chrome launched. Click Connect to link the agent to your browser.');
+    } catch (e) {
+      setBrowserLog(`Could not launch Chrome: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBrowserConnecting(false);
+    }
+  }
+
   async function handleBrowserConnect() {
     if (browserConnecting) return;
     setBrowserConnecting(true);
     setBrowserLog('');
     try {
-      const { runHermesCommand } = await import('../api/desktop');
       const result = await runHermesCommand(['browser', 'connect', cdpUrl], 15);
       if (result.success) {
         setBrowserConnected(true);
         setBrowserLog(result.stdout || 'Browser connected.');
+        await writeEnv('BROWSER_CDP_URL', cdpUrl).catch(() => {});
+        await writeEnv('PLAYWRIGHT_HEADLESS', 'false').catch(() => {});
+        setLocalBrowserUrl(cdpUrl);
+        const newEventId = Math.random().toString(36).slice(2);
+        const newPtyId = await startHermesPtyChat(newEventId);
+        setPtySessionId(newPtyId);
+        setPtyEventId(newEventId);
+        setTimeout(() => {
+          sendHermesPtyMessage(newPtyId, `/browser connect ${cdpUrl}`).catch(() => {});
+        }, 2000);
       } else {
         setBrowserLog(
           result.stderr ||
@@ -172,12 +194,17 @@ export default function GatewayPanel() {
 
   async function handleBrowserDisconnect() {
     try {
-      const { runHermesCommand } = await import('../api/desktop');
       await runHermesCommand(['browser', 'disconnect'], 10);
       setBrowserConnected(false);
       setBrowserLog('Browser disconnected.');
+      setLocalBrowserUrl(null);
+      setPtySessionId(null);
+      setPtyEventId(null);
     } catch {
       setBrowserConnected(false);
+      setLocalBrowserUrl(null);
+      setPtySessionId(null);
+      setPtyEventId(null);
     }
   }
 
@@ -293,6 +320,20 @@ export default function GatewayPanel() {
           <div className="card" style={{ padding: '12px 14px' }}>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10 }}>
               Connect Chrome/Chromium via CDP so the agent can control your browser.
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ width: '100%', justifyContent: 'center', gap: 6 }}
+                onClick={handleLaunchChrome}
+                disabled={browserConnecting}
+              >
+                <Globe size={13} />
+                Launch Chrome with Debug Port
+              </button>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, textAlign: 'center' }}>
+                Opens your local Chrome ready for agent control
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <input
