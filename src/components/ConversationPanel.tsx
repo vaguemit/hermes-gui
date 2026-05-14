@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore, Message, ToolCall } from '../store';
-import { getGatewayStatus, chatStream, chatCli } from '../api/desktop';
+import { getGatewayStatus, chatStream, chatCli, sendHermesPtyMessage } from '../api/desktop';
 import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy,
@@ -135,7 +135,7 @@ function exportSessionToMarkdown(messages: Message[]): string {
 }
 
 export default function ConversationPanel() {
-  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId } = useStore();
+  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId, localBrowserUrl, setLocalBrowserUrl, ptySessionId, ptyEventId, setPtySessionId, setPtyEventId } = useStore();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<{ abort: () => void } | null>(null);
@@ -341,6 +341,45 @@ export default function ConversationPanel() {
           }),
         ]).then(([u1, u2, u3, u4, u5, u6]) => {
           cleanupRef.fn = () => { u1(); u2(); u3(); u4(); u5(); u6(); };
+
+          // PTY mode: when local Chrome is connected, route through the persistent hermes session
+          if (ptySessionId && ptyEventId && localBrowserUrl) {
+            listen<string>(`pty-chat-${ptyEventId}`, (ev) => {
+              if (aborted || !ev.payload) return;
+              accumulated += ev.payload + '\n';
+              updateLastMessage({ content: accumulated, isStreaming: true });
+            }).then((unlistenPty) => {
+              const prevCleanup = cleanupRef.fn;
+              cleanupRef.fn = () => { if (prevCleanup) prevCleanup(); unlistenPty(); };
+            });
+
+            sendHermesPtyMessage(ptySessionId, effectiveContent).catch(reject);
+
+            // Use a 3-second inactivity timeout as the done signal
+            let lastLength = 0;
+            let stableCount = 0;
+            const interval = setInterval(() => {
+              if (aborted) { clearInterval(interval); return; }
+              if (accumulated.length === lastLength) {
+                stableCount++;
+                if (stableCount >= 6) { // 6 × 500ms = 3s of no new output
+                  clearInterval(interval);
+                  updateLastMessage({ isStreaming: false });
+                  setAgentState('idle');
+                  cleanup();
+                  resolve();
+                }
+              } else {
+                lastLength = accumulated.length;
+                stableCount = 0;
+              }
+            }, 500);
+
+            const prevCleanup2 = cleanupRef.fn;
+            cleanupRef.fn = () => { if (prevCleanup2) prevCleanup2(); clearInterval(interval); };
+            return;
+          }
+
           // Slash commands not handled locally go to the hermes CLI (supports TUI commands like /web, etc.)
           const isTuiSlashCommand = effectiveContent.startsWith('/') && !LOCAL_COMMANDS.has(effectiveContent.split(/\s+/)[0].toLowerCase());
           if (isTuiSlashCommand) {
@@ -412,6 +451,18 @@ export default function ConversationPanel() {
         {isDisconnected && (
           <div style={{ marginBottom: 10, padding: '7px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, fontSize: 12.5, color: 'var(--accent-red)', display: 'flex', gap: 8, alignItems: 'center' }}>
             <AlertTriangle size={13} /> Gateway not connected — start it from the Gateway panel.
+          </div>
+        )}
+        {localBrowserUrl && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '5px 10px', fontSize: 11.5, color: 'var(--accent-green)', background: 'var(--accent-green-dim)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8 }}>
+            <span className="dot dot-green" />
+            Local browser connected — agent controls your Chrome
+            <button
+              onClick={() => { setLocalBrowserUrl(null); setPtySessionId(null); setPtyEventId(null); }}
+              style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, padding: '2px 4px', borderRadius: 4 }}
+            >
+              Disconnect
+            </button>
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 14px' }}>
