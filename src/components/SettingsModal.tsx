@@ -85,6 +85,7 @@ export default function SettingsModal() {
   const [workingDir, setWorkingDir] = useState('');
   const [terminalBackend, setTerminalBackend] = useState('Local');
   const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [autostartLoading, setAutostartLoading] = useState(false);
   const [workspaceSaving, setWorkspaceSaving] = useState(false);
   const [workspaceSaveMsg, setWorkspaceSaveMsg] = useState('');
 
@@ -177,12 +178,14 @@ export default function SettingsModal() {
   };
 
   const handleAutostartToggle = async (enabled: boolean) => {
-    setAutostartEnabled(enabled);
+    setAutostartLoading(true);
     try {
       await toggleAutostart(enabled);
+      setAutostartEnabled(enabled);
     } catch {
-      // revert on failure
-      setAutostartEnabled(!enabled);
+      /* non-fatal */
+    } finally {
+      setAutostartLoading(false);
     }
   };
 
@@ -308,6 +311,27 @@ export default function SettingsModal() {
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Workspace</div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Working directory and execution environment</div>
+
+                {/* Desktop Behaviour */}
+                <div style={{ marginBottom: 20 }}>
+                  <div className="section-label" style={{ marginBottom: 10 }}>Desktop</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                    <div>
+                      <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Launch on startup</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>Start Hermes automatically when you log in</div>
+                    </div>
+                    <label className="toggle" style={{ opacity: autostartLoading ? 0.5 : 1 }}>
+                      <input
+                        type="checkbox"
+                        checked={autostartEnabled}
+                        onChange={e => handleAutostartToggle(e.target.checked)}
+                        disabled={autostartLoading}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+                </div>
+
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Working Directory</label>
                   <input className="input-field" value={workingDir} onChange={e => setWorkingDir(e.target.value)} style={{ fontFamily: 'var(--font-mono)' }} />
@@ -323,20 +347,6 @@ export default function SettingsModal() {
                     <option>Singularity</option>
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Controls where Hermes executes shell commands</div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', marginBottom: 16 }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>Launch on login</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Start Hermes automatically when you log in</div>
-                  </div>
-                  <label className="toggle">
-                    <input
-                      type="checkbox"
-                      checked={autostartEnabled}
-                      onChange={e => handleAutostartToggle(e.target.checked)}
-                    />
-                    <span className="toggle-slider" />
-                  </label>
                 </div>
                 <button
                   className="btn btn-primary"
