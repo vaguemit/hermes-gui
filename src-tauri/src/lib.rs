@@ -806,6 +806,161 @@ fn chat_stream(
     Ok(())
 }
 
+#[tauri::command]
+fn hermes_chat_stream(
+    app_handle: tauri::AppHandle,
+    event_id: String,
+    message: String,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let home = hermes_home();
+    let binary = hermes_binary().ok_or_else(|| "hermes binary not found".to_string())?;
+    let eid = event_id;
+
+    thread::spawn(move || {
+        let mut args = vec![
+            "chat".to_string(),
+            "-q".to_string(),
+            message,
+            "-Q".to_string(),
+            "--source".to_string(),
+            "desktop".to_string(),
+        ];
+        if let Some(sid) = session_id {
+            if !sid.is_empty() {
+                args.push("--resume".to_string());
+                args.push(sid);
+            }
+        }
+
+        let mut child = match Command::new(&binary)
+            .args(&args)
+            .env("HERMES_HOME", &home)
+            .env("PATH", enhanced_path(&home))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = app_handle.emit(&format!("chat-error-{}", eid),
+                    format!("Failed to start hermes CLI: {}", e));
+                return;
+            }
+        };
+
+        let stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => {
+                let _ = app_handle.emit(&format!("chat-error-{}", eid), "No stdout");
+                return;
+            }
+        };
+
+        let reader = BufReader::new(stdout);
+        let mut has_output = false;
+
+        for line in reader.lines() {
+            let raw = match line {
+                Ok(l) => l,
+                Err(_) => break,
+            };
+            let cleaned = strip_ansi(&raw);
+
+            // Extract and forward session_id line without displaying it
+            if let Some(idx) = cleaned.find("session_id:") {
+                let rest = cleaned[idx + "session_id:".len()..].trim();
+                if let Some(sid) = rest.split_whitespace().next() {
+                    let _ = app_handle.emit(&format!("chat-session-{}", eid), sid.to_string());
+                }
+                continue;
+            }
+
+            if is_cli_noise(&cleaned) {
+                continue;
+            }
+
+            let trimmed = cleaned.trim_end_matches('\r');
+            if !trimmed.trim().is_empty() {
+                has_output = true;
+                let _ = app_handle.emit(&format!("chat-chunk-{}", eid), format!("{}\n", trimmed));
+            }
+        }
+
+        // Read any stderr for error reporting
+        let stderr_text = child.stderr.take()
+            .map(|s| {
+                BufReader::new(s).lines()
+                    .filter_map(|l| l.ok())
+                    .map(|l| strip_ansi(&l))
+                    .filter(|l| {
+                        let t = l.trim();
+                        !t.is_empty()
+                            && !t.contains("UserWarning")
+                            && !t.contains("FutureWarning")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default();
+
+        let exit_status = child.wait().ok();
+        let success = exit_status.map(|s| s.success()).unwrap_or(false);
+
+        if has_output || success {
+            let _ = app_handle.emit(&format!("chat-done-{}", eid), "");
+        } else {
+            let detail = stderr_text.trim().to_string();
+            let msg = if detail.is_empty() {
+                format!("hermes CLI exited with no output (code: {:?})",
+                    exit_status.and_then(|s| s.code()))
+            } else {
+                detail
+            };
+            let _ = app_handle.emit(&format!("chat-error-{}", eid), msg);
+        }
+    });
+
+    Ok(())
+}
+
+// ── ANSI / CLI-noise helpers ──────────────────────────────────────────────────
+
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                while let Some(&next) = chars.peek() {
+                    chars.next();
+                    if next.is_ascii_alphabetic() { break; }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+fn is_cli_noise(s: &str) -> bool {
+    let trimmed = s.trim();
+    if trimmed.is_empty() { return false; }
+    let first = trimmed.chars().next().unwrap_or(' ');
+    // Box-drawing characters used in TUI borders
+    if matches!(first, '╭'|'╰'|'│'|'╮'|'╯'|'─'|'┌'|'┐'|'└'|'┘'|'┤'|'├'|'┬'|'┴'|'┼') {
+        return true;
+    }
+    // Hermes header line: ⚕ Hermes ...
+    if trimmed.starts_with('⚕') && trimmed.contains("Hermes") {
+        return true;
+    }
+    false
+}
+
 // ── Streaming helpers ─────────────────────────────────────────────────────────
 
 fn stream_spawn(
@@ -1585,6 +1740,7 @@ pub fn run() {
             hermes_stop_gateway,
             hermes_gateway_status,
             chat_stream,
+            hermes_chat_stream,
             hermes_stream_command,
             hermes_stream_install,
             update_tray_status,
