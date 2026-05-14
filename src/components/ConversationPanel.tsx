@@ -167,7 +167,7 @@ export default function ConversationPanel() {
     URL.revokeObjectURL(url);
   };
 
-  const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/tools', '/version']);
+  const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/tools', '/version', '/browser', '/status', '/memory', '/shell', '/persona']);
 
   const sendMessage = async () => {
     if (!input.trim() || isRunning) return;
@@ -185,7 +185,7 @@ export default function ConversationPanel() {
       return;
     }
     if (userContent === '/help') {
-      addMessage({ id: generateId(), role: 'system', type: 'info', content: '**Hermes Commands**\n\n`/new` or `/reset` — clear conversation\n`/usage` — show token usage\n`/model` — open model switcher\n`/agents` — view agent modes\n`/skills` — open skills browser\n`/gateway` — open gateway panel\n`/tools` — open command center\n`/version` — show Hermes version\n\nAll other `/` commands are forwarded to the Hermes agent.', timestamp: Date.now() });
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: '**Hermes Commands**\n\n`/new` or `/reset` — clear conversation\n`/usage` — show token usage\n`/model` — open model switcher\n`/agents` — view agent modes\n`/skills` — open skills browser\n`/gateway` — open gateway panel\n`/tools` — open command center\n`/version` — show Hermes version\n`/status` — show agent status\n`/memory` — show memory info\n`/shell <cmd>` — run a shell command\n`/browser connect` — browser tool guidance\n`/browser <url>` — navigate to URL\n\nAll other natural language is sent to the Hermes agent. Use natural language to invoke tools: "search for X", "navigate to Y", "take a screenshot".', timestamp: Date.now() });
       return;
     }
     if (userContent === '/model') {
@@ -217,8 +217,64 @@ export default function ConversationPanel() {
       addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Fetching Hermes version...', timestamp: Date.now() });
       return;
     }
+    if (userContent === '/browser connect' || userContent === '/browser') {
+      addMessage({
+        id: generateId(), role: 'system', type: 'info',
+        content: 'Browser tools are built into the agent. Use natural language:\n\n• `"navigate to google.com"` — opens a URL\n• `"take a screenshot"` — captures the page\n• `"click the login button"` — clicks an element\n• `"fill in the search form and submit"` — complex interactions\n\nThe agent uses its `browser_navigate`, `browser_click`, and `browser_snapshot` tools automatically.',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+    if (userContent === '/status') {
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Fetching agent status...', timestamp: Date.now() });
+      import('../api/desktop').then(({ runHermesCommand }) => {
+        runHermesCommand(['status'], 30).then(result => {
+          const text = (result.stdout || result.stderr || 'No output from hermes status.').trim();
+          addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: text, timestamp: Date.now() });
+        });
+      });
+      return;
+    }
+    if (userContent === '/memory') {
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Fetching memory info...', timestamp: Date.now() });
+      import('../api/desktop').then(({ runHermesCommand }) => {
+        runHermesCommand(['memory'], 30).then(result => {
+          const text = (result.stdout || result.stderr || 'No memory output.').trim();
+          addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: text, timestamp: Date.now() });
+        });
+      });
+      return;
+    }
+    if (userContent.startsWith('/shell ')) {
+      const shellCmd = userContent.slice('/shell '.length).trim();
+      if (shellCmd) {
+        addMessage({ id: generateId(), role: 'system', type: 'info', content: `Running: \`${shellCmd}\``, timestamp: Date.now() });
+        import('../api/desktop').then(({ runHermesCommand }) => {
+          runHermesCommand(['-z', `!${shellCmd}`], 60).then(result => {
+            const text = (result.stdout || result.stderr || 'No output.').trim();
+            addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: `\`\`\`\n${text}\n\`\`\``, timestamp: Date.now() });
+          });
+        });
+        return;
+      }
+    }
+    if (userContent === '/persona') {
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Fetching agent persona...', timestamp: Date.now() });
+      import('../api/desktop').then(({ runHermesCommand }) => {
+        runHermesCommand(['-z', 'What is your current persona and name?'], 30).then(result => {
+          const text = (result.stdout || result.stderr || 'No persona configured.').trim();
+          addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: text, timestamp: Date.now() });
+        });
+      });
+      return;
+    }
 
-    const userMsg: Message = { id: generateId(), role: 'user', type: 'prose', content: userContent, timestamp: Date.now() };
+    // Translate /browser <url> to natural language so the agent uses its browser_navigate tool
+    const effectiveContent = userContent.startsWith('/browser ') && userContent !== '/browser connect' && userContent !== '/browser'
+      ? `Navigate to ${userContent.slice('/browser '.length).trim()}`
+      : userContent;
+
+    const userMsg: Message = { id: generateId(), role: 'user', type: 'prose', content: effectiveContent, timestamp: Date.now() };
     addMessage(userMsg);
     setAutoScroll(true);
     setIsRunning(true);
@@ -227,7 +283,7 @@ export default function ConversationPanel() {
 
     addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: '', timestamp: Date.now(), isStreaming: true });
 
-    const history = [...messages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.type === 'prose').map(m => ({ role: m.role, content: m.content })), { role: 'user', content: userContent }];
+    const history = [...messages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.type === 'prose').map(m => ({ role: m.role, content: m.content })), { role: 'user', content: effectiveContent }];
 
     const eventId = Math.random().toString(36).slice(2);
     const cleanupRef = { fn: null as (() => void) | null };
@@ -285,10 +341,10 @@ export default function ConversationPanel() {
           }),
         ]).then(([u1, u2, u3, u4, u5, u6]) => {
           cleanupRef.fn = () => { u1(); u2(); u3(); u4(); u5(); u6(); };
-          // Slash commands not handled locally go to the hermes CLI (supports TUI commands like /browser, /web, /shell, etc.)
-          const isTuiSlashCommand = userContent.startsWith('/') && !LOCAL_COMMANDS.has(userContent.split(/\s+/)[0].toLowerCase());
+          // Slash commands not handled locally go to the hermes CLI (supports TUI commands like /web, etc.)
+          const isTuiSlashCommand = effectiveContent.startsWith('/') && !LOCAL_COMMANDS.has(effectiveContent.split(/\s+/)[0].toLowerCase());
           if (isTuiSlashCommand) {
-            chatCli(eventId, userContent, hermesSessionId).catch(reject);
+            chatCli(eventId, effectiveContent, hermesSessionId).catch(reject);
           } else {
             chatStream(eventId, history, activeModel).catch(reject);
           }
