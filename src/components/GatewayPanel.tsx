@@ -51,7 +51,7 @@ const PLATFORM_FIELDS: Record<string, Array<{ label: string; key: string; type: 
 };
 
 export default function GatewayPanel() {
-  const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId } = useStore();
+  const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId, headedBrowserMode, setHeadedBrowserMode } = useStore();
   const [configPlatform, setConfigPlatform] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [toolStates, setToolStates] = useState<Record<string, ToolToggleState>>(() =>
@@ -204,6 +204,8 @@ export default function GatewayPanel() {
         setLocalBrowserUrl(resolvedUrl);
         setBrowserConnected(true);
         await writeEnvVar('BROWSER_CDP_URL', resolvedUrl);
+        await writeEnvVar('PLAYWRIGHT_HEADLESS', headedBrowserMode ? 'false' : 'true');
+        await writeEnvVar('HEADLESS', headedBrowserMode ? 'false' : 'true');
       } else {
         setBrowserError(result.error || 'Failed to launch Chrome');
       }
@@ -224,7 +226,8 @@ export default function GatewayPanel() {
         setBrowserConnected(true);
         setLocalBrowserUrl(cdpUrl);
         await writeEnvVar('BROWSER_CDP_URL', cdpUrl);
-        await writeEnv('PLAYWRIGHT_HEADLESS', 'false').catch(() => {});
+        await writeEnvVar('PLAYWRIGHT_HEADLESS', headedBrowserMode ? 'false' : 'true');
+        await writeEnvVar('HEADLESS', headedBrowserMode ? 'false' : 'true');
         const newEventId = Math.random().toString(36).slice(2);
         const newPtyId = await startHermesPtyChat(newEventId);
         setPtySessionId(newPtyId);

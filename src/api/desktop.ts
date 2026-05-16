@@ -424,3 +424,13 @@ export async function sendHermesPtyMessage(ptyId: string, message: string): Prom
   if (!isTauriApp()) return;
   return invoke<void>('send_hermes_pty_message', { ptyId, message });
 }
+
+/** Set all Playwright/browser headed-mode env vars in one call. */
+export async function setBrowserHeadedMode(headed: boolean): Promise<void> {
+  const val = headed ? 'false' : 'true'; // PLAYWRIGHT_HEADLESS=false means headed
+  await Promise.allSettled([
+    writeEnv('PLAYWRIGHT_HEADLESS', val),
+    writeEnv('HEADLESS', headed ? 'false' : 'true'),
+    writeEnv('PLAYWRIGHT_BROWSERS_PATH', '0'),
+  ]);
+}
