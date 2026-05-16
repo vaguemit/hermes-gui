@@ -381,10 +381,15 @@ export async function ptyKill(ptyId: string): Promise<void> {
   return invoke<void>('pty_kill', { pty_id: ptyId });
 }
 
-/** Launch Chrome/Chromium with remote debugging on the given port. Returns CDP WebSocket URL. */
-export async function launchChrome(port = 9222): Promise<string> {
-  if (!isTauriApp()) return `ws://127.0.0.1:${port}/json`;
-  return invoke<string>('launch_chrome', { port });
+/** Launch Chrome with remote debugging. Returns CDP HTTP URL (e.g. http://127.0.0.1:9222). */
+export async function launchChrome(url?: string): Promise<{ success: boolean; cdpUrl?: string; error?: string }> {
+  if (!isTauriApp()) return { success: false, error: 'no Tauri bridge' };
+  try {
+    const result = await invoke<string>('launch_chrome', { url: url || '' });
+    return { success: true, cdpUrl: result };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
 }
 
 /**
