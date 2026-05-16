@@ -71,6 +71,8 @@ interface AppState {
   setLocalBrowserUrl: (url: string | null) => void;
   browserConnected: boolean;
   setBrowserConnected: (connected: boolean) => void;
+  headedBrowserMode: boolean;
+  setHeadedBrowserMode: (headed: boolean) => void;
   ptySessionId: string | null;
   setPtySessionId: (id: string | null) => void;
   ptyEventId: string | null;
@@ -158,6 +160,8 @@ export const useStore = create<AppState>((set, get) => ({
   setLocalBrowserUrl: (url) => set({ localBrowserUrl: url }),
   browserConnected: false,
   setBrowserConnected: (connected) => set({ browserConnected: connected }),
+  headedBrowserMode: true,
+  setHeadedBrowserMode: (headed) => set({ headedBrowserMode: headed }),
   ptySessionId: null,
   setPtySessionId: (id) => set({ ptySessionId: id }),
   ptyEventId: null,
