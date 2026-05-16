@@ -230,9 +230,11 @@ export default function ConversationPanel() {
         setLocalBrowserUrl(cdpUrl);
         setBrowserConnected(true);
         writeEnvVar('BROWSER_CDP_URL', cdpUrl).catch(() => {});
+        writeEnvVar('PLAYWRIGHT_HEADLESS', 'false').catch(() => {});
+        writeEnvVar('HEADLESS', 'false').catch(() => {});
         addMessage({
           id: generateId(), role: 'assistant', type: 'prose',
-          content: `Chrome launched and connected via CDP. Browser tasks will now route through the local browser. Navigating to ${targetUrl}…`,
+          content: `Chrome launched in headed mode — you should see the browser window. Browser tasks will now route through your local Chrome. Navigating to ${targetUrl}…`,
           timestamp: Date.now(),
         });
       } else {

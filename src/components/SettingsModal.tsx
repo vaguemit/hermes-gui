@@ -99,6 +99,7 @@ export default function SettingsModal() {
   // Browser automation tab state
   const [browserKeys, setBrowserKeys] = useState<Record<string, string>>({});
   const [domainSkills, setDomainSkills] = useState(false);
+  const [headedMode, setHeadedMode] = useState(true);
   const [browserSaving, setBrowserSaving] = useState(false);
   const [browserSaveMsg, setBrowserSaveMsg] = useState('');
 
@@ -210,6 +211,7 @@ export default function SettingsModal() {
         BROWSER_KEYS.forEach(k => { if (env[k.key]) keys[k.key] = env[k.key]; });
         setBrowserKeys(keys);
         setDomainSkills(env['BH_DOMAIN_SKILLS'] === '1');
+        setHeadedMode(env['PLAYWRIGHT_HEADLESS'] !== 'true');
       }).catch(() => {});
     }
   }, [settingsOpen, tab]);
@@ -218,6 +220,8 @@ export default function SettingsModal() {
     setBrowserSaving(true);
     setBrowserSaveMsg('');
     try {
+      await writeEnv('PLAYWRIGHT_HEADLESS', headedMode ? 'false' : 'true');
+      await writeEnv('HEADLESS', headedMode ? 'false' : 'true');
       await writeEnv('BH_DOMAIN_SKILLS', domainSkills ? '1' : '');
       for (const k of BROWSER_KEYS) {
         const val = browserKeys[k.key];
@@ -354,6 +358,17 @@ export default function SettingsModal() {
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Browser Automation</div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Configure browser-harness and cloud browser services. Keys stored in ~/.hermes/.env</div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', marginBottom: 0 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>Headed Mode</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Browser window appears on your screen.<br />Disabling runs the browser invisibly.</div>
+                  </div>
+                  <label className="toggle">
+                    <input type="checkbox" checked={headedMode} onChange={e => setHeadedMode(e.target.checked)} />
+                    <span className="toggle-slider" />
+                  </label>
+                </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', marginBottom: 18 }}>
                   <div>
