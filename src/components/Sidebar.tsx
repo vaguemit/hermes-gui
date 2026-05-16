@@ -24,7 +24,8 @@ export default function Sidebar() {
   const {
     activeSection, setActiveSection, gatewayStatus, agentState,
     activeModel, setModelSwitcherOpen, sessions, activeSessionId,
-    setActiveSession, addSession, tokensUsed, contextWindow, setSettingsOpen
+    setActiveSession, addSession, tokensUsed, contextWindow, setSettingsOpen,
+    browserConnected, localBrowserUrl,
   } = useStore();
 
   const [historyExpanded, setHistoryExpanded] = useState(true);
@@ -95,6 +96,14 @@ export default function Sidebar() {
           </div>
         )}
       </div>
+
+      {/* Browser Connected Badge */}
+      {browserConnected && (
+        <div style={{ margin: '-4px 10px 10px', padding: '6px 10px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span className="dot dot-green" />
+          <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>Browser connected</span>
+        </div>
+      )}
 
       {/* New Chat Button */}
       <div style={{ padding: '0 10px 8px' }}>
