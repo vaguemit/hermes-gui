@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore, Message, ToolCall } from '../store';
-import { getGatewayStatus, chatStream, chatCli } from '../api/desktop';
+import { getGatewayStatus, chatStream, chatCli, launchChrome, writeEnvVar } from '../api/desktop';
 import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy,
@@ -135,7 +135,7 @@ function exportSessionToMarkdown(messages: Message[]): string {
 }
 
 export default function ConversationPanel() {
-  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId, localBrowserUrl, setLocalBrowserUrl, setPtySessionId, setPtyEventId } = useStore();
+  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId, localBrowserUrl, setLocalBrowserUrl, setBrowserConnected, setPtySessionId, setPtyEventId } = useStore();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<{ abort: () => void } | null>(null);
@@ -217,12 +217,31 @@ export default function ConversationPanel() {
       addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Fetching Hermes version...', timestamp: Date.now() });
       return;
     }
-    if (userContent === '/browser connect' || userContent === '/browser') {
-      addMessage({
-        id: generateId(), role: 'system', type: 'info',
-        content: 'Browser tools are built into the agent. Use natural language:\n\n• `"navigate to google.com"` — opens a URL\n• `"take a screenshot"` — captures the page\n• `"click the login button"` — clicks an element\n• `"fill in the search form and submit"` — complex interactions\n\nThe agent uses its `browser_navigate`, `browser_click`, and `browser_snapshot` tools automatically.',
-        timestamp: Date.now(),
-      });
+    if (userContent.startsWith('/browser')) {
+      const arg = userContent.slice('/browser'.length).trim();
+      // /browser connect is an alias for /browser (no url) — launch at default
+      const targetUrl = (arg && arg !== 'connect') ? arg : 'https://claude.ai';
+      const cdpUrl = 'http://127.0.0.1:9222';
+
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: `Launching Chrome browser at ${targetUrl}…`, timestamp: Date.now() });
+
+      const result = await launchChrome(targetUrl);
+      if (result.success) {
+        setLocalBrowserUrl(cdpUrl);
+        setBrowserConnected(true);
+        writeEnvVar('BROWSER_CDP_URL', cdpUrl).catch(() => {});
+        addMessage({
+          id: generateId(), role: 'assistant', type: 'prose',
+          content: `Chrome launched and connected via CDP. Browser tasks will now route through the local browser. Navigating to ${targetUrl}…`,
+          timestamp: Date.now(),
+        });
+      } else {
+        addMessage({
+          id: generateId(), role: 'assistant', type: 'error',
+          content: `Failed to launch Chrome: ${result.error || 'unknown error'}`,
+          timestamp: Date.now(),
+        });
+      }
       return;
     }
     if (userContent === '/status') {
@@ -269,10 +288,7 @@ export default function ConversationPanel() {
       return;
     }
 
-    // Translate /browser <url> to natural language so the agent uses its browser_navigate tool
-    const effectiveContent = userContent.startsWith('/browser ') && userContent !== '/browser connect' && userContent !== '/browser'
-      ? `Navigate to ${userContent.slice('/browser '.length).trim()}`
-      : userContent;
+    const effectiveContent = userContent;
 
     const userMsg: Message = { id: generateId(), role: 'user', type: 'prose', content: effectiveContent, timestamp: Date.now() };
     addMessage(userMsg);

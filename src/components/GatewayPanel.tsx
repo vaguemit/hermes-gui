@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Globe, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
-import { getGatewayStatus, launchChrome, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv } from '../api/desktop';
+import { getChromeCdpStatus, getGatewayStatus, launchChrome, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv, writeEnvVar } from '../api/desktop';
 
 interface ToolPlatform {
   id: string;
@@ -51,7 +51,7 @@ const PLATFORM_FIELDS: Record<string, Array<{ label: string; key: string; type: 
 };
 
 export default function GatewayPanel() {
-  const { platforms, gatewayStatus, setGatewayStatus, setLocalBrowserUrl, setPtySessionId, setPtyEventId } = useStore();
+  const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId } = useStore();
   const [configPlatform, setConfigPlatform] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [toolStates, setToolStates] = useState<Record<string, ToolToggleState>>(() =>
@@ -88,10 +88,10 @@ export default function GatewayPanel() {
     }, 3000);
   };
 
-  const [cdpUrl, setCdpUrl] = useState('ws://localhost:9222');
-  const [browserConnected, setBrowserConnected] = useState(false);
+  const [cdpUrl, setCdpUrl] = useState('http://127.0.0.1:9222');
+  const [browserLaunching, setBrowserLaunching] = useState(false);
   const [browserConnecting, setBrowserConnecting] = useState(false);
-  const [browserLog, setBrowserLog] = useState('');
+  const [browserError, setBrowserError] = useState<string | null>(null);
 
   const [gatewayLog, setGatewayLog] = useState<string[]>([
     '[ready] Desktop gateway controls initialized',
@@ -105,6 +105,19 @@ export default function GatewayPanel() {
     });
     return () => { cancelled = true; };
   }, [setGatewayStatus]);
+
+  // Poll CDP every 3s while browser is connected — disconnect if Chrome closes
+  useEffect(() => {
+    if (!browserConnected) return;
+    const timer = setInterval(async () => {
+      const alive = await getChromeCdpStatus();
+      if (!alive) {
+        setBrowserConnected(false);
+        setLocalBrowserUrl(null);
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [browserConnected, setBrowserConnected, setLocalBrowserUrl]);
 
   const startGateway = async () => {
     setGatewayStatus('connecting');
@@ -147,31 +160,40 @@ export default function GatewayPanel() {
     }
   };
 
+  const CDP_URL = 'http://127.0.0.1:9222';
+
   async function handleLaunchChrome() {
-    setBrowserConnecting(true);
+    setBrowserLaunching(true);
+    setBrowserError(null);
     try {
-      const url = await launchChrome(9222);
-      setCdpUrl(url);
-      setBrowserLog('Chrome launched. Click Connect to link the agent to your browser.');
+      const result = await launchChrome();
+      if (result.success) {
+        const resolvedUrl = result.cdpUrl || CDP_URL;
+        setCdpUrl(resolvedUrl);
+        setLocalBrowserUrl(resolvedUrl);
+        setBrowserConnected(true);
+        await writeEnvVar('BROWSER_CDP_URL', resolvedUrl);
+      } else {
+        setBrowserError(result.error || 'Failed to launch Chrome');
+      }
     } catch (e) {
-      setBrowserLog(`Could not launch Chrome: ${e instanceof Error ? e.message : String(e)}`);
+      setBrowserError(`Could not launch Chrome: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
-      setBrowserConnecting(false);
+      setBrowserLaunching(false);
     }
   }
 
   async function handleBrowserConnect() {
     if (browserConnecting) return;
     setBrowserConnecting(true);
-    setBrowserLog('');
+    setBrowserError(null);
     try {
       const result = await runHermesCommand(['browser', 'connect', cdpUrl], 15);
       if (result.success) {
         setBrowserConnected(true);
-        setBrowserLog(result.stdout || 'Browser connected.');
-        await writeEnv('BROWSER_CDP_URL', cdpUrl).catch(() => {});
-        await writeEnv('PLAYWRIGHT_HEADLESS', 'false').catch(() => {});
         setLocalBrowserUrl(cdpUrl);
+        await writeEnvVar('BROWSER_CDP_URL', cdpUrl);
+        await writeEnv('PLAYWRIGHT_HEADLESS', 'false').catch(() => {});
         const newEventId = Math.random().toString(36).slice(2);
         const newPtyId = await startHermesPtyChat(newEventId);
         setPtySessionId(newPtyId);
@@ -180,13 +202,13 @@ export default function GatewayPanel() {
           sendHermesPtyMessage(newPtyId, `/browser connect ${cdpUrl}`).catch(() => {});
         }, 2000);
       } else {
-        setBrowserLog(
+        setBrowserError(
           result.stderr ||
-          'Could not connect via CLI. Start Chrome with: chrome --remote-debugging-port=9222\nThen try again, or use natural language in chat: "navigate to google.com"'
+          'Could not connect. Start Chrome with: chrome --remote-debugging-port=9222'
         );
       }
     } catch (e) {
-      setBrowserLog(`Error: ${e instanceof Error ? e.message : String(e)}`);
+      setBrowserError(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBrowserConnecting(false);
     }
@@ -195,17 +217,14 @@ export default function GatewayPanel() {
   async function handleBrowserDisconnect() {
     try {
       await runHermesCommand(['browser', 'disconnect'], 10);
-      setBrowserConnected(false);
-      setBrowserLog('Browser disconnected.');
-      setLocalBrowserUrl(null);
-      setPtySessionId(null);
-      setPtyEventId(null);
     } catch {
-      setBrowserConnected(false);
-      setLocalBrowserUrl(null);
-      setPtySessionId(null);
-      setPtyEventId(null);
+      // best-effort
     }
+    setBrowserConnected(false);
+    setLocalBrowserUrl(null);
+    setPtySessionId(null);
+    setPtyEventId(null);
+    await writeEnvVar('BROWSER_CDP_URL', '').catch(() => {});
   }
 
   const isConnected = gatewayStatus === 'connected';
@@ -316,62 +335,73 @@ export default function GatewayPanel() {
         </div>
 
         <div style={{ marginTop: 20 }}>
-          <div className="section-label">Browser Connection</div>
-          <div className="card" style={{ padding: '12px 14px' }}>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10 }}>
-              Connect Chrome/Chromium via CDP so the agent can control your browser.
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{ width: '100%', justifyContent: 'center', gap: 6 }}
-                onClick={handleLaunchChrome}
-                disabled={browserConnecting}
-              >
-                <Globe size={13} />
-                Launch Chrome with Debug Port
-              </button>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, textAlign: 'center' }}>
-                Opens your local Chrome ready for agent control
+          <div className="section-label">Local Browser</div>
+          <div className="card" style={{ padding: '14px 16px' }}>
+            {/* Status row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <span className={browserConnected ? 'dot dot-green' : 'dot dot-dim'} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: browserConnected ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
+                  {browserConnected ? 'Connected' : 'Disconnected'}
+                </div>
+                {browserConnected && localBrowserUrl && (
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                    {localBrowserUrl}
+                  </div>
+                )}
+                {!browserConnected && (
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    Chrome DevTools Protocol — lets the agent control your browser
+                  </div>
+                )}
               </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <input
-                className="input-field"
-                value={cdpUrl}
-                onChange={e => setCdpUrl(e.target.value)}
-                placeholder="ws://localhost:9222"
-                style={{ flex: 1, fontSize: 12 }}
-                disabled={browserConnected || browserConnecting}
-              />
-              {!browserConnected ? (
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={handleBrowserConnect}
-                  disabled={browserConnecting || !cdpUrl.trim()}
-                >
-                  {browserConnecting ? 'Connecting…' : 'Connect'}
-                </button>
-              ) : (
+              {browserConnected ? (
                 <button className="btn btn-danger btn-sm" onClick={handleBrowserDisconnect}>
                   Disconnect
                 </button>
+              ) : (
+                <button
+                  className="btn btn-success btn-sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: browserLaunching ? 0.7 : 1 }}
+                  onClick={handleLaunchChrome}
+                  disabled={browserLaunching || browserConnecting}
+                >
+                  <Globe size={12} />
+                  {browserLaunching ? 'Launching…' : 'Launch Chrome'}
+                </button>
               )}
             </div>
-            {browserConnected && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--accent-green)' }}>
-                <span className="dot dot-green" />
-                Browser connected — agent can use browser tools
+
+            {/* Manual CDP URL + connect (for already-running Chrome) */}
+            {!browserConnected && (
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>
+                  Or connect to an existing Chrome instance:
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    className="input-field"
+                    value={cdpUrl}
+                    onChange={e => setCdpUrl(e.target.value)}
+                    placeholder="http://127.0.0.1:9222"
+                    style={{ flex: 1, fontSize: 12 }}
+                    disabled={browserConnecting}
+                  />
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleBrowserConnect}
+                    disabled={browserConnecting || !cdpUrl.trim()}
+                  >
+                    {browserConnecting ? 'Connecting…' : 'Connect'}
+                  </button>
+                </div>
               </div>
             )}
-            {browserLog && (
-              <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', background: 'var(--bg2)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', whiteSpace: 'pre-wrap' }}>
-                {browserLog}
-              </div>
-            )}
-            {!browserConnected && !browserLog && (
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                Start Chrome with: <code style={{ fontFamily: 'var(--font-mono)' }}>chrome --remote-debugging-port=9222</code>
+
+            {/* Error display */}
+            {browserError && (
+              <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--accent-red)', fontFamily: 'var(--font-mono)', background: 'var(--accent-red-dim)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', whiteSpace: 'pre-wrap' }}>
+                {browserError}
               </div>
             )}
           </div>
