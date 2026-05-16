@@ -167,7 +167,7 @@ export default function ConversationPanel() {
     URL.revokeObjectURL(url);
   };
 
-  const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/tools', '/version', '/browser', '/status', '/memory', '/shell', '/persona']);
+  const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/tools', '/version', '/browser', '/status', '/memory', '/shell', '/persona', '/compress', '/retry', '/undo', '/compact', '/insights', '/platforms']);
 
   const sendMessage = async () => {
     if (!input.trim() || isRunning) return;
@@ -276,6 +276,52 @@ export default function ConversationPanel() {
         });
         return;
       }
+    }
+    if (userContent === '/compress' || userContent === '/compact') {
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Compressing context via CLI…', timestamp: Date.now() });
+      import('../api/desktop').then(({ chatCli }) => {
+        const eventId = Math.random().toString(36).slice(2);
+        chatCli(eventId, '/compress', hermesSessionId).catch(() => {});
+      });
+      return;
+    }
+    if (userContent === '/retry') {
+      const lastUser = [...messages].reverse().find(m => m.role === 'user');
+      if (lastUser) {
+        addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Retrying last message…', timestamp: Date.now() });
+        setInput(lastUser.content);
+      }
+      return;
+    }
+    if (userContent === '/undo') {
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Undo sent to Hermes CLI…', timestamp: Date.now() });
+      import('../api/desktop').then(({ chatCli }) => {
+        const eventId = Math.random().toString(36).slice(2);
+        chatCli(eventId, '/undo', hermesSessionId).catch(() => {});
+      });
+      return;
+    }
+    if (userContent.startsWith('/insights')) {
+      const args = userContent.slice('/insights'.length).trim();
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Fetching usage insights…', timestamp: Date.now() });
+      import('../api/desktop').then(({ runHermesCommand }) => {
+        const cmdArgs = args ? ['insights', ...args.split(/\s+/)] : ['insights'];
+        runHermesCommand(cmdArgs, 30).then(result => {
+          const text = (result.stdout || result.stderr || 'No insights data.').trim();
+          addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: text, timestamp: Date.now() });
+        });
+      });
+      return;
+    }
+    if (userContent === '/platforms') {
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Fetching platform status…', timestamp: Date.now() });
+      import('../api/desktop').then(({ runHermesCommand }) => {
+        runHermesCommand(['gateway', 'status'], 15).then(result => {
+          const text = (result.stdout || result.stderr || 'No platform data.').trim();
+          addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: text, timestamp: Date.now() });
+        });
+      });
+      return;
     }
     if (userContent === '/persona') {
       addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Fetching agent persona...', timestamp: Date.now() });
