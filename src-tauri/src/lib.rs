@@ -1669,49 +1669,118 @@ fn pty_kill(pty_id: String, pty_state: tauri::State<PtyState>) -> Result<(), Str
 
 // ── Chrome launcher ──────────────────────────────────────────────────────────
 
+/// Poll http://127.0.0.1:9222/json/version via TCP until CDP is responding or timeout.
+fn wait_for_cdp(timeout_ms: u64) -> bool {
+    let addr: SocketAddr = match "127.0.0.1:9222".parse() {
+        Ok(a) => a,
+        Err(_) => return false,
+    };
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    while Instant::now() < deadline {
+        if TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+    false
+}
+
 #[tauri::command]
-fn launch_chrome(port: u16) -> Result<String, String> {
+fn launch_chrome(url: Option<String>) -> Result<String, String> {
     let local_app_data = env_path("LOCALAPPDATA");
 
+    // Build ordered candidate list per spec
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(ref base) = local_app_data {
         candidates.push(base.join("Google").join("Chrome").join("Application").join("chrome.exe"));
     }
     candidates.push(PathBuf::from(r"C:\Program Files\Google\Chrome\Application\chrome.exe"));
     candidates.push(PathBuf::from(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"));
-    if let Some(ref base) = local_app_data {
-        candidates.push(base.join("Chromium").join("Application").join("chrome.exe"));
-    }
 
-    let port_arg = format!("--remote-debugging-port={}", port);
-    for path in &candidates {
-        if path.exists() {
-            Command::new(path)
-                .args([port_arg.as_str(), "--no-first-run", "--no-default-browser-check"])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .map_err(|e| e.to_string())?;
-            return Ok(format!("ws://127.0.0.1:{}/json", port));
+    let profile_dir = hermes_home().join("chrome-profile");
+    let profile_arg = format!("--user-data-dir={}", profile_dir.to_string_lossy());
+
+    let mut chrome_path: Option<PathBuf> = candidates.into_iter().find(|p| p.exists());
+
+    // Fallback: `where chrome` on Windows
+    if chrome_path.is_none() {
+        if let Ok(out) = Command::new("where").arg("chrome").output() {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if let Some(line) = stdout.lines().next() {
+                let p = PathBuf::from(line.trim());
+                if p.exists() {
+                    chrome_path = Some(p);
+                }
+            }
         }
     }
 
-    // Try PATH fallbacks
-    for name in &["chromium", "chrome"] {
-        if Command::new(name)
-            .args([port_arg.as_str(), "--no-first-run", "--no-default-browser-check"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .is_ok()
-        {
-            return Ok(format!("ws://127.0.0.1:{}/json", port));
+    let chrome = chrome_path.ok_or_else(|| {
+        "Chrome not found. Install Google Chrome and try again.".to_string()
+    })?;
+
+    let mut args: Vec<String> = vec![
+        String::from("--remote-debugging-port=9222"),
+        String::from("--no-first-run"),
+        String::from("--no-default-browser-check"),
+        profile_arg,
+    ];
+    if let Some(ref page_url) = url {
+        if !page_url.is_empty() {
+            args.push(page_url.clone());
         }
     }
 
-    Err("Chrome not found. Install Google Chrome or Chromium.".to_string())
+    let args_str: Vec<&str> = args.iter().map(String::as_str).collect();
+
+    // Launch Chrome visibly — no --headless flag, no CREATE_NO_WINDOW
+    Command::new(&chrome)
+        .args(&args_str)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to launch Chrome: {}", e))?;
+
+    // Poll CDP up to 5 seconds (500 ms intervals)
+    if !wait_for_cdp(5000) {
+        return Err("Chrome launched but CDP did not respond on port 9222 within 5 seconds.".to_string());
+    }
+
+    Ok(String::from("http://127.0.0.1:9222"))
+}
+
+#[tauri::command]
+fn get_chrome_cdp_status() -> bool {
+    let addr: SocketAddr = match "127.0.0.1:9222".parse() {
+        Ok(a) => a,
+        Err(_) => return false,
+    };
+    TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
+}
+
+#[tauri::command]
+fn write_env_var(key: String, val: String) -> Result<(), String> {
+    let path = hermes_home().join(".env");
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = content.lines().map(String::from).collect();
+    let prefix = format!("{}=", key);
+    let new_line = format!("{}={}", key, val);
+    let mut found = false;
+    for line in &mut lines {
+        if line.starts_with(&prefix) {
+            *line = new_line.clone();
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        lines.push(new_line);
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, lines.join("\n") + "\n").map_err(|e| e.to_string())
 }
 
 // ── Hermes interactive chat (stdin/stdout pipes) ───────────────────────────────
@@ -1899,6 +1968,8 @@ pub fn run() {
             pty_resize,
             pty_kill,
             launch_chrome,
+            get_chrome_cdp_status,
+            write_env_var,
             start_hermes_pty_chat,
             send_hermes_pty_message,
         ])
