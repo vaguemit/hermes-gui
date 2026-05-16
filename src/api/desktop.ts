@@ -392,6 +392,17 @@ export async function launchChrome(url?: string): Promise<{ success: boolean; cd
   }
 }
 
+/** Write a single key=value pair to the hermes .env file. */
+export async function writeEnvVar(key: string, val: string): Promise<{ success: boolean; error?: string }> {
+  if (!isTauriApp()) return { success: false, error: 'no Tauri bridge' };
+  try {
+    await invoke<void>('write_env_var', { key, val });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+}
+
 /**
  * Start a persistent hermes chat session backed by a child process.
  * Returns a session ID used with sendHermesPtyMessage.
