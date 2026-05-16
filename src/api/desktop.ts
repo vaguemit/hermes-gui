@@ -392,6 +392,12 @@ export async function launchChrome(url?: string): Promise<{ success: boolean; cd
   }
 }
 
+/** Check whether a Chrome CDP endpoint is currently reachable. */
+export async function getChromeCdpStatus(): Promise<boolean> {
+  if (!isTauriApp()) return false;
+  return invoke<boolean>('get_chrome_cdp_status');
+}
+
 /** Write a single key=value pair to the hermes .env file. */
 export async function writeEnvVar(key: string, val: string): Promise<{ success: boolean; error?: string }> {
   if (!isTauriApp()) return { success: false, error: 'no Tauri bridge' };
