@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Globe, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
-import { getChromeCdpStatus, getGatewayStatus, launchChrome, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv, writeEnvVar } from '../api/desktop';
+import { getChromeCdpStatus, getGatewayStatus, launchChrome, readEnv, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv, writeEnvVar } from '../api/desktop';
 
 interface ToolPlatform {
   id: string;
@@ -92,6 +92,37 @@ export default function GatewayPanel() {
   const [browserLaunching, setBrowserLaunching] = useState(false);
   const [browserConnecting, setBrowserConnecting] = useState(false);
   const [browserError, setBrowserError] = useState<string | null>(null);
+
+  const [bhInstalled, setBhInstalled] = useState<boolean | null>(null);
+  const [bhInstalling, setBhInstalling] = useState(false);
+  const [bhInstallLog, setBhInstallLog] = useState<string[]>([]);
+  const [bhDomainSkills, setBhDomainSkills] = useState(false);
+  const [bhExpanded, setBhExpanded] = useState(false);
+
+  useEffect(() => {
+    readEnv().then(env => setBhDomainSkills(env['BH_DOMAIN_SKILLS'] === '1')).catch(() => {});
+    runHermesCommand(['run', 'browser-harness', '--help'], 5)
+      .then(r => setBhInstalled(r.success || r.stdout.includes('browser-harness')))
+      .catch(() => setBhInstalled(false));
+  }, []);
+
+  const installBrowserHarness = async () => {
+    setBhInstalling(true);
+    setBhInstallLog([]);
+    try {
+      const { streamHermesCommand } = await import('../api/desktop');
+      await streamHermesCommand(
+        ['run', 'pip', 'install', 'browser-harness', '--upgrade'],
+        line => setBhInstallLog(prev => [...prev, line]),
+        120,
+      );
+      setBhInstalled(true);
+    } catch (e) {
+      setBhInstallLog(prev => [...prev, `Error: ${e instanceof Error ? e.message : String(e)}`]);
+    } finally {
+      setBhInstalling(false);
+    }
+  };
 
   const [gatewayLog, setGatewayLog] = useState<string[]>([
     '[ready] Desktop gateway controls initialized',
@@ -405,6 +436,54 @@ export default function GatewayPanel() {
               </div>
             )}
           </div>
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <button
+            onClick={() => setBhExpanded(!bhExpanded)}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', width: '100%', padding: 0, marginBottom: bhExpanded ? 10 : 0 }}
+          >
+            <div className="section-label" style={{ flex: 1, marginBottom: 0 }}>Browser Harness</div>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{bhExpanded ? '▲' : '▼'}</span>
+          </button>
+          {bhExpanded && (
+            <div className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <span className={bhInstalled === true ? 'dot dot-green' : bhInstalled === false ? 'dot dot-red' : 'dot dot-dim'} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>
+                    {bhInstalled === true ? 'Installed' : bhInstalled === false ? 'Not installed' : 'Checking…'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    Connects the agent to Chrome via CDP with self-healing automation
+                  </div>
+                </div>
+                {bhInstalled === false && (
+                  <button className="btn btn-primary btn-sm" onClick={installBrowserHarness} disabled={bhInstalling}>
+                    {bhInstalling ? 'Installing…' : 'Install'}
+                  </button>
+                )}
+              </div>
+              {bhInstallLog.length > 0 && (
+                <div style={{ background: 'var(--bg0)', borderRadius: 6, padding: '8px 12px', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-secondary)', maxHeight: 120, overflowY: 'auto', marginBottom: 12 }}>
+                  {bhInstallLog.map((l, i) => <div key={i}>{l}</div>)}
+                </div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>Domain Skills</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>Site-specific playbooks (LinkedIn, GitHub, Amazon…)</div>
+                </div>
+                <label className="toggle">
+                  <input type="checkbox" checked={bhDomainSkills} onChange={async e => {
+                    setBhDomainSkills(e.target.checked);
+                    await writeEnvVar('BH_DOMAIN_SKILLS', e.target.checked ? '1' : '').catch(() => {});
+                  }} />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+            </div>
+          )}
         </div>
 
         {configPlatform && (
