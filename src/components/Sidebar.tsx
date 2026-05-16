@@ -57,9 +57,7 @@ export default function Sidebar() {
       {/* Header / Logo */}
       <div style={{ padding: '18px 16px 12px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, var(--accent-green), #3b9eff)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
-            H
-          </div>
+          <img src="/logo.png" alt="Hermes" style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, objectFit: 'cover' }} />
           <div>
             <div style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--text-primary)' }}>Hermes</div>
             <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Desktop Agent</div>
