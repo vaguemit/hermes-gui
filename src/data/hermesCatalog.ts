@@ -60,7 +60,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/busy', desc: 'Choose queue, steer, or interrupt behavior', category: 'Config' },
   { cmd: '/tools', desc: 'List, enable, or disable tools', category: 'Tools' },
   { cmd: '/toolsets', desc: 'List available toolsets', category: 'Tools' },
-  { cmd: '/browser', desc: 'Manage local Chrome CDP connection', category: 'Tools' },
+  { cmd: '/browser', desc: 'Launch Chrome at a URL (no arg → claude.ai), or pass a natural-language task to open the right site and send the instruction to the agent automatically', category: 'Tools' },
   { cmd: '/skills', desc: 'Search, install, inspect, or manage skills', category: 'Skills' },
   { cmd: '/cron', desc: 'Manage scheduled tasks', category: 'Tools' },
   { cmd: '/curator', desc: 'Manage background skill maintenance', category: 'Skills' },

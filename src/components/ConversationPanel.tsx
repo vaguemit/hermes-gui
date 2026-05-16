@@ -134,6 +134,40 @@ function exportSessionToMarkdown(messages: Message[]): string {
   return lines.join('\n');
 }
 
+function isUrl(s: string): boolean {
+  const first = s.split(/\s/)[0];
+  return /^https?:\/\//i.test(first) || /^www\./i.test(first) || /^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/.*)?$/.test(first);
+}
+
+function extractSiteUrl(instruction: string): string {
+  const sites: Record<string, string> = {
+    instagram: 'https://instagram.com',
+    twitter: 'https://twitter.com',
+    x: 'https://x.com',
+    google: 'https://google.com',
+    youtube: 'https://youtube.com',
+    facebook: 'https://facebook.com',
+    github: 'https://github.com',
+    reddit: 'https://reddit.com',
+    linkedin: 'https://linkedin.com',
+    amazon: 'https://amazon.com',
+    netflix: 'https://netflix.com',
+    gmail: 'https://gmail.com',
+    claude: 'https://claude.ai',
+    chatgpt: 'https://chatgpt.com',
+    openai: 'https://openai.com',
+    wikipedia: 'https://wikipedia.org',
+    stackoverflow: 'https://stackoverflow.com',
+  };
+  const lower = instruction.toLowerCase();
+  for (const [name, url] of Object.entries(sites)) {
+    if (lower.includes(name)) return url;
+  }
+  const domainMatch = instruction.match(/\b([a-zA-Z0-9-]+\.(com|org|net|io|ai|co|app|dev))\b/i);
+  if (domainMatch) return `https://${domainMatch[1]}`;
+  return 'https://claude.ai';
+}
+
 export default function ConversationPanel() {
   const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId, localBrowserUrl, setLocalBrowserUrl, setBrowserConnected, setPtySessionId, setPtyEventId } = useStore();
   const [input, setInput] = useState('');
