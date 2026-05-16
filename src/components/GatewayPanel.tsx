@@ -371,6 +371,25 @@ export default function GatewayPanel() {
         <div style={{ marginTop: 20 }}>
           <div className="section-label">Local Browser</div>
           <div className="card" style={{ padding: '14px 16px' }}>
+            {/* Headed mode toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Headed Mode</div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>Browser window appears on your screen</div>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={headedBrowserMode}
+                  onChange={async e => {
+                    setHeadedBrowserMode(e.target.checked);
+                    await writeEnvVar('PLAYWRIGHT_HEADLESS', e.target.checked ? 'false' : 'true').catch(() => {});
+                  }}
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+
             {/* Status row */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
               <span className={browserConnected ? 'dot dot-green' : 'dot dot-dim'} />
