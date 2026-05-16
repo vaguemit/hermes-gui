@@ -349,6 +349,9 @@ fn run_command(program: PathBuf, args: &[String], timeout_secs: u64) -> Result<C
         .args(args)
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
+        .env("PLAYWRIGHT_HEADLESS", "false")
+        .env("PLAYWRIGHT_BROWSERS_PATH", "0")
+        .env("HEADLESS", "false")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -835,7 +838,10 @@ fn hermes_chat_stream(
             }
         }
 
-        let dot_env = read_env_file(&home);
+        let mut dot_env = read_env_file(&home);
+        dot_env.insert("PLAYWRIGHT_HEADLESS".to_string(), "false".to_string());
+        dot_env.insert("PLAYWRIGHT_BROWSERS_PATH".to_string(), "0".to_string());
+        dot_env.insert("HEADLESS".to_string(), "false".to_string());
         let mut child = match Command::new(&binary)
             .args(&args)
             .env("HERMES_HOME", &home)
@@ -986,6 +992,9 @@ fn stream_spawn(
         .args(args)
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
+        .env("PLAYWRIGHT_HEADLESS", "false")
+        .env("PLAYWRIGHT_BROWSERS_PATH", "0")
+        .env("HEADLESS", "false")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
