@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
-import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff } from 'lucide-react';
+import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe } from 'lucide-react';
 import { readEnv, writeEnv, readFile, writeFile, readConfig, writeConfig, getAutostartEnabled, toggleAutostart } from '../api/desktop';
 
 const PROVIDERS_KEYS = [
@@ -54,11 +54,18 @@ function MaskedInput({ placeholder, id, value, onChange }: {
   );
 }
 
+const BROWSER_KEYS = [
+  { label: 'Browser Use API Key', key: 'BROWSER_USE_API_KEY', hint: 'For browser-harness cloud' },
+  { label: 'Browserbase API Key', key: 'BROWSERBASE_API_KEY', hint: 'bb-...' },
+  { label: 'Browserbase Project ID', key: 'BROWSERBASE_PROJECT_ID', hint: 'proj-...' },
+];
+
 const TABS = [
   { id: 'api-keys', label: 'API Keys', icon: Key },
   { id: 'personality', label: 'Personality', icon: User },
   { id: 'memory', label: 'Memory', icon: Brain },
   { id: 'workspace', label: 'Workspace', icon: Folder },
+  { id: 'browser', label: 'Browser', icon: Globe },
 ] as const;
 
 type SettingsTab = typeof TABS[number]['id'];
@@ -88,6 +95,12 @@ export default function SettingsModal() {
   const [autostartLoading, setAutostartLoading] = useState(false);
   const [workspaceSaving, setWorkspaceSaving] = useState(false);
   const [workspaceSaveMsg, setWorkspaceSaveMsg] = useState('');
+
+  // Browser automation tab state
+  const [browserKeys, setBrowserKeys] = useState<Record<string, string>>({});
+  const [domainSkills, setDomainSkills] = useState(false);
+  const [browserSaving, setBrowserSaving] = useState(false);
+  const [browserSaveMsg, setBrowserSaveMsg] = useState('');
 
   // API Keys: load on tab open
   useEffect(() => {
@@ -186,6 +199,36 @@ export default function SettingsModal() {
       /* non-fatal */
     } finally {
       setAutostartLoading(false);
+    }
+  };
+
+  // Browser automation: load on tab open
+  useEffect(() => {
+    if (settingsOpen && tab === 'browser') {
+      readEnv().then(env => {
+        const keys: Record<string, string> = {};
+        BROWSER_KEYS.forEach(k => { if (env[k.key]) keys[k.key] = env[k.key]; });
+        setBrowserKeys(keys);
+        setDomainSkills(env['BH_DOMAIN_SKILLS'] === '1');
+      }).catch(() => {});
+    }
+  }, [settingsOpen, tab]);
+
+  const saveBrowserSettings = async () => {
+    setBrowserSaving(true);
+    setBrowserSaveMsg('');
+    try {
+      await writeEnv('BH_DOMAIN_SKILLS', domainSkills ? '1' : '');
+      for (const k of BROWSER_KEYS) {
+        const val = browserKeys[k.key];
+        if (val !== undefined) await writeEnv(k.key, val.trim());
+      }
+      setBrowserSaveMsg('Saved');
+    } catch {
+      setBrowserSaveMsg('Error');
+    } finally {
+      setBrowserSaving(false);
+      setTimeout(() => setBrowserSaveMsg(''), 2500);
     }
   };
 
@@ -304,6 +347,39 @@ export default function SettingsModal() {
                     {userContent}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {tab === 'browser' && (
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Browser Automation</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Configure browser-harness and cloud browser services. Keys stored in ~/.hermes/.env</div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', marginBottom: 18 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>Domain Skills</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>Enable site-specific playbooks for LinkedIn, GitHub, Amazon etc. (BH_DOMAIN_SKILLS=1)</div>
+                  </div>
+                  <label className="toggle">
+                    <input type="checkbox" checked={domainSkills} onChange={e => setDomainSkills(e.target.checked)} />
+                    <span className="toggle-slider" />
+                  </label>
+                </div>
+
+                {BROWSER_KEYS.map(k => (
+                  <div key={k.key} style={{ marginBottom: 14 }}>
+                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>{k.label}</label>
+                    <MaskedInput id={`bkey-${k.key}`} placeholder={k.hint} value={browserKeys[k.key] || ''} onChange={val => setBrowserKeys(prev => ({ ...prev, [k.key]: val }))} />
+                  </div>
+                ))}
+
+                <div style={{ padding: '10px 14px', background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 18, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  <strong style={{ color: 'var(--text-primary)' }}>browser-harness</strong> connects the agent directly to your Chrome browser via CDP with a self-healing architecture. Install via the Gateway panel, then use <code style={{ fontFamily: 'var(--font-mono)', background: 'var(--bg3)', padding: '1px 5px', borderRadius: 4 }}>/browser</code> in chat to connect.
+                </div>
+
+                <button className="btn btn-primary" onClick={saveBrowserSettings} disabled={browserSaving} style={{ fontSize: 13 }}>
+                  {browserSaving ? 'Saving…' : browserSaveMsg || 'Save Browser Settings'}
+                </button>
               </div>
             )}
 
