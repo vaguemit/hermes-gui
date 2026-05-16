@@ -1856,6 +1856,110 @@ fn send_hermes_pty_message(
     }
 }
 
+// ── New commands (batch 2) ────────────────────────────────────────────────────
+
+#[tauri::command]
+fn read_env_vars() -> Result<HashMap<String, String>, String> {
+    let home = hermes_home();
+    // If .env missing, return empty map (not error)
+    if !home.join(".env").exists() {
+        return Ok(HashMap::new());
+    }
+    Ok(read_env_file(&home))
+}
+
+#[tauri::command]
+fn read_config_yaml() -> Result<String, String> {
+    let path = hermes_home().join("config.yaml");
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_config_yaml(content: String) -> Result<(), String> {
+    let path = hermes_home().join("config.yaml");
+    if let Some(p) = path.parent() {
+        std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn hermes_doctor_raw() -> Result<String, String> {
+    let result = run_command(command_program(), &[String::from("doctor")], 30)?;
+    let combined = format!("{}\n{}", result.stdout.trim(), result.stderr.trim())
+        .trim()
+        .to_string();
+    Ok(strip_ansi(&combined))
+}
+
+#[tauri::command]
+fn check_hermes_update() -> Result<String, String> {
+    let bin = command_program();
+    // Try --version first
+    let ver_result = run_command(bin.clone(), &[String::from("--version")], 10)?;
+    let version_str = if ver_result.success {
+        let out = if ver_result.stdout.trim().is_empty() {
+            ver_result.stderr.trim().to_string()
+        } else {
+            ver_result.stdout.trim().to_string()
+        };
+        strip_ansi(&out)
+    } else {
+        String::new()
+    };
+
+    if !version_str.is_empty() {
+        return Ok(version_str);
+    }
+
+    // Fallback: try update --check
+    let check_result = run_command(bin, &[String::from("update"), String::from("--check")], 10)?;
+    let out = if check_result.stdout.trim().is_empty() {
+        check_result.stderr.trim().to_string()
+    } else {
+        check_result.stdout.trim().to_string()
+    };
+    Ok(strip_ansi(&out))
+}
+
+#[tauri::command]
+fn list_hermes_tools() -> Result<Vec<String>, String> {
+    // Try `hermes tools list` first, fall back to `hermes tools`
+    let bin = command_program();
+    let result = run_command(
+        bin.clone(),
+        &[String::from("tools"), String::from("list")],
+        10,
+    )
+    .unwrap_or_else(|_| CommandResult {
+        success: false,
+        code: None,
+        command: String::new(),
+        stdout: String::new(),
+        stderr: String::new(),
+    });
+
+    let output = if result.success && !result.stdout.trim().is_empty() {
+        result.stdout
+    } else {
+        // Fallback: `hermes tools`
+        run_command(bin, &[String::from("tools")], 10)
+            .map(|r| r.stdout)
+            .unwrap_or_default()
+    };
+
+    let tools: Vec<String> = output
+        .lines()
+        .map(|l| strip_ansi(l.trim()))
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    Ok(tools)
+}
+
 // ── App entry point ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1972,6 +2076,12 @@ pub fn run() {
             write_env_var,
             start_hermes_pty_chat,
             send_hermes_pty_message,
+            read_env_vars,
+            read_config_yaml,
+            write_config_yaml,
+            hermes_doctor_raw,
+            check_hermes_update,
+            list_hermes_tools,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
