@@ -69,6 +69,8 @@ interface AppState {
   // Local browser and PTY chat state
   localBrowserUrl: string | null;
   setLocalBrowserUrl: (url: string | null) => void;
+  browserConnected: boolean;
+  setBrowserConnected: (connected: boolean) => void;
   ptySessionId: string | null;
   setPtySessionId: (id: string | null) => void;
   ptyEventId: string | null;
@@ -154,6 +156,8 @@ export const useStore = create<AppState>((set, get) => ({
   setHermesSessionId: (id) => set({ hermesSessionId: id }),
   localBrowserUrl: null,
   setLocalBrowserUrl: (url) => set({ localBrowserUrl: url }),
+  browserConnected: false,
+  setBrowserConnected: (connected) => set({ browserConnected: connected }),
   ptySessionId: null,
   setPtySessionId: (id) => set({ ptySessionId: id }),
   ptyEventId: null,
