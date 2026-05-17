@@ -6,7 +6,7 @@ import { Clock, Plus, Trash2, Play } from 'lucide-react';
 const generateId = () => Math.random().toString(36).slice(2);
 
 export default function CronPanel() {
-  const { crons, addCron, toggleCron, deleteCron, platforms } = useStore();
+  const { crons, addCron, toggleCron, deleteCron, updateCronLastRun, platforms } = useStore();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ schedule: '', description: '', platform: 'Telegram' });
 
@@ -30,6 +30,68 @@ export default function CronPanel() {
       writeFile('gui-crons.json', JSON.stringify(crons)).catch(() => {});
     }, 800);
   }, [crons]);
+
+  // Live scheduler: check every 60 seconds whether any active cron should fire
+  useEffect(() => {
+    function shouldFire(cron: CronJob): boolean {
+      const now = new Date();
+      const schedule = cron.schedule.trim().toLowerCase();
+
+      // "Daily at HH:MM" — fire once per day at that time (within the current minute)
+      const dailyMatch = schedule.match(/^daily at (\d{1,2}):(\d{2})$/);
+      if (dailyMatch) {
+        const h = parseInt(dailyMatch[1], 10);
+        const m = parseInt(dailyMatch[2], 10);
+        if (now.getHours() === h && now.getMinutes() === m) {
+          // Only fire once per day: check lastRun date
+          const today = now.toISOString().slice(0, 10);
+          if (cron.lastRun === today) return false;
+          return true;
+        }
+        return false;
+      }
+
+      // "Every N minutes" — fire when elapsed minutes since lastRun >= N
+      const intervalMatch = schedule.match(/^every (\d+) minutes?$/);
+      if (intervalMatch) {
+        const n = parseInt(intervalMatch[1], 10);
+        if (!cron.lastRun) return true;
+        const last = new Date(cron.lastRun);
+        return (now.getTime() - last.getTime()) >= n * 60 * 1000;
+      }
+
+      // "Every Monday" / "Every [weekday]" — fire once on the matching weekday
+      const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const dayMatch = schedule.match(/^every (\w+)$/);
+      if (dayMatch) {
+        const dayIndex = days.indexOf(dayMatch[1]);
+        if (dayIndex === -1) return false;
+        if (now.getDay() !== dayIndex) return false;
+        const today = now.toISOString().slice(0, 10);
+        if (cron.lastRun === today) return false;
+        return true;
+      }
+
+      return false;
+    }
+
+    async function tick() {
+      const { crons: current } = useStore.getState();
+      for (const cron of current) {
+        if (!cron.active) continue;
+        if (!shouldFire(cron)) continue;
+        const now = new Date();
+        const lastRun = now.toISOString().slice(0, 10);
+        updateCronLastRun(cron.id, lastRun);
+        // Fire-and-forget; errors are intentionally swallowed for background tasks
+        runHermesCommand(['chat', '-q', cron.description], 120).catch(() => {});
+      }
+    }
+
+    tick(); // run once immediately on mount
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, [updateCronLastRun]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggle = (c: CronJob) => {
     toggleCron(c.id);
@@ -55,7 +117,7 @@ export default function CronPanel() {
     setTestRunning(true);
     setTestResult(null);
     try {
-      const result = await runHermesCommand(['ask', form.description], 60);
+      const result = await runHermesCommand(['chat', '-q', form.description], 60);
       setTestResult(result.success ? (result.stdout.trim() || 'Done.') : (result.stderr.trim() || 'Task failed.'));
     } catch (e) {
       setTestResult(e instanceof Error ? e.message : 'Error running task');
