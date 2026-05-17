@@ -139,7 +139,9 @@ function isUrl(s: string): boolean {
   return /^https?:\/\//i.test(first) || /^www\./i.test(first) || /^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/.*)?$/.test(first);
 }
 
-function extractSiteUrl(instruction: string): string | null {
+function extractSiteUrl(instruction: string): string {
+  const input = instruction.trim();
+  if (!input) return '';
   const sites: Record<string, string> = {
     instagram: 'https://instagram.com',
     twitter: 'https://twitter.com',
@@ -164,13 +166,13 @@ function extractSiteUrl(instruction: string): string | null {
     spotify: 'https://open.spotify.com',
     maps: 'https://maps.google.com',
   };
-  const lower = instruction.toLowerCase();
+  const lower = input.toLowerCase();
   for (const [name, url] of Object.entries(sites)) {
     if (lower.includes(name)) return url;
   }
-  const domainMatch = instruction.match(/\b([a-zA-Z0-9-]+\.(com|org|net|io|ai|co|app|dev))\b/i);
+  const domainMatch = input.match(/\b([a-zA-Z0-9-]+\.(com|org|net|io|ai|co|app|dev))\b/i);
   if (domainMatch) return `https://${domainMatch[1]}`;
-  return null;
+  return `https://www.google.com/search?q=${encodeURIComponent(input)}`;
 }
 
 export default function ConversationPanel() {
@@ -261,19 +263,15 @@ export default function ConversationPanel() {
 
       let targetUrl: string;
       if (!arg) {
-        targetUrl = 'about:blank';
+        targetUrl = '';
       } else if (isUrl(arg)) {
         targetUrl = /^https?:\/\//i.test(arg) ? arg : `https://${arg}`;
       } else {
-        const extracted = extractSiteUrl(arg);
-        if (!extracted) {
-          addMessage({ id: generateId(), role: 'assistant', type: 'error', content: `Couldn't resolve a URL from "${arg}". Try /browser https://example.com or /browser instagram`, timestamp: Date.now() });
-          return;
-        }
-        targetUrl = extracted;
+        targetUrl = extractSiteUrl(arg);
       }
 
-      addMessage({ id: generateId(), role: 'system', type: 'info', content: `Opening Chrome at ${targetUrl}…`, timestamp: Date.now() });
+      const displayUrl = targetUrl || 'Chrome';
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: `Opening ${displayUrl}…`, timestamp: Date.now() });
       const result = await launchChrome(targetUrl);
 
       if (!result.success) {
@@ -281,7 +279,7 @@ export default function ConversationPanel() {
         return;
       }
 
-      addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: `Opened Chrome at ${targetUrl}.`, timestamp: Date.now() });
+      addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: targetUrl ? `Opened Chrome at ${targetUrl}.` : 'Opened Chrome.', timestamp: Date.now() });
       return;
     }
     if (userContent === '/status') {
