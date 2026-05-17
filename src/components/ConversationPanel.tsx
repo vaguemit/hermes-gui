@@ -253,30 +253,82 @@ export default function ConversationPanel() {
     }
     if (userContent.startsWith('/browser')) {
       const arg = userContent.slice('/browser'.length).trim();
-      // /browser connect is an alias for /browser (no url) — launch at default
-      const targetUrl = (arg && arg !== 'connect') ? arg : 'https://claude.ai';
       const cdpUrl = 'http://127.0.0.1:9222';
 
-      addMessage({ id: generateId(), role: 'system', type: 'info', content: `Launching Chrome browser at ${targetUrl}…`, timestamp: Date.now() });
+      let targetUrl: string;
+      let nlInstruction: string | null = null;
 
-      const result = await launchChrome(targetUrl);
-      if (result.success) {
-        setLocalBrowserUrl(cdpUrl);
-        setBrowserConnected(true);
-        writeEnvVar('BROWSER_CDP_URL', cdpUrl).catch(() => {});
-        writeEnvVar('PLAYWRIGHT_HEADLESS', 'false').catch(() => {});
-        writeEnvVar('HEADLESS', 'false').catch(() => {});
-        addMessage({
-          id: generateId(), role: 'assistant', type: 'prose',
-          content: `Chrome launched in headed mode — you should see the browser window. Browser tasks will now route through your local Chrome. Navigating to ${targetUrl}…`,
-          timestamp: Date.now(),
-        });
+      if (!arg || arg === 'connect') {
+        targetUrl = 'https://claude.ai';
+      } else if (isUrl(arg)) {
+        targetUrl = /^https?:\/\//i.test(arg) ? arg : `https://${arg}`;
       } else {
-        addMessage({
-          id: generateId(), role: 'assistant', type: 'error',
-          content: `Failed to launch Chrome: ${result.error || 'unknown error'}`,
-          timestamp: Date.now(),
+        targetUrl = extractSiteUrl(arg);
+        nlInstruction = arg;
+      }
+
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: `Launching Chrome at ${targetUrl}…`, timestamp: Date.now() });
+      const result = await launchChrome(targetUrl);
+
+      if (!result.success) {
+        addMessage({ id: generateId(), role: 'assistant', type: 'error', content: `Failed to launch Chrome: ${result.error || 'unknown error'}`, timestamp: Date.now() });
+        return;
+      }
+
+      setLocalBrowserUrl(cdpUrl);
+      setBrowserConnected(true);
+      writeEnvVar('BROWSER_CDP_URL', cdpUrl).catch(() => {});
+      writeEnvVar('PLAYWRIGHT_HEADLESS', 'false').catch(() => {});
+      writeEnvVar('HEADLESS', 'false').catch(() => {});
+
+      if (!nlInstruction) {
+        addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: `Chrome launched — browser is now visible and connected. Navigating to ${targetUrl}.`, timestamp: Date.now() });
+        return;
+      }
+
+      addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: `Chrome launched — sending task to Hermes agent: "${nlInstruction}"`, timestamp: Date.now() });
+      addMessage({ id: generateId(), role: 'user', type: 'prose', content: nlInstruction, timestamp: Date.now() });
+      setIsRunning(true);
+      setAgentState('thinking');
+      clearToolCalls();
+      addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: '', timestamp: Date.now(), isStreaming: true });
+
+      const bEventId = generateId();
+      const bCleanupRef = { fn: null as (() => void) | null };
+      const bCleanup = () => { if (bCleanupRef.fn) { bCleanupRef.fn(); bCleanupRef.fn = null; } };
+      let bAborted = false;
+      abortRef.current = { abort: () => { bAborted = true; bCleanup(); setIsRunning(false); setAgentState('idle'); updateLastMessage({ isStreaming: false }); } };
+      let bAccumulated = '';
+
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        await new Promise<void>((resolve, reject) => {
+          Promise.all([
+            listen<string>(`chat-chunk-${bEventId}`, (ev) => { if (bAborted) return; bAccumulated += ev.payload; updateLastMessage({ content: bAccumulated, isStreaming: true }); }),
+            listen<string>(`chat-done-${bEventId}`, () => { if (bAborted) return; updateLastMessage({ isStreaming: false }); setAgentState('idle'); bCleanup(); resolve(); }),
+            listen<string>(`chat-error-${bEventId}`, (ev) => { if (bAborted) return; bCleanup(); reject(new Error(ev.payload || 'Unknown error')); }),
+            listen<string>(`tool-progress-${bEventId}`, (ev) => { if (bAborted) return; addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() }); setAgentState('running_tool'); }),
+            listen<string>(`tool-call-${bEventId}`, (ev) => { if (bAborted) return; if (ev.payload === '__executing__') { setAgentState('running_tool'); return; } addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() }); setAgentState('running_tool'); }),
+            listen<string>(`chat-session-${bEventId}`, (ev) => { if (ev.payload && !bAborted) setHermesSessionId(ev.payload); }),
+          ]).then(([u1, u2, u3, u4, u5, u6]) => {
+            bCleanupRef.fn = () => { u1(); u2(); u3(); u4(); u5(); u6(); };
+            chatCli(bEventId, nlInstruction!, hermesSessionId).catch(reject);
+          }).catch(reject);
         });
+      } catch (err: unknown) {
+        bCleanup();
+        if (!bAborted) {
+          const errMsg = (err as Error)?.message || 'Browser agent error';
+          updateLastMessage({ content: bAccumulated || errMsg, type: bAccumulated ? 'prose' : 'error', isStreaming: false });
+          setAgentState('error');
+        } else {
+          updateLastMessage({ isStreaming: false });
+          setAgentState('idle');
+        }
+      } finally {
+        bCleanup();
+        setIsRunning(false);
+        abortRef.current = null;
       }
       return;
     }
