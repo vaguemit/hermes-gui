@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, Skill } from '../store';
-import { Zap, Plus, Edit2, Trash2, Play, X, Save, Copy, Check } from 'lucide-react';
+import { Zap, Plus, Edit2, Trash2, Play, X, Save, Copy, Check, CopyPlus } from 'lucide-react';
 import { readFile, writeFile } from '../api/desktop';
 
 const generateId = () => Math.random().toString(36).slice(2);
@@ -96,6 +96,16 @@ export default function SkillsPanel() {
     setInvokedId(s.id);
     // Clear the "just invoked" highlight after a moment
     setTimeout(() => setInvokedId(prev => prev === s.id ? null : prev), 1200);
+  };
+
+  const handleDuplicate = (s: Skill) => {
+    addSkill({
+      id: generateId(),
+      name: `${s.name}-copy`,
+      description: s.description,
+      content: s.content,
+      source: 'user',
+    });
   };
 
   const handleCopy = (s: Skill) => {
@@ -273,6 +283,33 @@ export default function SkillsPanel() {
                       }}
                     >
                       <Edit2 size={13} />
+                    </button>
+
+                    {/* Duplicate */}
+                    <button
+                      onClick={() => handleDuplicate(s)}
+                      title="Duplicate skill"
+                      style={{
+                        background: 'none',
+                        border: '1px solid var(--border)',
+                        borderRadius: 6,
+                        padding: 5,
+                        cursor: 'pointer',
+                        color: 'var(--text-secondary)',
+                        transition: 'color 0.15s, border-color 0.15s',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLElement).style.color = 'var(--accent-green)';
+                        (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-green)';
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
+                        (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
+                      }}
+                    >
+                      <CopyPlus size={13} />
                     </button>
 
                     {/* Delete */}
