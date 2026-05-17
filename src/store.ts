@@ -236,6 +236,7 @@ export const useStore = create<AppState>((set, get) => ({
       sessions: state.sessions.map((s) =>
         s.id === state.activeSessionId ? { ...s, messages: [] } : s
       ),
+      hermesSessionId: null,
     })),
 
   // Command palette
