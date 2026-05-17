@@ -1844,7 +1844,6 @@ fn launch_chrome(url: Option<String>) -> Result<String, String> {
 
     let args_str: Vec<&str> = args.iter().map(String::as_str).collect();
 
-    // Launch Chrome visibly — no --headless flag, no CREATE_NO_WINDOW
     Command::new(&chrome)
         .args(&args_str)
         .stdin(Stdio::null())
@@ -1852,11 +1851,6 @@ fn launch_chrome(url: Option<String>) -> Result<String, String> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("Failed to launch Chrome: {}", e))?;
-
-    // Poll CDP up to 5 seconds (500 ms intervals)
-    if !wait_for_cdp(5000) {
-        return Err("Chrome launched but CDP did not respond on port 9222 within 5 seconds.".to_string());
-    }
 
     Ok(String::from("http://127.0.0.1:9222"))
 }
