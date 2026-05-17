@@ -130,6 +130,23 @@ export async function getGatewayStatus(): Promise<boolean> {
   return invoke<boolean>('hermes_gateway_status');
 }
 
+export interface PtyStartResult {
+  pty_id: string;
+  event_id: string;
+}
+
+export async function ptyStart(): Promise<PtyStartResult> {
+  return invoke<PtyStartResult>('hermes_pty_start');
+}
+
+export async function ptyWrite(ptyId: string, input: string): Promise<void> {
+  return invoke<void>('hermes_pty_write', { pty_id: ptyId, input });
+}
+
+export async function ptyStop(ptyId: string): Promise<void> {
+  return invoke<void>('hermes_pty_stop', { pty_id: ptyId });
+}
+
 /**
  * Stream a chat message through the Rust IPC proxy.
  * The WebView cannot fetch() http://localhost:8642 directly (Tauri origin restriction),
