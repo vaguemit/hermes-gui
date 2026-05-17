@@ -139,7 +139,7 @@ function isUrl(s: string): boolean {
   return /^https?:\/\//i.test(first) || /^www\./i.test(first) || /^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/.*)?$/.test(first);
 }
 
-function extractSiteUrl(instruction: string): string {
+function extractSiteUrl(instruction: string): string | null {
   const sites: Record<string, string> = {
     instagram: 'https://instagram.com',
     twitter: 'https://twitter.com',
@@ -158,6 +158,11 @@ function extractSiteUrl(instruction: string): string {
     openai: 'https://openai.com',
     wikipedia: 'https://wikipedia.org',
     stackoverflow: 'https://stackoverflow.com',
+    whatsapp: 'https://web.whatsapp.com',
+    notion: 'https://notion.so',
+    figma: 'https://figma.com',
+    spotify: 'https://open.spotify.com',
+    maps: 'https://maps.google.com',
   };
   const lower = instruction.toLowerCase();
   for (const [name, url] of Object.entries(sites)) {
@@ -165,7 +170,7 @@ function extractSiteUrl(instruction: string): string {
   }
   const domainMatch = instruction.match(/\b([a-zA-Z0-9-]+\.(com|org|net|io|ai|co|app|dev))\b/i);
   if (domainMatch) return `https://${domainMatch[1]}`;
-  return 'https://claude.ai';
+  return null;
 }
 
 export default function ConversationPanel() {
@@ -253,9 +258,20 @@ export default function ConversationPanel() {
     }
     if (userContent.startsWith('/browser')) {
       const arg = userContent.slice('/browser'.length).trim();
-      const targetUrl = !arg ? 'about:blank'
-        : isUrl(arg) ? (/^https?:\/\//i.test(arg) ? arg : `https://${arg}`)
-        : extractSiteUrl(arg);
+
+      let targetUrl: string;
+      if (!arg) {
+        targetUrl = 'about:blank';
+      } else if (isUrl(arg)) {
+        targetUrl = /^https?:\/\//i.test(arg) ? arg : `https://${arg}`;
+      } else {
+        const extracted = extractSiteUrl(arg);
+        if (!extracted) {
+          addMessage({ id: generateId(), role: 'assistant', type: 'error', content: `Couldn't resolve a URL from "${arg}". Try /browser https://example.com or /browser instagram`, timestamp: Date.now() });
+          return;
+        }
+        targetUrl = extracted;
+      }
 
       addMessage({ id: generateId(), role: 'system', type: 'info', content: `Opening Chrome at ${targetUrl}…`, timestamp: Date.now() });
       const result = await launchChrome(targetUrl);
