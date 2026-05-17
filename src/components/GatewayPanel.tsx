@@ -51,9 +51,11 @@ const PLATFORM_FIELDS: Record<string, Array<{ label: string; key: string; type: 
 };
 
 export default function GatewayPanel() {
-  const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId, headedBrowserMode, setHeadedBrowserMode, agentState } = useStore();
+  const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId, headedBrowserMode, setHeadedBrowserMode, agentState, setPlatformStatus } = useStore();
   const [configPlatform, setConfigPlatform] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [savingPlatform, setSavingPlatform] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [toolStates, setToolStates] = useState<Record<string, ToolToggleState>>(() =>
     Object.fromEntries(
       TOOL_PLATFORMS.map((t) => [t.id, { enabled: false, loading: false, feedback: null }])
@@ -100,11 +102,18 @@ export default function GatewayPanel() {
   const [bhExpanded, setBhExpanded] = useState(false);
 
   useEffect(() => {
-    readEnv().then(env => setBhDomainSkills(env['BH_DOMAIN_SKILLS'] === '1')).catch(() => {});
+    readEnv().then(env => {
+      setBhDomainSkills(env['BH_DOMAIN_SKILLS'] === '1');
+      // Restore platform connected status from saved env keys
+      Object.entries(PLATFORM_FIELDS).forEach(([platformName, fields]) => {
+        const hasAny = fields.some(f => !!env[f.key]);
+        if (hasAny) setPlatformStatus(platformName, 'connected');
+      });
+    }).catch(() => {});
     runHermesCommand(['run', 'browser-harness', '--help'], 5)
       .then(r => setBhInstalled(r.success || r.stdout.includes('browser-harness')))
       .catch(() => setBhInstalled(false));
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const installBrowserHarness = async () => {
     setBhInstalling(true);
@@ -136,6 +145,18 @@ export default function GatewayPanel() {
     });
     return () => { cancelled = true; };
   }, [setGatewayStatus]);
+
+  // Pre-load saved env values when platform config modal opens
+  useEffect(() => {
+    if (!configPlatform) { setFormValues({}); setSaveSuccess(false); return; }
+    const fields = PLATFORM_FIELDS[configPlatform] || [];
+    if (fields.length === 0) return;
+    readEnv().then(env => {
+      const existing: Record<string, string> = {};
+      fields.forEach(f => { if (env[f.key]) existing[f.key] = env[f.key]; });
+      setFormValues(existing);
+    }).catch(() => {});
+  }, [configPlatform]);
 
   // Poll CDP every 3s while browser is connected — disconnect if Chrome closes
   useEffect(() => {
@@ -532,21 +553,36 @@ export default function GatewayPanel() {
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>{f.hint}</div>
                   </div>
                 ))}
+                {saveSuccess && (
+                  <div style={{ fontSize: 12, color: 'var(--accent-green)', marginBottom: 8 }}>Credentials saved. Restart the gateway to connect.</div>
+                )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
                   <button
                     className="btn btn-primary"
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, opacity: savingPlatform ? 0.7 : 1 }}
+                    disabled={savingPlatform}
                     onClick={async () => {
+                      setSavingPlatform(true);
+                      setSaveSuccess(false);
                       const fields = PLATFORM_FIELDS[configPlatform] || [];
+                      let anyFilled = false;
                       for (const f of fields) {
                         if (formValues[f.key]?.trim()) {
                           await writeEnv(f.key, formValues[f.key].trim()).catch(() => {});
+                          anyFilled = true;
                         }
                       }
-                      setConfigPlatform(null);
+                      setSavingPlatform(false);
+                      if (anyFilled) {
+                        setPlatformStatus(configPlatform, 'connected');
+                        setSaveSuccess(true);
+                        setTimeout(() => setConfigPlatform(null), 1200);
+                      } else {
+                        setConfigPlatform(null);
+                      }
                     }}
                   >
-                    Save and Connect
+                    {savingPlatform ? 'Saving…' : 'Save and Connect'}
                   </button>
                   <button className="btn btn-ghost" onClick={() => setConfigPlatform(null)}>Cancel</button>
                 </div>
