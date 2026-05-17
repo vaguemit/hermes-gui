@@ -231,6 +231,8 @@ export default function App() {
       case 'skills': return <SkillsPanel />;
       case 'dashboard': return <DashboardPanel />;
       case 'profiles': return <ProfilesPanel />;
+      case 'models': return <ModelsPanel />;
+      case 'sessions': return <SessionsPanel />;
       case 'terminal': return <TerminalPanel />;
       default: return <ConversationPanel />;
     }
@@ -280,6 +282,8 @@ export default function App() {
             {activeSection === 'settings' && 'Settings'}
             {activeSection === 'dashboard' && 'Dashboard'}
             {activeSection === 'profiles' && 'Profiles & Memory'}
+            {activeSection === 'models' && 'Models'}
+            {activeSection === 'sessions' && 'Sessions'}
             {activeSection === 'terminal' && 'Terminal'}
           </span>
 
