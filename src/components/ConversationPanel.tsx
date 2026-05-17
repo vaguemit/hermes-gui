@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore, Message, ToolCall } from '../store';
-import { getGatewayStatus, chatStream, chatCli, launchChrome, writeEnvVar } from '../api/desktop';
+import { getGatewayStatus, chatStream, chatCli, launchChrome } from '../api/desktop';
 import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy,
@@ -169,7 +169,7 @@ function extractSiteUrl(instruction: string): string {
 }
 
 export default function ConversationPanel() {
-  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId, localBrowserUrl, setLocalBrowserUrl, setBrowserConnected, setPtySessionId, setPtyEventId } = useStore();
+  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId, localBrowserUrl, setLocalBrowserUrl, setPtySessionId, setPtyEventId } = useStore();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<{ abort: () => void } | null>(null);
@@ -253,25 +253,19 @@ export default function ConversationPanel() {
     }
     if (userContent.startsWith('/browser')) {
       const arg = userContent.slice('/browser'.length).trim();
-      const cdpUrl = 'http://127.0.0.1:9222';
-      const targetUrl = !arg || arg === 'connect' ? 'https://claude.ai'
+      const targetUrl = !arg ? 'about:blank'
         : isUrl(arg) ? (/^https?:\/\//i.test(arg) ? arg : `https://${arg}`)
         : extractSiteUrl(arg);
 
-      addMessage({ id: generateId(), role: 'system', type: 'info', content: `Launching Chrome at ${targetUrl}…`, timestamp: Date.now() });
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: `Opening Chrome at ${targetUrl}…`, timestamp: Date.now() });
       const result = await launchChrome(targetUrl);
 
       if (!result.success) {
-        addMessage({ id: generateId(), role: 'assistant', type: 'error', content: `Failed to launch Chrome: ${result.error || 'unknown error'}`, timestamp: Date.now() });
+        addMessage({ id: generateId(), role: 'assistant', type: 'error', content: `Failed to open Chrome: ${result.error || 'unknown error'}`, timestamp: Date.now() });
         return;
       }
 
-      setLocalBrowserUrl(cdpUrl);
-      setBrowserConnected(true);
-      writeEnvVar('BROWSER_CDP_URL', cdpUrl).catch(() => {});
-      writeEnvVar('PLAYWRIGHT_HEADLESS', 'false').catch(() => {});
-      writeEnvVar('HEADLESS', 'false').catch(() => {});
-      addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: `Chrome is open and connected. Type your next message and the agent will control the browser.`, timestamp: Date.now() });
+      addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: `Opened Chrome at ${targetUrl}.`, timestamp: Date.now() });
       return;
     }
     if (userContent === '/status') {
