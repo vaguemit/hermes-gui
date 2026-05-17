@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, Skill } from '../store';
-import { Zap, Plus, Edit2, Trash2, Play, X, Save } from 'lucide-react';
+import { Zap, Plus, Edit2, Trash2, Play, X, Save, Copy, Check } from 'lucide-react';
 import { readFile, writeFile } from '../api/desktop';
 
 const generateId = () => Math.random().toString(36).slice(2);
@@ -19,6 +19,7 @@ export default function SkillsPanel() {
   const [newSkill, setNewSkill] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', content: '' });
   const [invokedId, setInvokedId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -94,6 +95,13 @@ export default function SkillsPanel() {
     setInvokedId(s.id);
     // Clear the "just invoked" highlight after a moment
     setTimeout(() => setInvokedId(prev => prev === s.id ? null : prev), 1200);
+  };
+
+  const handleCopy = (s: Skill) => {
+    navigator.clipboard.writeText(s.content).then(() => {
+      setCopiedId(s.id);
+      setTimeout(() => setCopiedId(prev => prev === s.id ? null : prev), 1500);
+    }).catch(() => {});
   };
 
   const openEdit = (s: Skill) => {
@@ -194,6 +202,26 @@ export default function SkillsPanel() {
                       }}
                     >
                       <Play size={11} /> {invokedId === s.id ? 'Sent!' : 'Invoke'}
+                    </button>
+
+                    {/* Copy content */}
+                    <button
+                      onClick={() => handleCopy(s)}
+                      title="Copy content to clipboard"
+                      style={{
+                        background: 'none',
+                        border: '1px solid var(--border)',
+                        borderRadius: 6,
+                        padding: 5,
+                        cursor: 'pointer',
+                        color: copiedId === s.id ? 'var(--accent-green)' : 'var(--text-secondary)',
+                        borderColor: copiedId === s.id ? 'var(--accent-green)' : 'var(--border)',
+                        transition: 'color 0.15s, border-color 0.15s',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                    >
+                      {copiedId === s.id ? <Check size={13} /> : <Copy size={13} />}
                     </button>
 
                     {/* Edit */}
