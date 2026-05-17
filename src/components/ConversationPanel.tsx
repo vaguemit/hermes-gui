@@ -222,6 +222,7 @@ export default function ConversationPanel() {
 
     if (userContent === '/new' || userContent === '/reset') {
       clearActiveSession(); clearToolCalls();
+      sentMessages.current = []; historyIndex.current = -1;
       addMessage({ id: generateId(), role: 'system', type: 'system', content: 'Conversation cleared.', timestamp: Date.now() });
       return;
     }
@@ -335,6 +336,7 @@ export default function ConversationPanel() {
       const lastUser = [...messages].reverse().find(m => m.role === 'user');
       if (lastUser) {
         addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Retrying last message…', timestamp: Date.now() });
+        historyIndex.current = -1;
         setInput(lastUser.content);
       }
       return;
