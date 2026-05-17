@@ -1676,6 +1676,108 @@ fn pty_kill(pty_id: String, pty_state: tauri::State<PtyState>) -> Result<(), Str
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+struct PtyStartResult {
+    pty_id: String,
+    event_id: String,
+}
+
+#[tauri::command]
+fn hermes_pty_start(
+    app_handle: tauri::AppHandle,
+    pty_state: tauri::State<PtyState>,
+) -> Result<PtyStartResult, String> {
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+
+    let binary = hermes_binary();
+    let home = hermes_home();
+    let event_id = uuid::Uuid::new_v4().to_string();
+
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+        .map_err(|e| e.to_string())?;
+
+    let mut cmd = CommandBuilder::new(&binary);
+    cmd.env("HERMES_HOME", &home);
+    cmd.env("PATH", enhanced_path(&home));
+
+    let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+
+    let pty_id = uuid::Uuid::new_v4().to_string();
+
+    let app = app_handle.clone();
+    let eid = event_id.clone();
+    thread::spawn(move || {
+        let mut buf = BufReader::new(reader);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match buf.read_line(&mut line) {
+                Ok(0) => {
+                    let _ = app.emit(&eid, "__DONE__");
+                    break;
+                }
+                Ok(_) => {
+                    let _ = app.emit(
+                        &eid,
+                        line.trim_end_matches('\n')
+                            .trim_end_matches('\r')
+                            .to_string(),
+                    );
+                }
+                Err(_) => {
+                    let _ = app.emit(&eid, "__DONE__");
+                    break;
+                }
+            }
+        }
+    });
+
+    let entry = PtyEntry { master: pair.master, writer };
+    pty_state
+        .0
+        .lock()
+        .map_err(|_| "PTY lock poisoned".to_string())?
+        .insert(pty_id.clone(), entry);
+
+    Ok(PtyStartResult { pty_id, event_id })
+}
+
+#[tauri::command]
+fn hermes_pty_write(
+    pty_id: String,
+    input: String,
+    pty_state: tauri::State<PtyState>,
+) -> Result<(), String> {
+    use std::io::Write;
+    let mut lock = pty_state
+        .0
+        .lock()
+        .map_err(|_| "PTY lock poisoned".to_string())?;
+    if let Some(entry) = lock.get_mut(&pty_id) {
+        let line = format!("{}\n", input);
+        entry.writer.write_all(line.as_bytes()).map_err(|e| e.to_string())
+    } else {
+        Err(format!("PTY {} not found", pty_id))
+    }
+}
+
+#[tauri::command]
+fn hermes_pty_stop(
+    pty_id: String,
+    pty_state: tauri::State<PtyState>,
+) -> Result<(), String> {
+    let mut lock = pty_state
+        .0
+        .lock()
+        .map_err(|_| "PTY lock poisoned".to_string())?;
+    lock.remove(&pty_id);
+    Ok(())
+}
+
 // ── Chrome launcher ──────────────────────────────────────────────────────────
 
 /// Poll http://127.0.0.1:9222/json/version via TCP until CDP is responding or timeout.
@@ -2080,6 +2182,9 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            hermes_pty_start,
+            hermes_pty_write,
+            hermes_pty_stop,
             launch_chrome,
             get_chrome_cdp_status,
             write_env_var,
