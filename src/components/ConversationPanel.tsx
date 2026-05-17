@@ -182,6 +182,8 @@ export default function ConversationPanel() {
   const abortRef = useRef<{ abort: () => void } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sentMessages = useRef<string[]>([]);
+  const historyIndex = useRef<number>(-1);
   const [autoScroll, setAutoScroll] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
@@ -215,9 +217,11 @@ export default function ConversationPanel() {
     const userContent = input.trim();
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    sentMessages.current = [userContent, ...sentMessages.current].slice(0, 50);
+    historyIndex.current = -1;
 
     if (userContent === '/new' || userContent === '/reset') {
-      clearActiveSession(); clearToolCalls();
+      clearActiveSession(); clearToolCalls(); setHermesSessionId(null);
       addMessage({ id: generateId(), role: 'system', type: 'system', content: 'Conversation cleared.', timestamp: Date.now() });
       return;
     }
@@ -550,7 +554,30 @@ export default function ConversationPanel() {
               const ta = e.target; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px';
               if (e.target.value === '/') setPaletteOpen(true);
             }}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); return; }
+              if (e.key === 'ArrowUp' && !e.shiftKey && (e.currentTarget.selectionStart === 0 || input === '')) {
+                if (sentMessages.current.length > 0) {
+                  e.preventDefault();
+                  const nextIdx = Math.min(historyIndex.current + 1, sentMessages.current.length - 1);
+                  historyIndex.current = nextIdx;
+                  setInput(sentMessages.current[nextIdx]);
+                }
+                return;
+              }
+              if (e.key === 'ArrowDown' && !e.shiftKey) {
+                if (historyIndex.current > 0) {
+                  e.preventDefault();
+                  historyIndex.current -= 1;
+                  setInput(sentMessages.current[historyIndex.current]);
+                } else if (historyIndex.current === 0) {
+                  e.preventDefault();
+                  historyIndex.current = -1;
+                  setInput('');
+                }
+                return;
+              }
+            }}
             placeholder="Message Hermes… (/ for commands)"
             rows={1}
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', resize: 'none', color: 'var(--text-primary)', fontSize: 14, lineHeight: 1.6, maxHeight: 180, overflowY: 'auto' }}
