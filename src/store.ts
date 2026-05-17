@@ -119,6 +119,7 @@ interface AppState {
 
   // Platforms
   platforms: Platform[];
+  setPlatformStatus: (name: string, status: Platform['status']) => void;
 
   // Crons
   crons: CronJob[];
@@ -272,6 +273,10 @@ export const useStore = create<AppState>((set, get) => ({
     { name: 'Signal', status: 'disconnected', icon: 'SG' },
     { name: 'Email', status: 'disconnected', icon: 'EM' },
   ],
+  setPlatformStatus: (name, status) =>
+    set((state) => ({
+      platforms: state.platforms.map((p) => p.name === name ? { ...p, status } : p),
+    })),
 
   // Crons
   crons: [
