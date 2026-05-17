@@ -588,7 +588,7 @@ export default function ConversationPanel() {
           }
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, padding: '0 2px' }}>
-          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}><kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>↵</kbd> Send · <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>Shift+↵</kbd> Newline</span>
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}><kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>↵</kbd> Send · <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>Shift+↵</kbd> Newline · <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>↑↓</kbd> History</span>
           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{input.length > 0 ? `${input.length} chars` : ''}</span>
         </div>
       </div>
