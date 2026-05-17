@@ -126,6 +126,7 @@ interface AppState {
   addCron: (c: CronJob) => void;
   toggleCron: (id: string) => void;
   deleteCron: (id: string) => void;
+  updateCronLastRun: (id: string, lastRun: string) => void;
 
   // Skills
   skills: Skill[];
@@ -289,6 +290,10 @@ export const useStore = create<AppState>((set, get) => ({
       crons: state.crons.map((c) => (c.id === id ? { ...c, active: !c.active } : c)),
     })),
   deleteCron: (id) => set((state) => ({ crons: state.crons.filter((c) => c.id !== id) })),
+  updateCronLastRun: (id, lastRun) =>
+    set((state) => ({
+      crons: state.crons.map((c) => (c.id === id ? { ...c, lastRun } : c)),
+    })),
 
   // Skills
   skills: [
