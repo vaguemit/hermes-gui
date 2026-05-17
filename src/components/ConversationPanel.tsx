@@ -221,7 +221,7 @@ export default function ConversationPanel() {
     historyIndex.current = -1;
 
     if (userContent === '/new' || userContent === '/reset') {
-      clearActiveSession(); clearToolCalls(); setHermesSessionId(null);
+      clearActiveSession(); clearToolCalls();
       addMessage({ id: generateId(), role: 'system', type: 'system', content: 'Conversation cleared.', timestamp: Date.now() });
       return;
     }
