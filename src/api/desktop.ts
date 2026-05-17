@@ -139,10 +139,6 @@ export async function ptyStart(): Promise<PtyStartResult> {
   return invoke<PtyStartResult>('hermes_pty_start');
 }
 
-export async function ptyWrite(ptyId: string, input: string): Promise<void> {
-  return invoke<void>('hermes_pty_write', { pty_id: ptyId, input });
-}
-
 export async function ptyStop(ptyId: string): Promise<void> {
   return invoke<void>('hermes_pty_stop', { pty_id: ptyId });
 }
