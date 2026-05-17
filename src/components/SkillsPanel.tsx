@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore, Skill } from '../store';
-import { Zap, Plus, Edit2, Trash2, Play, X, Save, ChevronDown } from 'lucide-react';
-import { runHermesCommand, writeFile } from '../api/desktop';
+import { Zap, Plus, Edit2, Trash2, Play, X, Save } from 'lucide-react';
+import { readFile, writeFile } from '../api/desktop';
 
 const generateId = () => Math.random().toString(36).slice(2);
+
+const SKILLS_FILE = 'gui-skills.json';
 
 const SOURCE_BADGE: Record<string, string> = {
   builtin: 'badge-info',
@@ -12,57 +14,47 @@ const SOURCE_BADGE: Record<string, string> = {
 };
 
 export default function SkillsPanel() {
-  const { skills, addSkill, updateSkill, deleteSkill } = useStore();
+  const { skills, addSkill, updateSkill, deleteSkill, setActiveSection } = useStore();
   const [editSkill, setEditSkill] = useState<Skill | null>(null);
   const [newSkill, setNewSkill] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', content: '' });
-  const [invokeOutput, setInvokeOutput] = useState<Record<string, string>>({});
-  const [invoking, setInvoking] = useState<Record<string, boolean>>({});
+  const [invokedId, setInvokedId] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load skills from Hermes on mount (best-effort)
+  // Load persisted skills from disk on mount (overrides defaults if file exists)
   useEffect(() => {
-    runHermesCommand(['skills', 'list']).then(result => {
-      if (!result.success) return;
+    readFile(SKILLS_FILE).then(raw => {
+      if (!raw) { setLoaded(true); return; }
       try {
-        const parsed = JSON.parse(result.stdout);
-        if (Array.isArray(parsed)) {
-          parsed.forEach((item: { name?: string; description?: string; content?: string }) => {
-            if (!item.name) return;
-            const alreadyInStore = skills.find(s => s.name === item.name);
-            if (!alreadyInStore) {
-              addSkill({
-                id: generateId(),
-                name: item.name,
-                description: item.description ?? '',
-                content: item.content ?? '',
-                source: 'imported',
-              });
-            }
-          });
+        const parsed: Skill[] = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          useStore.setState({ skills: parsed });
         }
       } catch {
-        // Line-based fallback: each line is a skill name
-        const lines = result.stdout.split('\n').map(l => l.trim()).filter(Boolean);
-        lines.forEach(name => {
-          const alreadyInStore = skills.find(s => s.name === name);
-          if (!alreadyInStore) {
-            addSkill({ id: generateId(), name, description: '', content: '', source: 'imported' });
-          }
-        });
+        // ignore corrupt file
       }
-    }).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
   }, []);
 
-  const handleSave = async () => {
-    if (!form.name) return;
+  // Debounced persist to disk whenever skills change (after initial load)
+  useEffect(() => {
+    if (!loaded) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      writeFile(SKILLS_FILE, JSON.stringify(skills, null, 2)).catch(() => {});
+    }, 500);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [skills, loaded]);
+
+  const handleSave = () => {
+    if (!form.name.trim()) return;
     if (editSkill) {
-      updateSkill(editSkill.id, form);
+      updateSkill(editSkill.id, { name: form.name.trim(), description: form.description, content: form.content });
     } else {
-      addSkill({ id: generateId(), ...form, source: 'user' });
+      addSkill({ id: generateId(), name: form.name.trim(), description: form.description, content: form.content, source: 'user' });
     }
-    // Persist to ~/.hermes/skills/<name>.md (best-effort)
-    await writeFile(`skills/${form.name}.md`, form.content).catch(() => {});
     setEditSkill(null);
     setNewSkill(false);
     setForm({ name: '', description: '', content: '' });
@@ -70,24 +62,28 @@ export default function SkillsPanel() {
 
   const handleDelete = (s: Skill) => {
     deleteSkill(s.id);
-    runHermesCommand(['skills', 'delete', s.name]).catch(() => {});
+    if (invokedId === s.id) setInvokedId(null);
+    if (editSkill?.id === s.id) { setEditSkill(null); setNewSkill(false); }
   };
 
-  const handleInvoke = async (s: Skill) => {
-    // Toggle off if output already shown
-    if (invokeOutput[s.id] !== undefined) {
-      setInvokeOutput(prev => { const next = { ...prev }; delete next[s.id]; return next; });
-      return;
-    }
-    setInvoking(prev => ({ ...prev, [s.id]: true }));
-    try {
-      const result = await runHermesCommand(['skills', 'run', s.name]);
-      setInvokeOutput(prev => ({ ...prev, [s.id]: result.stdout || result.stderr || '(no output)' }));
-    } catch {
-      setInvokeOutput(prev => ({ ...prev, [s.id]: '(invoke failed)' }));
-    } finally {
-      setInvoking(prev => ({ ...prev, [s.id]: false }));
-    }
+  // Inject skill content into chat input and navigate to chat tab
+  const handleInvoke = (s: Skill) => {
+    if (!s.content.trim()) return;
+    setActiveSection('chat');
+    // Give React time to mount the chat panel before injecting
+    setTimeout(() => {
+      const inputEl = document.getElementById('chat-input') as HTMLTextAreaElement | null;
+      if (!inputEl) return;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+      if (setter) {
+        setter.call(inputEl, s.content);
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      inputEl.focus();
+    }, 80);
+    setInvokedId(s.id);
+    // Clear the "just invoked" highlight after a moment
+    setTimeout(() => setInvokedId(prev => prev === s.id ? null : prev), 1200);
   };
 
   const openEdit = (s: Skill) => {
@@ -102,139 +98,240 @@ export default function SkillsPanel() {
     setEditSkill(null);
   };
 
+  const cancelEdit = () => {
+    setEditSkill(null);
+    setNewSkill(false);
+    setForm({ name: '', description: '', content: '' });
+  };
+
   const isEditing = editSkill !== null || newSkill;
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '20px 24px' }}>
-      <div style={{ maxWidth: 800 }}>
+      <div style={{ maxWidth: 860 }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
           <Zap size={20} style={{ color: 'var(--accent-green)' }} />
           <div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>Skills Browser</div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Manage Hermes skills — reusable instruction sets</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Reusable instruction sets — invoke to pre-fill chat</div>
           </div>
-          <button className="btn btn-primary" onClick={openNew} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={openNew}
+            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}
+          >
             <Plus size={14} /> New Skill
           </button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: isEditing ? '1fr 1fr' : '1fr', gap: 16 }}>
-          {/* Skill Cards */}
+          {/* Skill list */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {skills.map((s) => (
-              <div key={s.id}>
-                <div
-                  style={{
-                    background: editSkill?.id === s.id ? 'var(--accent-green-dim)' : 'var(--bg2)',
-                    border: `1px solid ${editSkill?.id === s.id ? 'var(--accent-green)' : 'var(--border)'}`,
-                    borderRadius: 10,
-                    padding: '13px 16px',
-                    transition: 'border-color 0.15s, background 0.15s',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13.5, color: 'var(--accent-green)' }}>/{s.name}</span>
-                        <span className={`badge ${SOURCE_BADGE[s.source] ?? 'badge-muted'}`}>{s.source}</span>
-                      </div>
-                      <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{s.description}</div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                      <button
-                        onClick={() => handleInvoke(s)}
-                        title="Invoke"
-                        disabled={invoking[s.id]}
-                        style={{
-                          background: 'var(--accent-green-dim)',
-                          border: '1px solid rgba(34,197,94,0.3)',
-                          borderRadius: 6,
-                          padding: '4px 8px',
-                          cursor: invoking[s.id] ? 'wait' : 'pointer',
-                          color: 'var(--accent-green)',
-                          fontSize: 11,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          opacity: invoking[s.id] ? 0.6 : 1,
-                        }}
-                      >
-                        {invokeOutput[s.id] !== undefined
-                          ? <><ChevronDown size={11} /> Hide</>
-                          : <><Play size={11} /> {invoking[s.id] ? 'Running…' : 'Invoke'}</>
-                        }
-                      </button>
-                      <button
-                        onClick={() => openEdit(s)}
-                        title="Edit"
-                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: 5, cursor: 'pointer', color: 'var(--text-secondary)', transition: 'color 0.15s, border-color 0.15s' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--accent-green)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-green)'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
-                      ><Edit2 size={13} /></button>
-                      <button
-                        onClick={() => handleDelete(s)}
-                        title="Delete"
-                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: 5, cursor: 'pointer', color: 'var(--text-secondary)', transition: 'color 0.15s, border-color 0.15s' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--accent-red)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-red)'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
-                      ><Trash2 size={13} /></button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Invoke output area */}
-                {invokeOutput[s.id] !== undefined && (
-                  <div
-                    className="animate-in terminal"
-                    style={{ marginTop: 4, borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTop: 'none' }}
-                  >
-                    <div className="terminal-bar" style={{ padding: '5px 12px', fontSize: 11 }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>skills run {s.name}</span>
-                    </div>
-                    <div className="terminal-body" style={{ padding: '10px 12px', maxHeight: 200, overflowY: 'auto' }}>
-                      <pre style={{ margin: 0, fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--term-green)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{invokeOutput[s.id]}</pre>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-
             {skills.length === 0 && (
               <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
                 No skills yet. Click <strong>New Skill</strong> to create one.
               </div>
             )}
+            {skills.map((s) => (
+              <div
+                key={s.id}
+                style={{
+                  background: editSkill?.id === s.id ? 'var(--accent-green-dim)' : 'var(--bg2)',
+                  border: `1px solid ${editSkill?.id === s.id ? 'var(--accent-green)' : invokedId === s.id ? 'var(--accent-amber)' : 'var(--border)'}`,
+                  borderRadius: 10,
+                  padding: '13px 16px',
+                  transition: 'border-color 0.2s, background 0.2s',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13.5, color: 'var(--accent-green)' }}>
+                        /{s.name}
+                      </span>
+                      <span className={`badge ${SOURCE_BADGE[s.source] ?? 'badge-muted'}`}>{s.source}</span>
+                    </div>
+                    {s.description && (
+                      <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {s.description}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                    {/* Invoke */}
+                    <button
+                      onClick={() => handleInvoke(s)}
+                      title="Load into chat input"
+                      style={{
+                        background: invokedId === s.id ? 'var(--accent-amber-dim)' : 'var(--accent-green-dim)',
+                        border: `1px solid ${invokedId === s.id ? 'rgba(245,158,11,0.4)' : 'rgba(34,197,94,0.3)'}`,
+                        borderRadius: 6,
+                        padding: '4px 9px',
+                        cursor: 'pointer',
+                        color: invokedId === s.id ? 'var(--accent-amber)' : 'var(--accent-green)',
+                        fontSize: 11,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      <Play size={11} /> {invokedId === s.id ? 'Sent!' : 'Invoke'}
+                    </button>
+
+                    {/* Edit */}
+                    <button
+                      onClick={() => openEdit(s)}
+                      title="Edit"
+                      style={{
+                        background: 'none',
+                        border: '1px solid var(--border)',
+                        borderRadius: 6,
+                        padding: 5,
+                        cursor: 'pointer',
+                        color: 'var(--text-secondary)',
+                        transition: 'color 0.15s, border-color 0.15s',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLElement).style.color = 'var(--accent-green)';
+                        (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-green)';
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
+                        (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
+                      }}
+                    >
+                      <Edit2 size={13} />
+                    </button>
+
+                    {/* Delete */}
+                    <button
+                      onClick={() => handleDelete(s)}
+                      title="Delete"
+                      style={{
+                        background: 'none',
+                        border: '1px solid var(--border)',
+                        borderRadius: 6,
+                        padding: 5,
+                        cursor: 'pointer',
+                        color: 'var(--text-secondary)',
+                        transition: 'color 0.15s, border-color 0.15s',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLElement).style.color = 'var(--accent-red)';
+                        (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-red)';
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
+                        (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Content preview (collapsed, single line) */}
+                {s.content && (
+                  <div style={{
+                    marginTop: 8,
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    color: 'var(--text-tertiary)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    paddingLeft: 2,
+                  }}>
+                    {s.content.replace(/\n/g, ' ').slice(0, 120)}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
 
-          {/* Editor */}
+          {/* Editor panel */}
           {isEditing && (
-            <div className="animate-in" style={{ background: 'var(--bg2)', border: '1px solid var(--border-active)', borderRadius: 12, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div
+              className="animate-in"
+              style={{
+                background: 'var(--bg2)',
+                border: '1px solid var(--border-active)',
+                borderRadius: 12,
+                padding: '16px 18px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+              }}
+            >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: 13.5, fontWeight: 600 }}>{newSkill ? 'New Skill' : `Edit /${editSkill?.name}`}</div>
-                <button onClick={() => { setEditSkill(null); setNewSkill(false); }} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><X size={16} /></button>
+                <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                  {newSkill ? 'New Skill' : `Edit /${editSkill?.name}`}
+                </div>
+                <button
+                  onClick={cancelEdit}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 2 }}
+                >
+                  <X size={16} />
+                </button>
               </div>
+
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Skill Name</label>
-                <input className="input-field" placeholder="summarize" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={{ fontFamily: 'var(--font-mono)' }} />
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>
+                  Skill Name
+                </label>
+                <input
+                  className="input-field"
+                  placeholder="summarize"
+                  value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                  style={{ fontFamily: 'var(--font-mono)' }}
+                />
               </div>
+
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Description</label>
-                <input className="input-field" placeholder="Summarize text, documents, or URLs" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>
+                  Description
+                </label>
+                <input
+                  className="input-field"
+                  placeholder="What does this skill do?"
+                  value={form.description}
+                  onChange={e => setForm({ ...form, description: e.target.value })}
+                />
               </div>
+
               <div style={{ flex: 1 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Content (Markdown)</label>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>
+                  Content
+                </label>
                 <textarea
                   className="input-field"
                   value={form.content}
                   onChange={e => setForm({ ...form, content: e.target.value })}
-                  rows={10}
+                  rows={12}
+                  placeholder="Write the prompt or instructions for this skill..."
                   style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, resize: 'vertical' }}
                 />
               </div>
+
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary" onClick={handleSave} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}><Save size={13} /> Save Skill</button>
-                <button className="btn btn-ghost" onClick={() => { setEditSkill(null); setNewSkill(false); }} style={{ fontSize: 13 }}>Cancel</button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleSave}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Save size={13} /> Save
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={cancelEdit}>
+                  Cancel
+                </button>
               </div>
             </div>
           )}
