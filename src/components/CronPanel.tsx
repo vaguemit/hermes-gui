@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore, CronJob } from '../store';
-import { runHermesCommand } from '../api/desktop';
+import { runHermesCommand, readFile, writeFile, isTauriApp } from '../api/desktop';
 import { Clock, Plus, Trash2, Play } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).slice(2);
@@ -10,48 +10,58 @@ export default function CronPanel() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ schedule: '', description: '', platform: 'Telegram' });
 
-  // Load crons from Hermes on mount (best-effort — store is source of truth)
+  // Load crons from disk on mount
   useEffect(() => {
-    runHermesCommand(['cron', 'list']).then(result => {
-      if (!result.success) return;
-      const lines = result.stdout.split('\n').filter(l => l.trim() && !l.includes('---'));
-      if (lines.length === 0) return;
-      // Each line is expected to be: "name | schedule | platform | active"
-      // On parse failure we keep existing store data
-      lines.forEach(line => {
-        const parts = line.split('|').map(s => s.trim());
-        if (parts.length < 2) return;
-        const [description, schedule, platform = 'Telegram', activeStr = 'true'] = parts;
-        if (!description || !schedule) return;
-        addCron({
-          id: generateId(),
-          description,
-          schedule,
-          platform,
-          active: activeStr.toLowerCase() !== 'false',
-        });
-      });
-    }).catch(() => {}); // silent fail — hermes may not be running
+    if (!isTauriApp()) return;
+    readFile('gui-crons.json').then(raw => {
+      const loaded: CronJob[] = JSON.parse(raw);
+      if (Array.isArray(loaded) && loaded.length > 0) {
+        useStore.setState({ crons: loaded });
+      }
+    }).catch(() => {}); // file may not exist yet
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Persist crons to disk whenever they change
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!isTauriApp()) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      writeFile('gui-crons.json', JSON.stringify(crons)).catch(() => {});
+    }, 800);
+  }, [crons]);
+
   const handleToggle = (c: CronJob) => {
-    toggleCron(c.id); // optimistic store update
-    const nextActive = !c.active;
-    runHermesCommand(['cron', nextActive ? 'enable' : 'disable', c.id]).catch(() => {});
+    toggleCron(c.id);
   };
 
   const handleDelete = (id: string) => {
     deleteCron(id);
-    runHermesCommand(['cron', 'remove', id]).catch(() => {});
   };
 
   const handleAdd = () => {
     if (!form.schedule || !form.description) return;
     const id = generateId();
     addCron({ id, ...form, active: true });
-    runHermesCommand(['cron', 'add', form.description, form.schedule, form.description]).catch(() => {});
     setForm({ schedule: '', description: '', platform: 'Telegram' });
     setShowForm(false);
+  };
+
+  const [testRunning, setTestRunning] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  const handleTestRun = async () => {
+    if (!form.description || testRunning) return;
+    setTestRunning(true);
+    setTestResult(null);
+    try {
+      const result = await runHermesCommand(['ask', form.description], 60);
+      setTestResult(result.success ? (result.stdout.trim() || 'Done.') : (result.stderr.trim() || 'Task failed.'));
+    } catch (e) {
+      setTestResult(e instanceof Error ? e.message : 'Error running task');
+    } finally {
+      setTestRunning(false);
+    }
   };
 
   return (
@@ -107,10 +117,22 @@ export default function CronPanel() {
                 style={{ resize: 'vertical' }}
               />
             </div>
+            {testResult && (
+              <div style={{ marginBottom: 10, fontSize: 12, fontFamily: 'var(--font-mono)', background: 'var(--bg0)', borderRadius: 6, padding: '8px 12px', color: 'var(--text-secondary)', maxHeight: 80, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                {testResult}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-primary" onClick={handleAdd} style={{ fontSize: 13 }}>Add Task</button>
               <button className="btn btn-ghost" onClick={() => setShowForm(false)} style={{ fontSize: 13 }}>Cancel</button>
-              <button className="btn btn-ghost" style={{ fontSize: 13, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}><Play size={12} /> Test Run</button>
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 13, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, opacity: testRunning ? 0.6 : 1 }}
+                onClick={handleTestRun}
+                disabled={testRunning || !form.description}
+              >
+                <Play size={12} /> {testRunning ? 'Running…' : 'Test Run'}
+              </button>
             </div>
           </div>
         )}
