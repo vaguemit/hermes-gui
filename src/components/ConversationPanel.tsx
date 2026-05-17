@@ -208,7 +208,7 @@ export default function ConversationPanel() {
     URL.revokeObjectURL(url);
   };
 
-  const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/tools', '/version', '/browser', '/status', '/memory', '/shell', '/persona', '/compress', '/retry', '/undo', '/compact', '/insights', '/platforms']);
+  const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/terminal', '/tools', '/version', '/browser', '/status', '/memory', '/shell', '/persona', '/compress', '/retry', '/undo', '/compact', '/insights', '/platforms']);
 
   const sendMessage = async () => {
     if (!input.trim() || isRunning) return;
@@ -226,7 +226,7 @@ export default function ConversationPanel() {
       return;
     }
     if (userContent === '/help') {
-      addMessage({ id: generateId(), role: 'system', type: 'info', content: '**Hermes Commands**\n\n`/new` or `/reset` — clear conversation\n`/usage` — show token usage\n`/model` — open model switcher\n`/agents` — view agent modes\n`/skills` — open skills browser\n`/gateway` — open gateway panel\n`/tools` — open command center\n`/version` — show Hermes version\n`/status` — show agent status\n`/memory` — show memory info\n`/shell <cmd>` — run a shell command\n`/browser connect` — browser tool guidance\n`/browser <url>` — navigate to URL\n\nAll other natural language is sent to the Hermes agent. Use natural language to invoke tools: "search for X", "navigate to Y", "take a screenshot".', timestamp: Date.now() });
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: '**Hermes Commands**\n\n`/new` or `/reset` — clear conversation\n`/usage` — show token usage\n`/model` — open model switcher\n`/agents` — view agent modes\n`/skills` — open skills browser\n`/gateway` — open gateway panel\n`/terminal` — open interactive terminal\n`/tools` — open command center\n`/version` — show Hermes version\n`/status` — show agent status\n`/memory` — show memory info\n`/shell <cmd>` — run a shell command\n`/browser <url or site>` — open Chrome at URL or site name\n`/browser <query>` — open Chrome with Google search\n`/browser` — open blank Chrome\n\nAll other input is sent to the Hermes agent.', timestamp: Date.now() });
       return;
     }
     if (userContent === '/model') {
@@ -243,6 +243,10 @@ export default function ConversationPanel() {
     }
     if (userContent === '/gateway') {
       setActiveSection('gateway');
+      return;
+    }
+    if (userContent === '/terminal') {
+      setActiveSection('terminal');
       return;
     }
     if (userContent === '/tools') {
