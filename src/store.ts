@@ -273,6 +273,9 @@ export const useStore = create<AppState>((set, get) => ({
     { name: 'WhatsApp', status: 'disconnected', icon: 'WA' },
     { name: 'Signal', status: 'disconnected', icon: 'SG' },
     { name: 'Email', status: 'disconnected', icon: 'EM' },
+    { name: 'Webhook', status: 'disconnected', icon: 'WH' },
+    { name: 'Matrix', status: 'disconnected', icon: 'MX' },
+    { name: 'Mattermost', status: 'disconnected', icon: 'MM' },
   ],
   setPlatformStatus: (name, status) =>
     set((state) => ({

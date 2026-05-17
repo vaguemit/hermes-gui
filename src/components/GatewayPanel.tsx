@@ -30,6 +30,21 @@ const PLATFORM_ICONS: Record<string, string> = {
   WhatsApp: 'WA',
   Signal: 'SG',
   Email: 'EM',
+  Webhook: 'WH',
+  Matrix: 'MX',
+  Mattermost: 'MM',
+};
+
+const PLATFORM_COLORS: Record<string, string> = {
+  Telegram: '#229ED9',
+  Discord: '#5865F2',
+  Slack: '#4A154B',
+  WhatsApp: '#25D366',
+  Signal: '#3A76F0',
+  Email: '#f59e0b',
+  Webhook: '#6b7280',
+  Matrix: '#0DBD8B',
+  Mattermost: '#0058CC',
 };
 
 const PLATFORM_FIELDS: Record<string, Array<{ label: string; key: string; type: string; hint: string }>> = {
@@ -47,6 +62,17 @@ const PLATFORM_FIELDS: Record<string, Array<{ label: string; key: string; type: 
   Email: [
     { label: 'SMTP Host', key: 'SMTP_HOST', type: 'text', hint: 'smtp.gmail.com' },
     { label: 'SMTP Password', key: 'SMTP_PASSWORD', type: 'password', hint: 'App password' },
+  ],
+  Webhook: [
+    { label: 'Webhook URL', key: 'WEBHOOK_URL', type: 'text', hint: 'https://your-endpoint.com/webhook' },
+  ],
+  Matrix: [
+    { label: 'Homeserver', key: 'MATRIX_HOMESERVER', type: 'text', hint: 'https://matrix.org' },
+    { label: 'Access Token', key: 'MATRIX_TOKEN', type: 'password', hint: 'Matrix access token' },
+  ],
+  Mattermost: [
+    { label: 'Server URL', key: 'MATTERMOST_URL', type: 'text', hint: 'https://your.mattermost.com' },
+    { label: 'Bot Token', key: 'MATTERMOST_TOKEN', type: 'password', hint: 'Mattermost bot token' },
   ],
 };
 
@@ -362,7 +388,7 @@ export default function GatewayPanel() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, marginBottom: 20 }}>
           {platforms.map((p) => (
             <div key={p.name} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg2)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{PLATFORM_ICONS[p.name]}</span>
+              <span style={{ width: 32, height: 32, borderRadius: 8, background: PLATFORM_COLORS[p.name] || 'var(--bg4)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{PLATFORM_ICONS[p.name]}</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div>
                 <div style={{ fontSize: 11, color: p.status === 'connected' ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
@@ -536,7 +562,7 @@ export default function GatewayPanel() {
           <div className="palette-overlay" onClick={() => setConfigPlatform(null)}>
             <div className="animate-in" onClick={(e) => e.stopPropagation()} style={{ width: 420, background: 'var(--bg2)', border: '1px solid var(--border-active)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.7)' }}>
               <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--bg2)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{PLATFORM_ICONS[configPlatform]}</span>
+                <span style={{ width: 30, height: 30, borderRadius: 8, background: PLATFORM_COLORS[configPlatform] || 'var(--bg4)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{PLATFORM_ICONS[configPlatform]}</span>
                 <span style={{ fontWeight: 600, fontSize: 14.5, flex: 1 }}>Configure {configPlatform}</span>
               </div>
               <div style={{ padding: 18 }}>
