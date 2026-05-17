@@ -20,6 +20,7 @@ import DashboardPanel from './components/DashboardPanel';
 import ProfilesPanel from './components/ProfilesPanel';
 import SessionsPanel from './components/SessionsPanel';
 import ModelsPanel from './components/ModelsPanel';
+import TerminalPanel from './components/TerminalPanel';
 import Toast from './components/Toast';
 import type { ToastMessage } from './components/Toast';
 import { PanelRightClose, PanelRight } from 'lucide-react';
@@ -230,6 +231,7 @@ export default function App() {
       case 'skills': return <SkillsPanel />;
       case 'dashboard': return <DashboardPanel />;
       case 'profiles': return <ProfilesPanel />;
+      case 'terminal': return <TerminalPanel />;
       default: return <ConversationPanel />;
     }
   };
@@ -278,6 +280,7 @@ export default function App() {
             {activeSection === 'settings' && 'Settings'}
             {activeSection === 'dashboard' && 'Dashboard'}
             {activeSection === 'profiles' && 'Profiles & Memory'}
+            {activeSection === 'terminal' && 'Terminal'}
           </span>
 
           {/* Palette shortcut */}
