@@ -51,7 +51,7 @@ const PLATFORM_FIELDS: Record<string, Array<{ label: string; key: string; type: 
 };
 
 export default function GatewayPanel() {
-  const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId, headedBrowserMode, setHeadedBrowserMode } = useStore();
+  const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId, headedBrowserMode, setHeadedBrowserMode, agentState } = useStore();
   const [configPlatform, setConfigPlatform] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [toolStates, setToolStates] = useState<Record<string, ToolToggleState>>(() =>
@@ -401,6 +401,9 @@ export default function GatewayPanel() {
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                     {localBrowserUrl}
                   </div>
+                )}
+                {browserConnected && (agentState === 'thinking' || agentState === 'running_tool') && (
+                  <div style={{ fontSize: 11, color: 'var(--accent-amber)', marginTop: 3 }}>● Agent using browser…</div>
                 )}
                 {!browserConnected && (
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
