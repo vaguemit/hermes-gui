@@ -60,6 +60,16 @@ export default function SkillsPanel() {
     setForm({ name: '', description: '', content: '' });
   };
 
+  const handleFormKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleSave();
+    }
+    if (e.key === 'Escape') {
+      cancelEdit();
+    }
+  };
+
   const handleDelete = (s: Skill) => {
     deleteSkill(s.id);
     if (invokedId === s.id) setInvokedId(null);
@@ -113,7 +123,12 @@ export default function SkillsPanel() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
           <Zap size={20} style={{ color: 'var(--accent-green)' }} />
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>Skills Browser</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>Skills Browser</div>
+              {skills.length > 0 && (
+                <span className="badge badge-muted">{skills.length}</span>
+              )}
+            </div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Reusable instruction sets — invoke to pre-fill chat</div>
           </div>
           <button
@@ -260,6 +275,7 @@ export default function SkillsPanel() {
           {isEditing && (
             <div
               className="animate-in"
+              onKeyDown={handleFormKeyDown}
               style={{
                 background: 'var(--bg2)',
                 border: '1px solid var(--border-active)',

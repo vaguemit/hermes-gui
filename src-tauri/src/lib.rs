@@ -345,8 +345,8 @@ fn run_command(program: PathBuf, args: &[String], timeout_secs: u64) -> Result<C
         .join(" ");
 
     let home = hermes_home();
-    let mut child = Command::new(&program)
-        .args(args)
+    let mut cmd = Command::new(&program);
+    cmd.args(args)
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
         .env("PLAYWRIGHT_HEADLESS", "false")
@@ -354,7 +354,13 @@ fn run_command(program: PathBuf, args: &[String], timeout_secs: u64) -> Result<C
         .env("HEADLESS", "false")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let mut child = cmd
         .spawn()
         .map_err(|err| format!("Failed to start `{}`: {}", command_text, err))?;
 
@@ -842,16 +848,20 @@ fn hermes_chat_stream(
         dot_env.insert("PLAYWRIGHT_HEADLESS".to_string(), "false".to_string());
         dot_env.insert("PLAYWRIGHT_BROWSERS_PATH".to_string(), "0".to_string());
         dot_env.insert("HEADLESS".to_string(), "false".to_string());
-        let mut child = match Command::new(&binary)
-            .args(&args)
+        let mut cmd = Command::new(&binary);
+        cmd.args(&args)
             .env("HERMES_HOME", &home)
             .env("PATH", enhanced_path(&home))
             .envs(&dot_env)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
         {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
                 let _ = app_handle.emit(&format!("chat-error-{}", eid),
@@ -988,8 +998,8 @@ fn stream_spawn(
         .join(" ");
 
     let home = hermes_home();
-    let mut child = Command::new(&program)
-        .args(args)
+    let mut cmd = Command::new(&program);
+    cmd.args(args)
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
         .env("PLAYWRIGHT_HEADLESS", "false")
@@ -997,7 +1007,13 @@ fn stream_spawn(
         .env("HEADLESS", "false")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to start `{}`: {}", command_text, e))?;
 
@@ -1900,15 +1916,21 @@ fn start_hermes_pty_chat(
     let binary = hermes_binary().ok_or_else(|| "hermes binary not found".to_string())?;
     let pty_id = format!("hermes-chat-{}", event_id);
 
-    let mut child = Command::new(&binary)
-        .arg("chat")
+    let mut cmd = Command::new(&binary);
+    cmd.arg("chat")
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
         .env("NO_COLOR", "1")
         .env("TERM", "dumb")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to start hermes chat: {}", e))?;
 
