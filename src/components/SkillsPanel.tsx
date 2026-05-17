@@ -20,6 +20,7 @@ export default function SkillsPanel() {
   const [form, setForm] = useState({ name: '', description: '', content: '' });
   const [invokedId, setInvokedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const [loaded, setLoaded] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -124,6 +125,13 @@ export default function SkillsPanel() {
 
   const isEditing = editSkill !== null || newSkill;
 
+  const filteredSkills = query.trim()
+    ? skills.filter(s =>
+        s.name.toLowerCase().includes(query.toLowerCase()) ||
+        s.description.toLowerCase().includes(query.toLowerCase())
+      )
+    : skills;
+
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '20px 24px' }}>
       <div style={{ maxWidth: 860 }}>
@@ -148,6 +156,17 @@ export default function SkillsPanel() {
           </button>
         </div>
 
+        {/* Search */}
+        {skills.length > 3 && (
+          <input
+            className="input-field"
+            placeholder="Filter skills..."
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            style={{ marginBottom: 12, fontSize: 13 }}
+          />
+        )}
+
         <div style={{ display: 'grid', gridTemplateColumns: isEditing ? '1fr 1fr' : '1fr', gap: 16 }}>
           {/* Skill list */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -156,7 +175,12 @@ export default function SkillsPanel() {
                 No skills yet. Click <strong>New Skill</strong> to create one.
               </div>
             )}
-            {skills.map((s) => (
+            {filteredSkills.length === 0 && skills.length > 0 && (
+              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
+                No skills match &ldquo;{query}&rdquo;
+              </div>
+            )}
+            {filteredSkills.map((s) => (
               <div
                 key={s.id}
                 style={{
