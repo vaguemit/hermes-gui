@@ -1689,7 +1689,7 @@ fn hermes_pty_start(
 ) -> Result<PtyStartResult, String> {
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
-    let binary = hermes_binary();
+    let binary = hermes_binary().unwrap_or_else(|| std::path::PathBuf::from("hermes"));
     let home = hermes_home();
     let event_id = uuid::Uuid::new_v4().to_string();
 
