@@ -82,7 +82,7 @@ export default function Sidebar() {
         <button
           onClick={() => setModelSwitcherOpen(true)}
           id="model-switcher-btn"
-          style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 9px', textAlign: 'left', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 11.5, fontFamily: 'monospace', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'border-color 0.15s', overflow: 'hidden' }}
+          style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 9px', textAlign: 'left', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 11.5, fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'border-color 0.15s', overflow: 'hidden' }}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-green)'; }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
         >
@@ -123,7 +123,7 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav style={{ padding: '0 8px', marginBottom: 4 }}>
+      <nav style={{ padding: '0 8px', marginBottom: 4, overflowY: 'auto', maxHeight: 320, flexShrink: 0 }}>
         {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -156,7 +156,7 @@ export default function Sidebar() {
                 onClick={() => setActiveSession(s.id)}
                 style={{
                   width: '100%', border: 'none', borderRadius: 8, textAlign: 'left', padding: '8px 10px', cursor: 'pointer', marginBottom: 2,
-                  background: s.id === activeSessionId ? 'var(--accent-dim)' : 'transparent',
+                  background: s.id === activeSessionId ? 'var(--accent-green-dim)' : 'transparent',
                   color: s.id === activeSessionId ? 'var(--accent-green)' : 'var(--text-secondary)',
                   transition: 'background 0.15s, color 0.15s',
                 }}

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Key, Eye, EyeOff, Check, ChevronDown, Cpu } from 'lucide-react';
-import { readEnv, writeEnv, getModelConfig, setModelConfig } from '../api/desktop';
+import { Key, Eye, EyeOff, Check, ChevronDown, Cpu, RefreshCw } from 'lucide-react';
+import { readEnv, writeEnv, getModelConfig, setModelConfig, listOllamaModels } from '../api/desktop';
 import type { ModelConfig } from '../api/desktop';
 
 const PROVIDERS = [
@@ -17,6 +17,9 @@ const PROVIDERS = [
 ];
 
 const PROVIDER_OPTIONS = ['auto', 'openai', 'anthropic', 'gemini', 'groq', 'openrouter', 'ollama', 'custom'];
+
+// Per-key test state
+type TestState = 'idle' | 'ok' | 'fail';
 
 function MaskedInput({
   value,
@@ -76,10 +79,16 @@ function SavedFlash({ show }: { show: boolean }) {
 export default function ProvidersPanel() {
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
   const [savedKeys, setSavedKeys] = useState<Record<string, boolean>>({});
+  const [testStates, setTestStates] = useState<Record<string, TestState>>({});
 
   const [modelConfig, setModelConfigState] = useState<ModelConfig>({ provider: 'auto', model: '', base_url: '' });
   const [modelSaved, setModelSaved] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Ollama model list state
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [ollamaFetching, setOllamaFetching] = useState(false);
+  const [ollamaFetchError, setOllamaFetchError] = useState<string | null>(null);
 
   // Load env values and model config on mount
   useEffect(() => {
@@ -112,6 +121,8 @@ export default function ProvidersPanel() {
 
   const handleKeyChange = (envKey: string, value: string) => {
     setEnvValues(prev => ({ ...prev, [envKey]: value }));
+    // Reset test state when key changes
+    setTestStates(prev => ({ ...prev, [envKey]: 'idle' }));
   };
 
   const handleKeyBlur = async (envKey: string) => {
@@ -123,7 +134,30 @@ export default function ProvidersPanel() {
     } catch { /* ignore */ }
   };
 
+  const handleTest = (envKey: string) => {
+    const value = (envValues[envKey] ?? '').trim();
+    const result: TestState = value.length > 0 ? 'ok' : 'fail';
+    setTestStates(prev => ({ ...prev, [envKey]: result }));
+    setTimeout(() => setTestStates(prev => ({ ...prev, [envKey]: 'idle' })), 3000);
+  };
+
+  const handleFetchOllamaModels = async () => {
+    setOllamaFetching(true);
+    setOllamaFetchError(null);
+    try {
+      const models = await listOllamaModels();
+      setOllamaModels(models);
+      if (models.length === 0) setOllamaFetchError('No models found. Is Ollama running?');
+    } catch {
+      setOllamaFetchError('Could not reach Ollama. Is it running?');
+      setOllamaModels([]);
+    } finally {
+      setOllamaFetching(false);
+    }
+  };
+
   const showBaseUrl = modelConfig.provider === 'ollama' || modelConfig.provider === 'custom';
+  const showOllamaModels = modelConfig.provider === 'ollama';
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -172,13 +206,43 @@ export default function ProvidersPanel() {
             <input
               className="input-field"
               type="text"
+              list={showOllamaModels && ollamaModels.length > 0 ? 'ollama-models-list' : undefined}
               value={modelConfig.model}
-              placeholder="e.g. gpt-4o, claude-opus-4-5"
+              placeholder={showOllamaModels ? 'e.g. llama3, mistral' : 'e.g. gpt-4o, claude-opus-4-5'}
               onChange={e => updateModelField('model', e.target.value)}
               style={{ fontSize: 13 }}
             />
+            {showOllamaModels && ollamaModels.length > 0 && (
+              <datalist id="ollama-models-list">
+                {ollamaModels.map(m => <option key={m} value={m} />)}
+              </datalist>
+            )}
           </div>
         </div>
+
+        {/* Ollama: fetch models helper */}
+        {showOllamaModels && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: -4 }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={handleFetchOllamaModels}
+              disabled={ollamaFetching}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}
+            >
+              <RefreshCw size={12} style={{ animation: ollamaFetching ? 'spin 1s linear infinite' : 'none' }} />
+              {ollamaFetching ? 'Fetching…' : 'Fetch models'}
+            </button>
+            {ollamaModels.length > 0 && !ollamaFetchError && (
+              <span style={{ fontSize: 11.5, color: 'var(--accent-green)' }}>
+                {ollamaModels.length} model{ollamaModels.length !== 1 ? 's' : ''} available
+              </span>
+            )}
+            {ollamaFetchError && (
+              <span style={{ fontSize: 11.5, color: 'var(--accent-red)' }}>{ollamaFetchError}</span>
+            )}
+          </div>
+        )}
 
         {/* Base URL — only when ollama or custom */}
         {showBaseUrl && (
@@ -207,6 +271,7 @@ export default function ProvidersPanel() {
           {PROVIDERS.map((p, i) => {
             const val = envValues[p.envKey] ?? '';
             const configured = val.trim().length > 0;
+            const testState = testStates[p.envKey] ?? 'idle';
 
             return (
               <div
@@ -234,10 +299,31 @@ export default function ProvidersPanel() {
                   onBlur={() => handleKeyBlur(p.envKey)}
                 />
 
+                {/* Test button */}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => handleTest(p.envKey)}
+                  style={{ fontSize: 11.5, padding: '3px 9px', flexShrink: 0 }}
+                  title="Check if key is set"
+                >
+                  {testState === 'idle' ? 'Test' : testState === 'ok' ? '✓ OK' : '✗ Not set'}
+                </button>
+
                 {/* Status */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: 90, flexShrink: 0, justifyContent: 'flex-end' }}>
                   {savedKeys[p.envKey] ? (
                     <SavedFlash show />
+                  ) : testState === 'ok' ? (
+                    <>
+                      <span className="dot dot-green" />
+                      <span className="badge badge-connected" style={{ fontSize: 10.5 }}>OK</span>
+                    </>
+                  ) : testState === 'fail' ? (
+                    <>
+                      <span className="dot dot-red" />
+                      <span className="badge badge-error" style={{ fontSize: 10.5 }}>Not set</span>
+                    </>
                   ) : configured ? (
                     <>
                       <span className="dot dot-green" />
