@@ -219,6 +219,66 @@ export default function DashboardPanel() {
           ))}
         </div>
 
+        {/* Recent Sessions */}
+        {(() => {
+          const recentSessions = [...sessions]
+            .filter(s => s.messages.length > 0)
+            .sort((a, b) => b.timestamp - a.timestamp)
+            .slice(0, 3);
+          if (recentSessions.length === 0) return null;
+          return (
+            <>
+              <div className="section-label">Recent Sessions</div>
+              <div className="card" style={{ marginBottom: 20, padding: 0, overflow: 'hidden' }}>
+                {recentSessions.map((s, i) => {
+                  const ago = (() => {
+                    const diff = Date.now() - s.timestamp;
+                    const m = Math.floor(diff / 60000);
+                    if (m < 1) return 'just now';
+                    if (m < 60) return `${m}m ago`;
+                    const h = Math.floor(m / 60);
+                    if (h < 24) return `${h}h ago`;
+                    return `${Math.floor(h / 24)}d ago`;
+                  })();
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => { setActiveSession(s.id); setActiveSection('chat'); }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '12px 16px',
+                        background: 'none',
+                        border: 'none',
+                        borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'background 0.15s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg2)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                    >
+                      <MessageSquare size={14} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {s.title}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                        {s.messages.length} msg{s.messages.length !== 1 ? 's' : ''}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', marginLeft: 8 }}>
+                        {ago}
+                      </span>
+                      <ChevronRight size={12} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
+
         {/* Agent Status Card */}
         <div className="section-label">Agent Status</div>
         <div className="card" style={{ marginBottom: 20 }}>
