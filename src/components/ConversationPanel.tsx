@@ -185,6 +185,7 @@ export default function ConversationPanel() {
   const sentMessages = useRef<string[]>([]);
   const historyIndex = useRef<number>(-1);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [fastMode, setFastMode] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const messages = activeSession?.messages ?? [];
@@ -210,7 +211,7 @@ export default function ConversationPanel() {
     URL.revokeObjectURL(url);
   };
 
-  const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/terminal', '/tools', '/version', '/browser', '/status', '/memory', '/shell', '/persona', '/compress', '/retry', '/undo', '/compact', '/insights', '/platforms']);
+  const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/terminal', '/tools', '/version', '/browser', '/status', '/memory', '/shell', '/persona', '/compress', '/retry', '/undo', '/compact', '/insights', '/platforms', '/kanban', '/soul', '/providers', '/fast']);
 
   const sendMessage = async () => {
     if (!input.trim() || isRunning) return;
@@ -302,13 +303,25 @@ export default function ConversationPanel() {
       return;
     }
     if (userContent === '/memory') {
-      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Fetching memory info...', timestamp: Date.now() });
-      import('../api/desktop').then(({ runHermesCommand }) => {
-        runHermesCommand(['memory'], 30).then(result => {
-          const text = (result.stdout || result.stderr || 'No memory output.').trim();
-          addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: text, timestamp: Date.now() });
-        });
-      });
+      setActiveSection('profiles');
+      return;
+    }
+    if (userContent === '/kanban') {
+      setActiveSection('kanban');
+      return;
+    }
+    if (userContent === '/soul') {
+      setActiveSection('soul');
+      return;
+    }
+    if (userContent === '/providers') {
+      setActiveSection('providers');
+      return;
+    }
+    if (userContent === '/fast') {
+      const next = !fastMode;
+      setFastMode(next);
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: `Fast mode ${next ? 'ON' : 'OFF'}`, timestamp: Date.now() });
       return;
     }
     if (userContent.startsWith('/shell ')) {
