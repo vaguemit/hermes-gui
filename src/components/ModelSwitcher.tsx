@@ -75,13 +75,13 @@ export default function ModelSwitcher() {
                   onClick={() => select(model)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', textAlign: 'left',
-                    background: model === activeModel ? 'var(--accent-dim)' : 'transparent',
+                    background: model === activeModel ? 'var(--accent-green-dim)' : 'transparent',
                     transition: 'background 0.12s',
                   }}
                   onMouseEnter={e => { if (model !== activeModel) (e.currentTarget as HTMLElement).style.background = 'var(--bg2)'; }}
                   onMouseLeave={e => { if (model !== activeModel) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
                 >
-                  <span style={{ fontFamily: 'monospace', fontSize: 12.5, color: model === activeModel ? 'var(--accent-green)' : 'var(--text-primary)', flex: 1 }}>{model}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, color: model === activeModel ? 'var(--accent-green)' : 'var(--text-primary)', flex: 1 }}>{model}</span>
                   {model === activeModel && <span className="badge badge-accent">Active</span>}
                 </button>
               ))}

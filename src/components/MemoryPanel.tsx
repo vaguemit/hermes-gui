@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Brain, User, Save, Trash2, RefreshCw } from 'lucide-react';
+import { Brain, User, Save, Trash2, RefreshCw, BarChart2 } from 'lucide-react';
 import { readFile, writeFile, isTauriApp } from '../api/desktop';
 
 type Tab = 'agent' | 'user';
@@ -234,6 +234,12 @@ export default function MemoryPanel() {
 
         {/* Footer */}
         <div style={{ flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
+            <BarChart2 size={12} style={{ color: 'var(--text-secondary)' }} />
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+              Capacity
+            </span>
+          </div>
           <CapacityBar chars={content.length} max={maxChars} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
