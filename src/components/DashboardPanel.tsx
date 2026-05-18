@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Play, Square, Cpu, MessageSquare, Zap, ChevronRight, RefreshCw } from 'lucide-react';
+import { Play, Square, Cpu, MessageSquare, Zap, ChevronRight, RefreshCw, Hash, Clock, BookOpen, Radio } from 'lucide-react';
 import { useStore } from '../store';
 import {
   getGatewayStatus,
@@ -20,7 +20,7 @@ function formatUptime(seconds: number): string {
 }
 
 export default function DashboardPanel() {
-  const { gatewayStatus, setGatewayStatus, setSettingsOpen, setActiveSection } = useStore();
+  const { gatewayStatus, setGatewayStatus, setSettingsOpen, setActiveSection, sessions, crons, skills, platforms, addSession, setActiveSession } = useStore();
 
   const [isRunning, setIsRunning] = useState(false);
   const [gatewayLoading, setGatewayLoading] = useState(false);
@@ -154,6 +154,48 @@ export default function DashboardPanel() {
             Overview of your Hermes agent
           </p>
         </div>
+
+        {/* Stats Grid */}
+        {(() => {
+          const activeSessions = sessions.filter(s => s.messages.length > 0).length;
+          const activeCrons = crons.filter(c => c.active).length;
+          const connectedPlatforms = platforms.filter(p => p.status === 'connected').length;
+          const stats = [
+            { label: 'Active Sessions', value: activeSessions, icon: <Hash size={14} />, accent: 'var(--text-secondary)' },
+            { label: 'Scheduled Crons', value: activeCrons, icon: <Clock size={14} />, accent: 'var(--accent-amber)' },
+            { label: 'Skills', value: skills.length, icon: <BookOpen size={14} />, accent: '#3b82f6' },
+            { label: 'Platforms On', value: connectedPlatforms, icon: <Radio size={14} />, accent: 'var(--accent-green)' },
+          ];
+          return (
+            <>
+              <div className="section-label">Overview</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
+                {stats.map(stat => (
+                  <div key={stat.label} className="card" style={{ padding: '14px 16px', position: 'relative', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--text-secondary)' }}>
+                      {stat.icon}
+                      <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>
+                        {stat.label}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>
+                      {stat.value}
+                    </div>
+                    <div style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: 2,
+                      background: stat.accent,
+                      opacity: 0.6,
+                    }} />
+                  </div>
+                ))}
+              </div>
+            </>
+          );
+        })()}
 
         {/* Agent Status Card */}
         <div className="section-label">Agent Status</div>
