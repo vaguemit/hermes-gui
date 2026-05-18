@@ -293,6 +293,7 @@ export default function App() {
             {activeSection === 'terminal' && 'Terminal'}
             {activeSection === 'soul' && 'Soul'}
             {activeSection === 'kanban' && 'Kanban'}
+            {activeSection === 'providers' && 'Providers'}
           </span>
 
           {/* Palette shortcut */}
