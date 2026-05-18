@@ -91,6 +91,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/compact', desc: 'Compact and summarize the conversation', category: 'Session' },
   { cmd: '/memory', desc: 'Show agent memory', category: 'Info' },
   { cmd: '/persona', desc: 'Show current persona', category: 'Config' },
+  { cmd: '/version', desc: 'Show Hermes version information', category: 'Info' },
+  { cmd: '/update', desc: 'Update Hermes to the latest version', category: 'Config' },
 ];
 
 export const CLI_COMMANDS: CliCommand[] = [
