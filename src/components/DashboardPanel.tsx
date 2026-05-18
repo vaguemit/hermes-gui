@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Play, Square, Cpu, MessageSquare, Zap, ChevronRight, RefreshCw, Hash, Clock, BookOpen, Radio } from 'lucide-react';
+import { Play, Square, Cpu, MessageSquare, Zap, ChevronRight, RefreshCw, Hash, Clock, BookOpen, Radio, PlusSquare, CalendarClock, Layers, Server, Plug } from 'lucide-react';
 import { useStore } from '../store';
 import {
   getGatewayStatus,
@@ -196,6 +196,28 @@ export default function DashboardPanel() {
             </>
           );
         })()}
+
+        {/* Quick Actions */}
+        <div className="section-label">Quick Actions</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+          {[
+            { label: 'New Chat', icon: <PlusSquare size={13} />, action: () => { addSession(); setActiveSection('chat'); } },
+            { label: 'Cron Scheduler', icon: <CalendarClock size={13} />, action: () => setActiveSection('crons') },
+            { label: 'Skills', icon: <Layers size={13} />, action: () => setActiveSection('skills') },
+            { label: 'Gateway', icon: <Server size={13} />, action: () => setActiveSection('gateway') },
+            { label: 'Providers', icon: <Plug size={13} />, action: () => setActiveSection('providers' as any) },
+          ].map(item => (
+            <button
+              key={item.label}
+              className="btn btn-ghost btn-sm"
+              onClick={item.action}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
+        </div>
 
         {/* Agent Status Card */}
         <div className="section-label">Agent Status</div>
