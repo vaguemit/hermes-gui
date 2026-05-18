@@ -21,6 +21,9 @@ import ProfilesPanel from './components/ProfilesPanel';
 import SessionsPanel from './components/SessionsPanel';
 import ModelsPanel from './components/ModelsPanel';
 import TerminalPanel from './components/TerminalPanel';
+import SoulPanel from './components/SoulPanel';
+import KanbanPanel from './components/KanbanPanel';
+import ProvidersPanel from './components/ProvidersPanel';
 import Toast from './components/Toast';
 import type { ToastMessage } from './components/Toast';
 import { PanelRightClose, PanelRight } from 'lucide-react';
@@ -234,6 +237,9 @@ export default function App() {
       case 'models': return <ModelsPanel />;
       case 'sessions': return <SessionsPanel />;
       case 'terminal': return <TerminalPanel />;
+      case 'soul': return <SoulPanel />;
+      case 'kanban': return <KanbanPanel />;
+      case 'providers': return <ProvidersPanel />;
       default: return <ConversationPanel />;
     }
   };
@@ -285,6 +291,8 @@ export default function App() {
             {activeSection === 'models' && 'Models'}
             {activeSection === 'sessions' && 'Sessions'}
             {activeSection === 'terminal' && 'Terminal'}
+            {activeSection === 'soul' && 'Soul'}
+            {activeSection === 'kanban' && 'Kanban'}
           </span>
 
           {/* Palette shortcut */}
