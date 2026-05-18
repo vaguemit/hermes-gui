@@ -110,7 +110,7 @@ export default function AgentsPanel() {
           {AGENT_MODES.map((mode) => (
             <div key={mode.id} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: 15, display: 'flex', flexDirection: 'column', minHeight: 230 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--accent-dim)', color: 'var(--accent-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--accent-green-dim)', color: 'var(--accent-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {modeIcon(mode)}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
