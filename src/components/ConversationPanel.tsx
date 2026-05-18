@@ -198,6 +198,19 @@ export default function ConversationPanel() {
     setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 50);
   }, []);
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+        e.preventDefault();
+        clearActiveSession();
+        clearToolCalls();
+        setHermesSessionId(null);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [clearActiveSession, clearToolCalls, setHermesSessionId]);
+
   const handleStop = () => { abortRef.current?.abort(); setIsRunning(false); setAgentState('idle'); };
 
   const handleExport = () => {
