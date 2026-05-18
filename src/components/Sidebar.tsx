@@ -3,7 +3,7 @@ import { useStore } from '../store';
 import { formatTimestamp } from '../utils/parser';
 import {
   MessageSquare, Radio, Clock, Zap, Settings, Plus,
-  ChevronDown, ChevronRight, Cpu, Download, Terminal, Bot, LayoutDashboard, Users, History, SquareTerminal, Brain, KanbanSquare, Key
+  ChevronDown, ChevronRight, Cpu, Download, Terminal, Bot, LayoutDashboard, Users, History, SquareTerminal, Brain, KanbanSquare, Key, BookMarked
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { id: 'crons', label: 'Crons', icon: Clock },
   { id: 'skills', label: 'Skills', icon: Zap },
   { id: 'soul', label: 'Soul', icon: Brain },
+  { id: 'memory', label: 'Memory', icon: BookMarked },
   { id: 'providers', label: 'Providers', icon: Key },
   { id: 'profiles', label: 'Profiles', icon: Users },
   { id: 'sessions', label: 'Sessions', icon: History },
