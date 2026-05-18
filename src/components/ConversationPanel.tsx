@@ -5,7 +5,7 @@ import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy,
   ChevronDown, ChevronRight, AlertTriangle,
-  Brain, Terminal, CheckCircle2, XCircle, Loader2, Download
+  Brain, Terminal, CheckCircle2, XCircle, Loader2, Download, Zap
 } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).slice(2);
@@ -407,6 +407,14 @@ export default function ConversationPanel() {
       });
       return;
     }
+    if (userContent === '/fast') {
+      const enabling = !fastMode;
+      setFastMode(enabling);
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: enabling ? 'Fast mode ON — priority processing enabled' : 'Fast mode OFF', timestamp: Date.now() });
+      const eventId = Math.random().toString(36).slice(2);
+      chatCli(eventId, '/fast', hermesSessionId).catch(() => {});
+      return;
+    }
 
     const effectiveContent = userContent;
 
@@ -617,7 +625,23 @@ export default function ConversationPanel() {
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, padding: '0 2px' }}>
           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}><kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>↵</kbd> Send · <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>Shift+↵</kbd> Newline · <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>↑↓</kbd> History</span>
-          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{input.length > 0 ? `${input.length} chars` : ''}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {input.length > 0 && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{input.length} chars</span>}
+            <button
+              onClick={() => {
+                const enabling = !fastMode;
+                setFastMode(enabling);
+                addMessage({ id: generateId(), role: 'system', type: 'info', content: enabling ? 'Fast mode ON — priority processing enabled' : 'Fast mode OFF', timestamp: Date.now() });
+                const eventId = Math.random().toString(36).slice(2);
+                chatCli(eventId, '/fast', hermesSessionId).catch(() => {});
+              }}
+              title="Toggle fast mode (/fast)"
+              style={{ display: 'flex', alignItems: 'center', gap: 4, background: fastMode ? 'var(--accent-amber-dim)' : 'none', border: fastMode ? '1px solid rgba(245,158,11,0.3)' : '1px solid transparent', borderRadius: 5, padding: '2px 7px', fontSize: 11, color: fastMode ? 'var(--accent-amber)' : 'var(--text-tertiary)', cursor: 'pointer', transition: 'all 0.15s' }}
+            >
+              <Zap size={11} />
+              Fast
+            </button>
+          </div>
         </div>
       </div>
     </div>
