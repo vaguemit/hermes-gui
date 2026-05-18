@@ -24,6 +24,7 @@ import TerminalPanel from './components/TerminalPanel';
 import SoulPanel from './components/SoulPanel';
 import KanbanPanel from './components/KanbanPanel';
 import ProvidersPanel from './components/ProvidersPanel';
+import MemoryPanel from './components/MemoryPanel';
 import Toast from './components/Toast';
 import type { ToastMessage } from './components/Toast';
 import { PanelRightClose, PanelRight } from 'lucide-react';
@@ -240,6 +241,7 @@ export default function App() {
       case 'soul': return <SoulPanel />;
       case 'kanban': return <KanbanPanel />;
       case 'providers': return <ProvidersPanel />;
+      case 'memory': return <MemoryPanel />;
       default: return <ConversationPanel />;
     }
   };
@@ -294,6 +296,7 @@ export default function App() {
             {activeSection === 'soul' && 'Soul'}
             {activeSection === 'kanban' && 'Kanban'}
             {activeSection === 'providers' && 'Providers'}
+            {activeSection === 'memory' && 'Memory'}
           </span>
 
           {/* Palette shortcut */}
