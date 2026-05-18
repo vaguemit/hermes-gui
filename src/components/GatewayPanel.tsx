@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Globe, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
-import { getChromeCdpStatus, getGatewayStatus, launchChrome, readEnv, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv, writeEnvVar } from '../api/desktop';
+import { getChromeCdpStatus, getGatewayStatus, launchChrome, readEnv, readFile, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv, writeEnvVar, writeFile } from '../api/desktop';
+import { getBaseUrl } from '../api/hermes';
 
 interface ToolPlatform {
   id: string;
@@ -88,25 +89,36 @@ export default function GatewayPanel() {
     )
   );
 
+  // Load persisted tool states from disk on mount
+  useEffect(() => {
+    readFile('gui-tools.json').then(raw => {
+      if (!raw) return;
+      const saved: Record<string, boolean> = JSON.parse(raw);
+      setToolStates(prev => {
+        const next = { ...prev };
+        for (const id of Object.keys(saved)) {
+          if (next[id] !== undefined) next[id] = { ...next[id], enabled: saved[id] };
+        }
+        return next;
+      });
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const toggleTool = async (platformId: string, enable: boolean) => {
     setToolStates((prev) => ({
       ...prev,
       [platformId]: { ...prev[platformId], loading: true, feedback: null },
     }));
-    try {
-      const result = await runHermesCommand([
-        'config', 'set', `platforms.${platformId}.enabled`, enable ? 'true' : 'false',
-      ]);
-      setToolStates((prev) => ({
-        ...prev,
-        [platformId]: { enabled: result.success ? enable : prev[platformId].enabled, loading: false, feedback: result.success ? 'ok' : (result.stderr || result.stdout || 'Command failed') },
-      }));
-    } catch (err) {
-      setToolStates((prev) => ({
-        ...prev,
-        [platformId]: { ...prev[platformId], loading: false, feedback: err instanceof Error ? err.message : 'IPC unavailable in browser mode' },
-      }));
-    }
+
+    // Update state and persist to disk
+    const newStates = { ...toolStates, [platformId]: { enabled: enable, loading: false, feedback: 'ok' as const } };
+    setToolStates(newStates);
+
+    const enabledMap: Record<string, boolean> = Object.fromEntries(
+      Object.entries(newStates).map(([id, ts]) => [id, ts.enabled])
+    );
+    writeFile('gui-tools.json', JSON.stringify(enabledMap)).catch(() => {});
+
     // Clear feedback after 3 seconds
     setTimeout(() => {
       setToolStates((prev) => ({
@@ -115,6 +127,14 @@ export default function GatewayPanel() {
       }));
     }, 3000);
   };
+
+  const [remoteExpanded, setRemoteExpanded] = useState(false);
+  const [remoteUrl, setRemoteUrl] = useState('');
+  const [remoteApiKey, setRemoteApiKey] = useState('');
+  const [remoteTesting, setRemoteTesting] = useState(false);
+  const [remoteConnected, setRemoteConnected] = useState(false);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [remoteTestOk, setRemoteTestOk] = useState(false);
 
   const [cdpUrl, setCdpUrl] = useState('http://127.0.0.1:9222');
   const [browserLaunching, setBrowserLaunching] = useState(false);
@@ -135,7 +155,24 @@ export default function GatewayPanel() {
         const hasAny = fields.some(f => !!env[f.key]);
         if (hasAny) setPlatformStatus(platformName, 'connected');
       });
-    }).catch(() => {});
+      // Pre-populate remote connection fields
+      if (env['HERMES_REMOTE_URL']) {
+        setRemoteUrl(env['HERMES_REMOTE_URL']);
+        setRemoteConnected(true);
+        setRemoteExpanded(true);
+      }
+      if (env['HERMES_REMOTE_API_KEY']) {
+        setRemoteApiKey(env['HERMES_REMOTE_API_KEY']);
+      }
+    }).catch(() => {
+      // Fallback: check localStorage
+      const saved = localStorage.getItem('hermes_remote_url');
+      if (saved) {
+        setRemoteUrl(saved);
+        setRemoteConnected(true);
+        setRemoteExpanded(true);
+      }
+    });
     runHermesCommand(['run', 'browser-harness', '--help'], 5)
       .then(r => setBhInstalled(r.success || r.stdout.includes('browser-harness')))
       .catch(() => setBhInstalled(false));
@@ -308,6 +345,60 @@ export default function GatewayPanel() {
     await writeEnvVar('BROWSER_CDP_URL', '').catch(() => {});
   }
 
+  const handleRemoteTest = async () => {
+    if (!remoteUrl.trim()) return;
+    setRemoteTesting(true);
+    setRemoteError(null);
+    setRemoteTestOk(false);
+    try {
+      const headers: Record<string, string> = {};
+      if (remoteApiKey.trim()) headers['Authorization'] = `Bearer ${remoteApiKey.trim()}`;
+      const res = await fetch(`${remoteUrl.trim()}/health`, { signal: AbortSignal.timeout(5000), headers });
+      if (res.ok) {
+        setRemoteTestOk(true);
+        setRemoteError(null);
+      } else {
+        setRemoteError(`Server returned ${res.status} ${res.statusText}`);
+      }
+    } catch (e) {
+      setRemoteError(e instanceof Error ? e.message : 'Connection failed');
+    } finally {
+      setRemoteTesting(false);
+    }
+  };
+
+  const handleRemoteConnect = async () => {
+    if (!remoteUrl.trim()) return;
+    try {
+      await writeEnv('HERMES_REMOTE_URL', remoteUrl.trim()).catch(() => {});
+      if (remoteApiKey.trim()) {
+        await writeEnv('HERMES_REMOTE_API_KEY', remoteApiKey.trim()).catch(() => {});
+      }
+      localStorage.setItem('hermes_remote_url', remoteUrl.trim());
+      if (remoteApiKey.trim()) localStorage.setItem('hermes_remote_api_key', remoteApiKey.trim());
+      setRemoteConnected(true);
+      setRemoteError(null);
+      setGatewayStatus('connected');
+    } catch (e) {
+      setRemoteError(e instanceof Error ? e.message : 'Failed to save remote config');
+    }
+  };
+
+  const handleRemoteDisconnect = async () => {
+    try {
+      await writeEnv('HERMES_REMOTE_URL', '').catch(() => {});
+      await writeEnv('HERMES_REMOTE_API_KEY', '').catch(() => {});
+    } catch { /* best-effort */ }
+    localStorage.removeItem('hermes_remote_url');
+    localStorage.removeItem('hermes_remote_api_key');
+    setRemoteConnected(false);
+    setRemoteUrl('');
+    setRemoteApiKey('');
+    setRemoteError(null);
+    setRemoteTestOk(false);
+    setGatewayStatus('disconnected');
+  };
+
   const isConnected = gatewayStatus === 'connected';
   const isConnecting = gatewayStatus === 'connecting';
 
@@ -413,6 +504,85 @@ export default function GatewayPanel() {
           {gatewayLog.map((line, i) => (
             <div key={`${line}-${i}`} style={{ color: line.includes('[error]') ? 'var(--accent-red)' : line.includes('[warn]') ? 'var(--accent-amber)' : line.includes('[info]') ? 'var(--text-secondary)' : 'var(--text-primary)' }}>{line}</div>
           ))}
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <button
+            onClick={() => setRemoteExpanded(!remoteExpanded)}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', width: '100%', padding: 0, marginBottom: remoteExpanded ? 10 : 0 }}
+          >
+            <div className="section-label" style={{ flex: 1, marginBottom: 0 }}>Remote Connection</div>
+            {remoteConnected && <span className="badge badge-connected" style={{ marginRight: 6 }}>Connected</span>}
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{remoteExpanded ? '▲' : '▼'}</span>
+          </button>
+          {remoteExpanded && (
+            <div className="card" style={{ padding: '14px 16px', marginBottom: 0 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
+                Connect to a Hermes instance running on another machine or cloud server.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Gateway URL</label>
+                  <input
+                    className="input-field"
+                    value={remoteUrl}
+                    onChange={e => { setRemoteUrl(e.target.value); setRemoteTestOk(false); setRemoteError(null); }}
+                    placeholder="https://your-server.com:8642"
+                    style={{ fontSize: 12 }}
+                    disabled={remoteConnected}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>API Key</label>
+                  <input
+                    className="input-field"
+                    type="password"
+                    value={remoteApiKey}
+                    onChange={e => { setRemoteApiKey(e.target.value); setRemoteTestOk(false); setRemoteError(null); }}
+                    placeholder="sk-..."
+                    style={{ fontSize: 12 }}
+                    disabled={remoteConnected}
+                  />
+                </div>
+              </div>
+              {remoteTestOk && (
+                <div style={{ fontSize: 12, color: 'var(--accent-green)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle2 size={13} /> Connection successful
+                </div>
+              )}
+              {remoteError && (
+                <div style={{ fontSize: 12, color: 'var(--accent-red)', marginBottom: 10, fontFamily: 'var(--font-mono)', background: 'var(--accent-red-dim)', padding: '6px 10px', borderRadius: 'var(--radius-sm)' }}>
+                  {remoteError}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                {!remoteConnected && (
+                  <>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={handleRemoteTest}
+                      disabled={remoteTesting || !remoteUrl.trim()}
+                      style={{ opacity: remoteTesting ? 0.6 : 1 }}
+                    >
+                      {remoteTesting ? 'Testing…' : 'Test Connection'}
+                    </button>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={handleRemoteConnect}
+                      disabled={!remoteUrl.trim()}
+                    >
+                      Connect
+                    </button>
+                  </>
+                )}
+                {remoteConnected && (
+                  <button className="btn btn-danger btn-sm" onClick={handleRemoteDisconnect}>
+                    Disconnect
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{ marginTop: 20 }}>
