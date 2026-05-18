@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export type GatewayStatus = 'unchecked' | 'connecting' | 'connected' | 'disconnected' | 'error';
 export type AgentState = 'idle' | 'thinking' | 'running_tool' | 'error';
-export type NavSection = 'chat' | 'install' | 'commands' | 'agents' | 'gateway' | 'crons' | 'skills' | 'soul' | 'settings' | 'dashboard' | 'profiles' | 'sessions' | 'models' | 'terminal' | 'kanban' | 'providers';
+export type NavSection = 'chat' | 'install' | 'commands' | 'agents' | 'gateway' | 'crons' | 'skills' | 'soul' | 'settings' | 'dashboard' | 'profiles' | 'sessions' | 'models' | 'terminal' | 'kanban' | 'providers' | 'memory';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageType = 'prose' | 'tool_call' | 'tool_output' | 'error' | 'info' | 'reasoning' | 'system';
 
