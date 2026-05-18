@@ -130,7 +130,7 @@ export default function CommandCenterPanel() {
               onClick={() => stageCommand(cmd)}
               style={{
                 width: '100%',
-                background: selected.id === cmd.id ? 'var(--accent-dim)' : 'transparent',
+                background: selected.id === cmd.id ? 'var(--accent-green-dim)' : 'transparent',
                 border: `1px solid ${selected.id === cmd.id ? 'var(--accent-green)' : 'transparent'}`,
                 borderRadius: 8,
                 color: 'var(--text-primary)',
