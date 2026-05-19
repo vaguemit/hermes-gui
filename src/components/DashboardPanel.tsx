@@ -9,6 +9,7 @@ import {
   runHermesCommand,
   getSystemInfo,
 } from '../api/desktop';
+import { getBaseUrl, getAuthHeaders } from '../api/hermes';
 import type { ModelConfig } from '../api/desktop';
 
 function formatUptime(seconds: number): string {
@@ -91,9 +92,9 @@ export default function DashboardPanel() {
     // Prefer HTTP API (same as chat panel) — faster and streaming-capable
     if (isRunning) {
       try {
-        const res = await fetch('http://localhost:8642/v1/chat/completions', {
+        const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
             model: modelConfig?.model || 'auto',
             messages: [{ role: 'user', content: trimmed }],
