@@ -1,11 +1,14 @@
 import { useStore } from '../store';
 import { getGatewayStatus as getGatewayStatusIpc, isTauriApp } from './desktop';
 
-const LOCAL_BASE = 'http://127.0.0.1:8642';
+const DEFAULT_PORT = 8642;
 
-/** Returns the active gateway base URL — remote if configured, else localhost. */
+/** Returns the active gateway base URL — remote if configured, else 127.0.0.1:<port>. */
 export function getBaseUrl(): string {
-  return localStorage.getItem('hermes_remote_url') || LOCAL_BASE;
+  const remote = localStorage.getItem('hermes_remote_url');
+  if (remote) return remote;
+  const port = parseInt(localStorage.getItem('hermes_gateway_port') || '', 10) || DEFAULT_PORT;
+  return `http://127.0.0.1:${port}`;
 }
 
 export function getAuthHeaders(): Record<string, string> {
