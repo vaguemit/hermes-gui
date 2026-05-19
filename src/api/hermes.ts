@@ -1,7 +1,7 @@
 import { useStore } from '../store';
 import { getGatewayStatus as getGatewayStatusIpc, isTauriApp } from './desktop';
 
-const LOCAL_BASE = 'http://localhost:8642';
+const LOCAL_BASE = 'http://127.0.0.1:8642';
 
 /** Returns the active gateway base URL — remote if configured, else localhost. */
 export function getBaseUrl(): string {
