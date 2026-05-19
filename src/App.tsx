@@ -26,6 +26,7 @@ import KanbanPanel from './components/KanbanPanel';
 import ProvidersPanel from './components/ProvidersPanel';
 import MemoryPanel from './components/MemoryPanel';
 import Toast from './components/Toast';
+import ErrorBoundary from './components/ErrorBoundary';
 import { PanelRightClose, PanelRight } from 'lucide-react';
 
 export default function App() {
@@ -220,23 +221,23 @@ export default function App() {
 
   const mainContent = () => {
     switch (activeSection) {
-      case 'chat': return <ConversationPanel />;
-      case 'install': return <InstallPanel onOpenWizard={() => setShowWizard(true)} />;
-      case 'commands': return <CommandCenterPanel />;
-      case 'agents': return <AgentsPanel />;
-      case 'gateway': return <GatewayPanel />;
-      case 'crons': return <CronPanel />;
-      case 'skills': return <SkillsPanel />;
-      case 'dashboard': return <DashboardPanel />;
-      case 'profiles': return <ProfilesPanel />;
-      case 'models': return <ModelsPanel />;
-      case 'sessions': return <SessionsPanel />;
-      case 'terminal': return <TerminalPanel />;
-      case 'soul': return <SoulPanel />;
-      case 'kanban': return <KanbanPanel />;
-      case 'providers': return <ProvidersPanel />;
-      case 'memory': return <MemoryPanel />;
-      default: return <ConversationPanel />;
+      case 'chat': return <ErrorBoundary><ConversationPanel /></ErrorBoundary>;
+      case 'install': return <ErrorBoundary><InstallPanel onOpenWizard={() => setShowWizard(true)} /></ErrorBoundary>;
+      case 'commands': return <ErrorBoundary><CommandCenterPanel /></ErrorBoundary>;
+      case 'agents': return <ErrorBoundary><AgentsPanel /></ErrorBoundary>;
+      case 'gateway': return <ErrorBoundary><GatewayPanel /></ErrorBoundary>;
+      case 'crons': return <ErrorBoundary><CronPanel /></ErrorBoundary>;
+      case 'skills': return <ErrorBoundary><SkillsPanel /></ErrorBoundary>;
+      case 'dashboard': return <ErrorBoundary><DashboardPanel /></ErrorBoundary>;
+      case 'profiles': return <ErrorBoundary><ProfilesPanel /></ErrorBoundary>;
+      case 'models': return <ErrorBoundary><ModelsPanel /></ErrorBoundary>;
+      case 'sessions': return <ErrorBoundary><SessionsPanel /></ErrorBoundary>;
+      case 'terminal': return <ErrorBoundary><TerminalPanel /></ErrorBoundary>;
+      case 'soul': return <ErrorBoundary><SoulPanel /></ErrorBoundary>;
+      case 'kanban': return <ErrorBoundary><KanbanPanel /></ErrorBoundary>;
+      case 'providers': return <ErrorBoundary><ProvidersPanel /></ErrorBoundary>;
+      case 'memory': return <ErrorBoundary><MemoryPanel /></ErrorBoundary>;
+      default: return <ErrorBoundary><ConversationPanel /></ErrorBoundary>;
     }
   };
 
