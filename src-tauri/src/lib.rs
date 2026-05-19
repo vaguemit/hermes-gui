@@ -2014,6 +2014,13 @@ fn start_hermes_pty_chat(
         .env("PATH", enhanced_path(&home))
         .env("NO_COLOR", "1")
         .env("TERM", "dumb")
+        .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONSTARTUP", ensure_pt_patch().to_string_lossy().as_ref())
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONNOUSERSITE", "1")
+        .env("PYTHONLEGACYWINDOWSSTDIO", "1")
+        .env("PROMPT_TOOLKIT_COLOR_DEPTH", "DEPTH_1_BIT")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
