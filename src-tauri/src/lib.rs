@@ -543,6 +543,9 @@ fn is_gateway_running() -> bool {
 fn hermes_start_gateway(app_handle: tauri::AppHandle, _state: tauri::State<GatewayState>) -> Result<CommandResult, String> {
     let home = hermes_home();
 
+    // Ensure config.yaml has api_server enabled so the HTTP API always starts with the gateway.
+    ensure_api_server_config();
+
     // If the PID-file process is still alive, don't start another.
     if is_gateway_pid_alive(&home) {
         return Ok(CommandResult {
