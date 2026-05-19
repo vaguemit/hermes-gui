@@ -353,6 +353,12 @@ fn run_command(program: PathBuf, args: &[String], timeout_secs: u64) -> Result<C
         .env("PLAYWRIGHT_HEADLESS", "false")
         .env("PLAYWRIGHT_BROWSERS_PATH", "0")
         .env("HEADLESS", "false")
+        .env("TERM", "dumb")
+        .env("NO_COLOR", "1")
+        .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("COLUMNS", "220")
+        .env("LINES", "50")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -551,8 +557,12 @@ fn hermes_start_gateway(_state: tauri::State<GatewayState>) -> Result<CommandRes
         .env("PATH", enhanced_path(&home))
         .env("API_SERVER_ENABLED", "true")
         .env("GATEWAY_ALLOW_ALL_USERS", "true")
+        .env("TERM", "dumb")
         .env("NO_COLOR", "1")
-        .env("TERM", "dumb");
+        .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("COLUMNS", "220")
+        .env("LINES", "50");
 
     for (k, v) in read_env_file(&home) {
         cmd.env(k, v);
@@ -1006,6 +1016,12 @@ fn stream_spawn(
         .env("PLAYWRIGHT_HEADLESS", "false")
         .env("PLAYWRIGHT_BROWSERS_PATH", "0")
         .env("HEADLESS", "false")
+        .env("TERM", "dumb")
+        .env("NO_COLOR", "1")
+        .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("COLUMNS", "220")
+        .env("LINES", "50")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
