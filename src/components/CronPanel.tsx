@@ -275,9 +275,10 @@ export default function CronPanel() {
               <button className="btn btn-ghost" onClick={() => setShowForm(false)} style={{ fontSize: 13 }}>Cancel</button>
               <button
                 className="btn btn-ghost"
-                style={{ fontSize: 13, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, opacity: testRunning ? 0.6 : 1 }}
+                style={{ fontSize: 13, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, opacity: (testRunning || gatewayStatus !== 'connected') ? 0.6 : 1 }}
                 onClick={handleTestRun}
-                disabled={testRunning || !form.description}
+                disabled={testRunning || !form.description || gatewayStatus !== 'connected'}
+                title={gatewayStatus !== 'connected' ? 'Requires gateway' : undefined}
               >
                 <Play size={12} /> {testRunning ? 'Running…' : 'Test Run'}
               </button>
