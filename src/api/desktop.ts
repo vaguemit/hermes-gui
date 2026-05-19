@@ -19,6 +19,7 @@ export interface MemoryFileMeta {
 export interface SessionMeta {
   name: string;
   modified: string;
+  messageCount?: number;
 }
 
 export interface HermesInstallStatus {

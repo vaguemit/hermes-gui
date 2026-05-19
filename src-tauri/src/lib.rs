@@ -111,6 +111,7 @@ struct MemoryFileMeta {
 struct SessionMeta {
     name: String,
     modified: String,
+    message_count: Option<usize>,
 }
 
 fn env_path(name: &str) -> Option<PathBuf> {
@@ -1530,7 +1531,19 @@ fn list_sessions_disk() -> Vec<SessionMeta> {
                             .to_string()
                     })
                     .unwrap_or_default();
-                out.push(SessionMeta { name, modified });
+                let message_count = std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                    .and_then(|v| {
+                        if let Some(arr) = v.as_array() {
+                            Some(arr.len())
+                        } else if let Some(arr) = v.get("messages").and_then(|m| m.as_array()) {
+                            Some(arr.len())
+                        } else {
+                            None
+                        }
+                    });
+                out.push(SessionMeta { name, modified, message_count });
             }
         }
     }
