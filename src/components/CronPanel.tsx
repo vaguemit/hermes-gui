@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, CronJob } from '../store';
-import { runHermesCommand, readFile, writeFile, isTauriApp } from '../api/desktop';
+import { readFile, writeFile, isTauriApp } from '../api/desktop';
 import { getBaseUrl, getAuthHeaders } from '../api/hermes';
 import { Clock, Plus, Trash2, Play } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).slice(2);
 
 export default function CronPanel() {
-  const { crons, addCron, toggleCron, deleteCron, updateCronLastRun, platforms } = useStore();
+  const { crons, addCron, toggleCron, deleteCron, updateCronLastRun, platforms, gatewayStatus, addToast } = useStore();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ schedule: '', description: '', platform: 'Telegram' });
 
@@ -116,7 +116,7 @@ export default function CronPanel() {
         const now = new Date();
         const lastRun = now.toISOString().slice(0, 10);
         updateCronLastRun(cron.id, lastRun);
-        // Fire-and-forget via gateway API; falls back to CLI if gateway is not running
+        // Gateway-only execution — no CLI fallback (CLI crashes without a console)
         (async () => {
           try {
             const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
@@ -127,13 +127,13 @@ export default function CronPanel() {
                 messages: [{ role: 'user', content: cron.description }],
                 stream: false,
               }),
-              signal: AbortSignal.timeout(120_000),
+              signal: AbortSignal.timeout(120000),
             });
             if (!res.ok) {
-              await runHermesCommand(['chat', '-q', cron.description], 120).catch(() => {});
+              console.error(`[cron] task "${cron.description}" failed: gateway returned ${res.status}`);
             }
-          } catch {
-            await runHermesCommand(['chat', '-q', cron.description], 120).catch(() => {});
+          } catch (err) {
+            console.error(`[cron] task "${cron.description}" failed: gateway not reachable`, err);
           }
         })();
       }
@@ -182,18 +182,10 @@ export default function CronPanel() {
         const data = await res.json() as { choices?: { message?: { content?: string } }[] };
         setTestResult(data.choices?.[0]?.message?.content ?? '(no response)');
       } else {
-        // Fallback to CLI if gateway returns error
-        const result = await runHermesCommand(['chat', '-q', form.description], 60);
-        setTestResult(result.success ? (result.stdout.trim() || 'Done.') : (result.stderr.trim() || 'Task failed.'));
+        setTestResult('Gateway is not running. Start the gateway from the Gateway panel, then retry.');
       }
     } catch {
-      // Fallback to CLI if fetch fails (gateway not running)
-      try {
-        const result = await runHermesCommand(['chat', '-q', form.description], 60);
-        setTestResult(result.success ? (result.stdout.trim() || 'Done.') : (result.stderr.trim() || 'Task failed.'));
-      } catch (e) {
-        setTestResult(e instanceof Error ? e.message : 'Error running task');
-      }
+      setTestResult('Gateway is not running. Start the gateway from the Gateway panel, then retry.');
     } finally {
       setTestRunning(false);
     }
@@ -213,6 +205,27 @@ export default function CronPanel() {
             <Plus size={14} /> New Cron
           </button>
         </div>
+
+        {/* Gateway offline banner */}
+        {(gatewayStatus === 'disconnected' || gatewayStatus === 'error' || gatewayStatus === 'unchecked') && (
+          <div style={{
+            background: 'var(--accent-amber-dim)',
+            border: '1px solid var(--accent-amber)',
+            borderRadius: 'var(--radius-md)',
+            padding: '10px 14px',
+            marginBottom: 16,
+            fontSize: 12.5,
+            color: 'var(--accent-amber)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}>
+            <span style={{ fontWeight: 700 }}>Gateway offline.</span>
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Cron tasks require the gateway to be running. Start it from the Gateway panel.
+            </span>
+          </div>
+        )}
 
         {/* Add Cron Form */}
         {showForm && (
