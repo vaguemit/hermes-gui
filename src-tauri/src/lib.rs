@@ -139,6 +139,29 @@ fn hermes_home() -> PathBuf {
     home_dir().join(".hermes")
 }
 
+fn ensure_pt_patch() -> std::path::PathBuf {
+    let patch_path = hermes_home().join(".pt_patch.py");
+    let content = r#"
+import os, sys
+try:
+    import prompt_toolkit.output.defaults as _ptd
+    _orig_create = _ptd.create_output
+    def _safe_create_output(stdout=None, color_depth=None):
+        try:
+            return _orig_create(stdout=stdout, color_depth=color_depth)
+        except Exception:
+            from prompt_toolkit.output.plain_text import PlainTextOutput
+            return PlainTextOutput(stdout or sys.stdout)
+    _ptd.create_output = _safe_create_output
+except Exception:
+    pass
+"#;
+    if !patch_path.exists() {
+        let _ = std::fs::write(&patch_path, content);
+    }
+    patch_path
+}
+
 fn candidate_binaries(home: &Path) -> Vec<PathBuf> {
     #[cfg(windows)]
     {

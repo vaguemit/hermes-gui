@@ -369,6 +369,11 @@ export async function deleteSessionDisk(name: string): Promise<void> {
   return invoke<void>('delete_session_disk', { name });
 }
 
+export async function clearAllSessionsDisk(): Promise<number> {
+  if (!isTauriApp()) return 0;
+  return invoke<number>('clear_all_sessions_disk');
+}
+
 export async function ptySpawn(
   program: string,
   args: string[],
