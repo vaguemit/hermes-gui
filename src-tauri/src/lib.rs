@@ -535,7 +535,12 @@ fn hermes_install(timeout_secs: Option<u64>) -> Result<CommandResult, String> {
 }
 
 #[tauri::command]
-fn hermes_start_gateway(_state: tauri::State<GatewayState>) -> Result<CommandResult, String> {
+fn is_gateway_running() -> bool {
+    api_healthy()
+}
+
+#[tauri::command]
+fn hermes_start_gateway(app_handle: tauri::AppHandle, _state: tauri::State<GatewayState>) -> Result<CommandResult, String> {
     let home = hermes_home();
 
     // If the PID-file process is still alive, don't start another.
@@ -629,6 +634,19 @@ fn hermes_start_gateway(_state: tauri::State<GatewayState>) -> Result<CommandRes
     // We do NOT store the Child. The gateway is now fully detached and lives
     // independently. We track it only through the PID file it writes itself.
     std::mem::forget(child);
+
+    // Poll port 8642 in the background and emit "gateway-ready" once it's up.
+    let app_handle_poll = app_handle.clone();
+    thread::spawn(move || {
+        for _ in 0..10 {
+            thread::sleep(Duration::from_millis(600));
+            if api_healthy() {
+                let _ = app_handle_poll.emit("gateway-ready", true);
+                return;
+            }
+        }
+        let _ = app_handle_poll.emit("gateway-ready", false);
+    });
 
     Ok(CommandResult {
         success: true,
@@ -2292,6 +2310,7 @@ pub fn run() {
             hermes_start_gateway,
             hermes_stop_gateway,
             hermes_gateway_status,
+            is_gateway_running,
             chat_stream,
             hermes_chat_stream,
             hermes_stream_command,
