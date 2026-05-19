@@ -289,6 +289,11 @@ export default function CronPanel() {
   };
 
   const MODE_LABELS: Record<string, string> = { auto: 'Auto', gateway: 'Gateway', pty: 'PTY' };
+  const MODE_TITLES: Record<string, string> = {
+    auto: 'Try gateway first; fall back to PTY if gateway is offline',
+    gateway: 'Gateway only — fails if gateway is not running',
+    pty: 'PTY only — runs hermes CLI directly, no gateway required',
+  };
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '20px 24px' }}>
@@ -371,6 +376,8 @@ export default function CronPanel() {
                   <button
                     key={m}
                     onClick={() => setForm({ ...form, mode: m })}
+                    title={MODE_TITLES[m]}
+                    aria-pressed={form.mode === m}
                     style={{
                       padding: '5px 14px',
                       fontSize: 12,
