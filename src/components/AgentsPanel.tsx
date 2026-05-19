@@ -84,7 +84,48 @@ export default function AgentsPanel() {
     return mode.command;
   };
 
+  // Modes that spawn an interactive hermes CLI session — running them headless causes
+  // prompt_toolkit to fail with NoConsoleScreenBufferError because there is no Windows
+  // console attached to the Tauri child process.
+  const INTERACTIVE_CLI_MODES = new Set(['main', 'oneshot', 'worktree', 'acp']);
+
   const runMode = async (mode: AgentMode) => {
+    // Redirect interactive CLI modes to the Chat panel instead of spawning CLI.
+    if (INTERACTIVE_CLI_MODES.has(mode.id)) {
+      if (mode.id === 'main') {
+        fillChat(prompt);
+        setResult({
+          success: true,
+          code: null,
+          command: mode.command,
+          stdout: 'Staged in the chat composer. The gateway API handles this without a terminal.',
+          stderr: '',
+        });
+        return;
+      }
+      if (mode.id === 'oneshot' || mode.id === 'worktree') {
+        fillChat(prompt);
+        setResult({
+          success: true,
+          code: null,
+          command: commandFor(mode),
+          stdout: 'Prompt staged in the chat composer. Send it there — the gateway API handles one-shot tasks without a terminal.',
+          stderr: '',
+        });
+        return;
+      }
+      if (mode.id === 'acp') {
+        setResult({
+          success: false,
+          code: null,
+          command: mode.command,
+          stdout: '',
+          stderr: 'hermes acp starts a long-running server process that requires a real terminal. Run it from an external terminal: hermes acp',
+        });
+        return;
+      }
+    }
+
     setRunning(mode.id);
     setResult(null);
     setStreamLines([]);
@@ -103,10 +144,12 @@ export default function AgentsPanel() {
           stderr: '',
         });
       } else if (mode.needsPrompt) {
+        // scripted (-z) mode: non-interactive stdout-only, safe to stream.
+        // Append --no-color so prompt_toolkit does not attempt Win32 console init.
         let cancelled = false;
         cancelRef.current = () => { cancelled = true; };
 
-        const args = [...mode.args, prompt];
+        const args = [...mode.args, '--no-color', prompt];
         const res = await streamHermesCommand(
           args,
           (line) => {
@@ -124,7 +167,7 @@ export default function AgentsPanel() {
         }
         cancelRef.current = null;
       } else {
-        setResult(await runHermesCommand(mode.args, 20));
+        setResult(await runHermesCommand([...mode.args, '--no-color'], 20));
       }
     } catch (err) {
       setResult({
@@ -193,8 +236,11 @@ export default function AgentsPanel() {
                   disabled={running !== null || (!prompt.trim() && Boolean(mode.needsPrompt))}
                   style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontSize: 12.5 }}
                 >
-                  {mode.id === 'background' || mode.id === 'goal' ? <Send size={13} /> : <Play size={13} />}
-                  {running === mode.id ? 'Running…' : mode.id === 'background' || mode.id === 'goal' ? 'Stage' : 'Run'}
+                  {mode.id === 'background' || mode.id === 'goal' || mode.id === 'main' || mode.id === 'oneshot' || mode.id === 'worktree' ? <Send size={13} /> : <Play size={13} />}
+                  {running === mode.id ? 'Running…'
+                    : (mode.id === 'background' || mode.id === 'goal' || mode.id === 'oneshot' || mode.id === 'worktree') ? 'Stage in Chat'
+                    : mode.id === 'main' ? 'Open in Chat'
+                    : 'Run'}
                 </button>
                 {running === mode.id && mode.needsPrompt && (
                   <button
