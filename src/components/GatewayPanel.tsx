@@ -77,7 +77,7 @@ const PLATFORM_FIELDS: Record<string, Array<{ label: string; key: string; type: 
 };
 
 export default function GatewayPanel() {
-  const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId, headedBrowserMode, setHeadedBrowserMode, agentState, setPlatformStatus } = useStore();
+  const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId, headedBrowserMode, setHeadedBrowserMode, agentState, setPlatformStatus, addToast } = useStore();
   const [configPlatform, setConfigPlatform] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [savingPlatform, setSavingPlatform] = useState(false);
@@ -250,6 +250,7 @@ export default function GatewayPanel() {
           clearInterval(poll);
           setGatewayStatus('connected');
           setGatewayLog((lines) => [...lines, `[info] Gateway healthy at :8642 (after ${attempts * 1.5}s)`]);
+          addToast('Gateway started successfully', 'success');
         } else if (attempts >= maxAttempts) {
           clearInterval(poll);
           setGatewayStatus('error');
@@ -771,6 +772,7 @@ export default function GatewayPanel() {
                       if (anyFilled) {
                         setPlatformStatus(configPlatform, 'connected');
                         setSaveSuccess(true);
+                        addToast(`${configPlatform} credentials saved`, 'success');
                         setTimeout(() => setConfigPlatform(null), 1200);
                       } else {
                         setConfigPlatform(null);
