@@ -131,6 +131,32 @@ export async function getGatewayStatus(): Promise<boolean> {
   return invoke<boolean>('hermes_gateway_status');
 }
 
+export async function isGatewayRunning(): Promise<boolean> {
+  if (!isTauriApp()) return false;
+  try {
+    return await invoke<boolean>('is_gateway_running');
+  } catch {
+    return false;
+  }
+}
+
+export async function dispatchCronTask(description: string, timeoutSecs?: number): Promise<CommandResult> {
+  if (!isTauriApp()) return browserOnlyResult(`cron: ${description}`);
+  return invoke<CommandResult>('dispatch_cron_task', { description, timeoutSecs });
+}
+
+export function onGatewayReady(cb: (ready: boolean) => void): () => void {
+  if (!isTauriApp()) return () => {};
+  let unlisten: (() => void) | null = null;
+  import('@tauri-apps/api/event').then(({ listen }) => {
+    listen<boolean>('gateway-ready', (event) => {
+      cb(event.payload);
+      unlisten?.();
+    }).then(fn => { unlisten = fn; });
+  });
+  return () => unlisten?.();
+}
+
 export interface PtyStartResult {
   pty_id: string;
   event_id: string;
