@@ -150,7 +150,7 @@ export default function Sidebar() {
         </button>
         {historyExpanded && (
           <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px' }}>
-            {sessions.map((s) => (
+            {[...sessions].sort((a, b) => b.timestamp - a.timestamp).map((s) => (
               <button
                 key={s.id}
                 onClick={() => setActiveSession(s.id)}

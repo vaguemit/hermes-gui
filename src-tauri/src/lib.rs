@@ -1586,6 +1586,22 @@ fn delete_session_disk(name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn clear_all_sessions_disk() -> Result<usize, String> {
+    let dir = hermes_home().join("sessions");
+    if !dir.exists() {
+        return Ok(0);
+    }
+    let entries = std::fs::read_dir(&dir).map_err(|e| e.to_string())?;
+    let mut count = 0usize;
+    for entry in entries.flatten() {
+        if std::fs::remove_file(entry.path()).is_ok() {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+#[tauri::command]
 fn pty_spawn(
     app_handle: tauri::AppHandle,
     program: String,
@@ -2223,6 +2239,7 @@ pub fn run() {
             read_session_disk,
             write_session_disk,
             delete_session_disk,
+            clear_all_sessions_disk,
             pty_spawn,
             pty_write,
             pty_resize,
