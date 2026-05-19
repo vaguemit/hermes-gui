@@ -1,12 +1,17 @@
 import { useStore } from '../store';
 import { getGatewayStatus as getGatewayStatusIpc, isTauriApp } from './desktop';
 
-const API_BASE = 'http://localhost:8642/v1';
+const LOCAL_BASE = 'http://localhost:8642';
+
+/** Returns the active gateway base URL — remote if configured, else localhost. */
+export function getBaseUrl(): string {
+  return localStorage.getItem('hermes_remote_url') || LOCAL_BASE;
+}
 
 /** HTTP health check — used only to verify the API is actually serving (e.g. before chat). */
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch('http://localhost:8642/health', { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${getBaseUrl()}/health`, { signal: AbortSignal.timeout(3000) });
     return res.ok;
   } catch {
     return false;
@@ -15,7 +20,7 @@ export async function checkHealth(): Promise<boolean> {
 
 export async function fetchModels(): Promise<string[]> {
   try {
-    const res = await fetch(`${API_BASE}/models`);
+    const res = await fetch(`${getBaseUrl()}/v1/models`);
     if (!res.ok) return [];
     const data = await res.json();
     return (data.data || []).map((m: { id: string }) => m.id);
@@ -48,7 +53,7 @@ export async function* streamChat(
     stream_options: { include_usage: true },
   };
 
-  const res = await fetch(`${API_BASE}/chat/completions`, {
+  const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
