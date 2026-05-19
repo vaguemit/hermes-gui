@@ -26,7 +26,6 @@ import KanbanPanel from './components/KanbanPanel';
 import ProvidersPanel from './components/ProvidersPanel';
 import MemoryPanel from './components/MemoryPanel';
 import Toast from './components/Toast';
-import type { ToastMessage } from './components/Toast';
 import { PanelRightClose, PanelRight } from 'lucide-react';
 
 export default function App() {
@@ -36,18 +35,13 @@ export default function App() {
     rightPanelOpen, setRightPanelOpen,
     paletteOpen, setPaletteOpen,
     sessions,
+    toasts, addToast, removeToast,
   } = useStore();
 
   // Wizard state
   const [wizardDone, setWizardDone] = useState(false);
   const [checkingInstall, setCheckingInstall] = useState(true);
   const [showWizard, setShowWizard] = useState(false);
-
-  // Toast state
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const addToast = useCallback((message: string, type: ToastMessage['type']) => {
-    setToasts(prev => [...prev, { id: Date.now().toString(), message, type }]);
-  }, []);
 
   // Update banner state
   const [updateBanner, setUpdateBanner] = useState(false);
@@ -253,7 +247,7 @@ export default function App() {
     return (
       <>
         <InstallWizard onComplete={() => { setWizardDone(true); setShowWizard(false); }} />
-        <Toast toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
+        <Toast toasts={toasts} onDismiss={removeToast} />
       </>
     );
   }
@@ -356,7 +350,7 @@ export default function App() {
       <SettingsModal />
 
       {/* Toast notifications */}
-      <Toast toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
+      <Toast toasts={toasts} onDismiss={removeToast} />
     </div>
   );
 }
