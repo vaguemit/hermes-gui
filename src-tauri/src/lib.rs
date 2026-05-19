@@ -2233,6 +2233,32 @@ fn list_hermes_tools() -> Result<Vec<String>, String> {
     Ok(tools)
 }
 
+// ── Cron task dispatcher ──────────────────────────────────────────────────────
+
+#[tauri::command]
+fn dispatch_cron_task(
+    app_handle: tauri::AppHandle,
+    description: String,
+    event_id: String,
+    timeout_secs: Option<u64>,
+) -> Result<CommandResult, String> {
+    let args = vec![
+        "chat".to_string(),
+        "-q".to_string(),
+        description,
+        "-Q".to_string(),
+        "--source".to_string(),
+        "cron".to_string(),
+    ];
+    stream_spawn(
+        &app_handle,
+        command_program(),
+        &args,
+        &event_id,
+        timeout_secs.unwrap_or(120),
+    )
+}
+
 // ── App entry point ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2360,6 +2386,7 @@ pub fn run() {
             hermes_doctor_raw,
             check_hermes_update,
             list_hermes_tools,
+            dispatch_cron_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
