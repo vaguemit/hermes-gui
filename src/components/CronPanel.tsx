@@ -180,12 +180,16 @@ export default function CronPanel() {
       });
       if (res.ok) {
         const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-        setTestResult(data.choices?.[0]?.message?.content ?? '(no response)');
+        const reply = data.choices?.[0]?.message?.content ?? '(no response)';
+        setTestResult(reply);
+        addToast('Task sent to gateway', 'success');
       } else {
         setTestResult('Gateway is not running. Start the gateway from the Gateway panel, then retry.');
+        addToast('Error: gateway not available', 'error');
       }
     } catch {
       setTestResult('Gateway is not running. Start the gateway from the Gateway panel, then retry.');
+      addToast('Error: gateway not available', 'error');
     } finally {
       setTestRunning(false);
     }
