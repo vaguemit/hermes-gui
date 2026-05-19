@@ -1,7 +1,17 @@
 import React, { useMemo, useState } from 'react';
-import { CheckCircle2, Copy, Play, Search, Terminal, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Copy, Play, Search, Terminal, XCircle } from 'lucide-react';
 import { CommandResult, runHermesCommand } from '../api/desktop';
 import { CLI_COMMANDS, CliCommand } from '../data/hermesCatalog';
+
+// Commands that start an interactive prompt_toolkit session.
+// Spawning these from Tauri (no console) causes NoConsoleScreenBufferError.
+// Users must run them from an external terminal.
+const INTERACTIVE_CLI_IDS = new Set([
+  'chat', 'one-shot', 'pure-output',
+  'setup', 'setup-model', 'setup-terminal', 'setup-gateway', 'setup-tools',
+  'gateway-run',
+  'acp',
+]);
 
 const CATEGORIES = ['All', 'Setup', 'Chat', 'Gateway', 'Automation', 'Memory', 'Tools', 'Admin', 'Developer'] as const;
 
@@ -74,12 +84,27 @@ export default function CommandCenterPanel() {
   };
 
   const runSelected = async () => {
+    // Block interactive CLI commands — they require a real console and will crash
+    // with NoConsoleScreenBufferError when spawned from Tauri's windowless process.
+    if (INTERACTIVE_CLI_IDS.has(selected.id)) {
+      setResult({
+        success: false,
+        code: null,
+        command: ['hermes', ...splitArgs(customArgs)].join(' '),
+        stdout: '',
+        stderr: 'This command opens an interactive terminal session and cannot run inside the desktop runner. Use the Chat panel (gateway API) or run it from an external terminal.',
+      });
+      return;
+    }
+
     const args = splitArgs(customArgs);
     if (args.length === 0) return;
+    // Append --no-color so hermes does not attempt Win32 console color probing.
+    const safeArgs = [...args, '--no-color'];
     setRunning(true);
     setResult(null);
     try {
-      setResult(await runHermesCommand(args, selected.safeToRun ? 90 : 20));
+      setResult(await runHermesCommand(safeArgs, selected.safeToRun ? 90 : 30));
     } catch (err) {
       setResult({
         success: false,
@@ -158,10 +183,26 @@ export default function CommandCenterPanel() {
               <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>{selected.title}</div>
               <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{selected.description}</div>
             </div>
-            <span className={`badge ${selected.safeToRun ? 'badge-success' : 'badge-warning'}`}>
-              {selected.safeToRun ? 'Non-interactive' : 'May need terminal input'}
-            </span>
+            {INTERACTIVE_CLI_IDS.has(selected.id) ? (
+              <span className="badge badge-error" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <AlertTriangle size={11} />
+                Requires terminal
+              </span>
+            ) : (
+              <span className={`badge ${selected.safeToRun ? 'badge-connected' : 'badge-warning'}`}>
+                {selected.safeToRun ? 'Non-interactive' : 'May need terminal input'}
+              </span>
+            )}
           </div>
+
+          {INTERACTIVE_CLI_IDS.has(selected.id) && (
+            <div style={{ background: 'var(--accent-amber-dim)', border: '1px solid var(--accent-amber)', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <AlertTriangle size={14} style={{ color: 'var(--accent-amber)', flexShrink: 0, marginTop: 1 }} />
+              <div style={{ fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                <strong>Gateway-only command.</strong> This command opens an interactive session that requires a real console. Run it from an external terminal, or use the <strong>Chat</strong> panel to send tasks via the gateway API.
+              </div>
+            </div>
+          )}
 
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 14 }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 7 }}>Arguments after hermes</label>
@@ -173,7 +214,7 @@ export default function CommandCenterPanel() {
               style={{ fontFamily: "var(--font-mono)", fontSize: 12.5, resize: 'vertical' }}
             />
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button className="btn btn-primary" onClick={runSelected} disabled={running} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, opacity: running ? 0.75 : 1 }}>
+              <button className="btn btn-primary" onClick={runSelected} disabled={running || INTERACTIVE_CLI_IDS.has(selected.id)} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, opacity: (running || INTERACTIVE_CLI_IDS.has(selected.id)) ? 0.45 : 1 }}>
                 <Play size={13} />
                 {running ? 'Running...' : 'Run'}
               </button>
