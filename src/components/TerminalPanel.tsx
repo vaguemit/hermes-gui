@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-const stripAnsi = (str: string) => str.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
+const stripAnsi = (str: string) =>
+  str
+    .replace(/\x1B\[[0-9;?]*[A-Za-z]/g, '')
+    .replace(/\x1B[()][A-Z0-9]/g, '')
+    .replace(/\x1B[NOPQRSTUVWXYZ\\^_]/g, '');
 
 interface PtySession {
   ptyId: string;
@@ -18,42 +22,42 @@ export default function TerminalPanel() {
   const [errorMsg, setErrorMsg] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<PtySession | null>(null);
+  const unlistenRef = useRef<(() => void) | null>(null);
+
+  const start = useCallback(async () => {
+    setStatus('starting');
+    setErrorMsg('');
+    try {
+      const result = await invoke<{ pty_id: string; event_id: string }>('hermes_pty_start');
+      const sess: PtySession = { ptyId: result.pty_id, eventId: result.event_id };
+      sessionRef.current = sess;
+      setStatus('running');
+
+      const unlisten = await listen<string>(result.event_id, (event) => {
+        if (event.payload === '__DONE__') {
+          setStatus('stopped');
+          setLines(prev => [...prev, '[Process exited]']);
+          return;
+        }
+        const clean = stripAnsi(event.payload);
+        setLines(prev => [...prev, clean]);
+      });
+      unlistenRef.current = unlisten;
+    } catch (err) {
+      setStatus('error');
+      setErrorMsg(String(err));
+    }
+  }, []);
 
   useEffect(() => {
-    let unlistenFn: (() => void) | null = null;
-
-    const start = async () => {
-      try {
-        const result = await invoke<{ pty_id: string; event_id: string }>('hermes_pty_start');
-        const sess: PtySession = { ptyId: result.pty_id, eventId: result.event_id };
-        sessionRef.current = sess;
-        setStatus('running');
-
-        const unlisten = await listen<string>(result.event_id, (event) => {
-          if (event.payload === '__DONE__') {
-            setStatus('stopped');
-            setLines(prev => [...prev, '[Process exited]']);
-            return;
-          }
-          const clean = stripAnsi(event.payload);
-          setLines(prev => [...prev, clean]);
-        });
-        unlistenFn = unlisten;
-      } catch (err) {
-        setStatus('error');
-        setErrorMsg(String(err));
-      }
-    };
-
     start();
-
     return () => {
-      if (unlistenFn) unlistenFn();
+      if (unlistenRef.current) unlistenRef.current();
       if (sessionRef.current) {
         invoke('hermes_pty_stop', { pty_id: sessionRef.current.ptyId }).catch(() => {});
       }
     };
-  }, []);
+  }, [start]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'auto' });
@@ -67,6 +71,19 @@ export default function TerminalPanel() {
     setInput('');
   };
 
+  const handleRestart = () => {
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
+    }
+    if (sessionRef.current) {
+      invoke('hermes_pty_stop', { pty_id: sessionRef.current.ptyId }).catch(() => {});
+      sessionRef.current = null;
+    }
+    setLines([]);
+    start();
+  };
+
   const dotClass = status === 'running' ? 'dot-green' : status === 'error' ? 'dot-red' : 'dot-dim';
   const statusLabel = status === 'starting' ? 'Starting hermes…' : status === 'running' ? 'hermes terminal' : status === 'stopped' ? 'Process exited' : 'Error';
 
@@ -74,7 +91,24 @@ export default function TerminalPanel() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg0)' }}>
       <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg1)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <span className={`dot ${dotClass}`} />
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)' }}>{statusLabel}</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{statusLabel}</span>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => setLines([])}
+          title="Clear terminal"
+          style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
+        >
+          Clear
+        </button>
+        {(status === 'stopped' || status === 'error') && (
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleRestart}
+            style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
+          >
+            Restart
+          </button>
+        )}
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--term-green)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.55 }}>
@@ -82,7 +116,7 @@ export default function TerminalPanel() {
           <div style={{ color: 'var(--accent-red)', marginBottom: 8 }}>Failed to start hermes: {errorMsg}</div>
         )}
         {lines.map((line, i) => (
-          <div key={i}>{line || ' '}</div>
+          <div key={i}>{line || ' '}</div>
         ))}
         <div ref={bottomRef} />
       </div>
