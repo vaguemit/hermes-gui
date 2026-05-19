@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { User, Brain, Plus, Trash2, Edit2, X, Eye } from 'lucide-react';
+import { User, Brain, Plus, Trash2, Edit2, X, Eye, Copy } from 'lucide-react';
 import {
   listProfiles,
   readProfile,
@@ -39,12 +39,11 @@ export default function ProfilesPanel() {
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
 
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [editSaving, setEditSaving] = useState(false);
-
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   // ── Memory state ──
   const [memFiles, setMemFiles] = useState<MemoryFileMeta[]>([]);
@@ -92,6 +91,7 @@ export default function ProfilesPanel() {
     setCreating(true);
     await writeProfile(name, DEFAULT_PROFILE_CONTENT);
     setNewName('');
+    setShowCreateForm(false);
     await loadProfiles();
     setCreating(false);
   };
@@ -114,14 +114,23 @@ export default function ProfilesPanel() {
 
   // ── Delete profile ──
   const handleDelete = async (name: string) => {
-    if (confirmDelete !== name) {
-      setConfirmDelete(name);
-      return;
-    }
+    if (!window.confirm(`Delete profile "${name}"? This cannot be undone.`)) return;
     await deleteProfile(name);
-    setConfirmDelete(null);
     await loadProfiles();
     if (editingName === name) { setEditingName(null); setEditContent(''); }
+  };
+
+  // ── Duplicate profile ──
+  const handleDuplicate = async (name: string) => {
+    const content = await readProfile(name);
+    let copyName = `${name} (copy)`;
+    const existing = profiles.map((p) => p.name);
+    let n = 2;
+    while (existing.includes(copyName)) {
+      copyName = `${name} (copy ${n++})`;
+    }
+    await writeProfile(copyName, content);
+    await loadProfiles();
   };
 
   // ── Memory preview ──
@@ -187,30 +196,59 @@ export default function ProfilesPanel() {
         {/* ── PROFILES TAB ── */}
         {tab === 'profiles' && (
           <div>
-            {/* Create form */}
-            <div className="section-label">New Profile</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-              <input
-                className="input-field"
-                placeholder="Profile name…"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
-                style={{ flex: 1 }}
-              />
+            {/* Header row */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <span className="section-label" style={{ margin: 0 }}>Saved Profiles</span>
               <button
                 className="btn btn-primary btn-sm"
-                onClick={handleCreate}
-                disabled={creating || !newName.trim()}
-                style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}
+                onClick={() => { setShowCreateForm((v) => !v); setNewName(''); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
               >
                 <Plus size={13} />
-                Create
+                New Profile
               </button>
             </div>
 
-            {/* Profile list */}
-            <div className="section-label">Saved Profiles</div>
+            {/* Inline create form */}
+            {showCreateForm && (
+              <div style={{
+                background: 'var(--bg1)',
+                border: '1px solid var(--border-active)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px 14px',
+                marginBottom: 16,
+                display: 'flex',
+                gap: 8,
+                alignItems: 'center',
+              }}>
+                <input
+                  className="input-field"
+                  placeholder="Profile name…"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreate();
+                    if (e.key === 'Escape') { setShowCreateForm(false); setNewName(''); }
+                  }}
+                  autoFocus
+                  style={{ flex: 1 }}
+                />
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleCreate}
+                  disabled={creating || !newName.trim()}
+                  style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  {creating ? 'Creating…' : 'Create'}
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => { setShowCreateForm(false); setNewName(''); }}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            )}
 
             {profilesLoading && (
               <div style={{ color: 'var(--text-tertiary)', fontSize: 13, padding: '12px 0' }}>
@@ -220,7 +258,7 @@ export default function ProfilesPanel() {
 
             {!profilesLoading && profiles.length === 0 && (
               <div style={{
-                padding: '32px 16px',
+                padding: '40px 16px',
                 textAlign: 'center',
                 color: 'var(--text-secondary)',
                 fontSize: 13,
@@ -230,9 +268,17 @@ export default function ProfilesPanel() {
               }}>
                 <User size={28} style={{ color: 'var(--text-tertiary)', marginBottom: 10 }} />
                 <div style={{ fontWeight: 500, marginBottom: 4 }}>No profiles yet</div>
-                <div style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 12, marginBottom: 14 }}>
                   Create a profile to give Hermes context about who you are.
                 </div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => setShowCreateForm(true)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Plus size={13} />
+                  New Profile
+                </button>
               </div>
             )}
 
@@ -255,44 +301,31 @@ export default function ProfilesPanel() {
                     </div>
 
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-                      {confirmDelete === p.name ? (
-                        <>
-                          <span style={{ fontSize: 11, color: 'var(--accent-red)', fontFamily: 'var(--font-mono)' }}>
-                            Click again to confirm
-                          </span>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() => handleDelete(p.name)}
-                          >
-                            <Trash2 size={12} />
-                            Delete
-                          </button>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => setConfirmDelete(null)}
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => handleEditOpen(p.name)}
-                            style={{ display: 'flex', alignItems: 'center', gap: 5 }}
-                          >
-                            <Edit2 size={12} />
-                            Edit
-                          </button>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => handleDelete(p.name)}
-                            style={{ color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: 5 }}
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </>
-                      )}
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => handleEditOpen(p.name)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                        title="Edit"
+                      >
+                        <Edit2 size={12} />
+                        Edit
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => handleDuplicate(p.name)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                        title="Duplicate"
+                      >
+                        <Copy size={12} />
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => handleDelete(p.name)}
+                        style={{ color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: 5 }}
+                        title="Delete"
+                      >
+                        <Trash2 size={12} />
+                      </button>
                     </div>
                   </div>
 
