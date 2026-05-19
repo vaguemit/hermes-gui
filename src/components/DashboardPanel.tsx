@@ -151,7 +151,7 @@ export default function DashboardPanel() {
 
         {/* Stats Grid */}
         {(() => {
-          const activeSessions = sessions.filter(s => s.messages.length > 0).length;
+          const activeSessions = sessions.filter(s => (s.messages?.length ?? 0) > 0).length;
           const activeCrons = crons.filter(c => c.active).length;
           const connectedPlatforms = platforms.filter(p => p.status === 'connected').length;
           const stats = [
