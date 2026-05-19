@@ -62,6 +62,7 @@ function ReasoningBlock({ content }: { content: string }) {
 
 function MessageBubble({ msg }: { msg: Message }) {
   const [copied, setCopied] = useState(false);
+  const [hovered, setHovered] = useState(false);
   if (msg.type === 'reasoning') return <ReasoningBlock content={msg.content} />;
   if (msg.type === 'error') return (
     <div className="animate-in" style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-start' }}>
@@ -81,7 +82,7 @@ function MessageBubble({ msg }: { msg: Message }) {
 
   const isUser = msg.role === 'user';
   return (
-    <div className="animate-in" style={{ display: 'flex', gap: 12, marginBottom: 18, flexDirection: isUser ? 'row-reverse' : 'row', alignItems: 'flex-start' }}>
+    <div className="animate-in" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{ display: 'flex', gap: 12, marginBottom: 18, flexDirection: isUser ? 'row-reverse' : 'row', alignItems: 'flex-start' }}>
       <div style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, marginTop: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, background: isUser ? 'linear-gradient(135deg, #7c6af7, #3b9eff)' : 'linear-gradient(135deg, #1a1d26, #20242f)', border: isUser ? 'none' : '1px solid var(--border)', color: 'white' }}>
         {isUser ? 'U' : 'H'}
       </div>
@@ -94,10 +95,20 @@ function MessageBubble({ msg }: { msg: Message }) {
         </div>
         {msg.toolCalls?.map((tc) => <ToolCallCard key={tc.id} tc={tc} />)}
         {!isUser && !msg.isStreaming && (
-          <button onClick={() => { navigator.clipboard.writeText(msg.content); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-            style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: 11.5, cursor: 'pointer', padding: '3px 7px', borderRadius: 5, marginTop: 6 }}>
-            <Copy size={11} />{copied ? 'Copied!' : 'Copy'}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <button onClick={() => { navigator.clipboard.writeText(msg.content); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: 11.5, cursor: 'pointer', padding: '3px 7px', borderRadius: 5 }}>
+              <Copy size={11} />{copied ? 'Copied!' : 'Copy'}
+            </button>
+            {hovered && (
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{formatTimestamp(msg.timestamp)}</span>
+            )}
+          </div>
+        )}
+        {isUser && hovered && (
+          <div style={{ textAlign: 'right', marginTop: 4 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{formatTimestamp(msg.timestamp)}</span>
+          </div>
         )}
       </div>
     </div>
@@ -202,6 +213,7 @@ export default function ConversationPanel() {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
+        if (!window.confirm('Clear conversation?')) return;
         clearActiveSession();
         clearToolCalls();
         setHermesSessionId(null);
@@ -219,7 +231,7 @@ export default function ConversationPanel() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `hermes-session-${Date.now()}.md`;
+    a.download = `hermes-session-${activeSession?.id.slice(0, 8) ?? Date.now()}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -235,6 +247,7 @@ export default function ConversationPanel() {
     historyIndex.current = -1;
 
     if (userContent === '/new' || userContent === '/reset') {
+      if (!window.confirm('Clear conversation?')) return;
       clearActiveSession(); clearToolCalls();
       sentMessages.current = []; historyIndex.current = -1;
       addMessage({ id: generateId(), role: 'system', type: 'system', content: 'Conversation cleared.', timestamp: Date.now() });
