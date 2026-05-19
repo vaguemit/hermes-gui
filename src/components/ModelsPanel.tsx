@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Cpu, Plus, Trash2, Check, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Cpu, Plus, Trash2, Check, ChevronDown, RefreshCw, Zap } from 'lucide-react';
 import { readFile, writeFile, getModelConfig, setModelConfig } from '../api/desktop';
 import { useStore } from '../store';
 
@@ -24,37 +24,50 @@ const PROVIDER_COLORS: Record<string, string> = {
 
 const EMPTY_FORM = { name: '', provider: 'auto', model: '', baseUrl: '' };
 
+function providerLabel(provider: string): string {
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
+}
+
 export default function ModelsPanel() {
-  const { setActiveModel } = useStore();
+  const { setActiveModel, setActiveSection } = useStore();
 
   const [models, setModels] = useState<SavedModel[]>([]);
-  const [activeModelId, setActiveModelId] = useState<string | null>(null); // "provider::model"
+  const [loading, setLoading] = useState(true);
+  const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [activatedName, setActivatedName] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [formOpen, setFormOpen] = useState(false);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Load saved models and current active config on mount
-  useEffect(() => {
-    readFile('models.json')
-      .then((raw) => {
-        if (!raw || !raw.trim()) return;
+  const loadModels = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [raw, cfg] = await Promise.allSettled([
+        readFile('models.json'),
+        getModelConfig(),
+      ]);
+
+      if (raw.status === 'fulfilled' && raw.value && raw.value.trim()) {
         try {
-          const parsed = JSON.parse(raw);
+          const parsed = JSON.parse(raw.value);
           if (Array.isArray(parsed)) setModels(parsed);
         } catch {
-          // ignore parse errors — treat as empty
+          // treat as empty
         }
-      })
-      .catch(() => {});
+      }
 
-    getModelConfig()
-      .then((cfg) => {
-        if (cfg.model) setActiveModelId(`${cfg.provider}::${cfg.model}`);
-      })
-      .catch(() => {});
+      if (cfg.status === 'fulfilled' && cfg.value.model) {
+        setActiveModelId(`${cfg.value.provider}::${cfg.value.model}`);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadModels();
+  }, [loadModels]);
 
   const persist = async (updated: SavedModel[]) => {
     await writeFile('models.json', JSON.stringify(updated, null, 2)).catch(() => {});
@@ -95,6 +108,15 @@ export default function ModelsPanel() {
 
   const isActive = (m: SavedModel) => activeModelId === `${m.provider}::${m.model}`;
 
+  // Group models by provider
+  const grouped: Record<string, { model: SavedModel; idx: number }[]> = {};
+  models.forEach((m, idx) => {
+    const key = m.provider || 'other';
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push({ model: m, idx });
+  });
+  const groupKeys = Object.keys(grouped).sort();
+
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '20px 24px' }}>
       <div style={{ maxWidth: 780 }}>
@@ -107,14 +129,26 @@ export default function ModelsPanel() {
               Browse, activate, and manage named model configurations
             </div>
           </div>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => { setFormOpen(v => !v); setFormError(''); }}
-            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
-          >
-            {formOpen ? <ChevronDown size={14} /> : <Plus size={14} />}
-            {formOpen ? 'Cancel' : 'Add Model'}
-          </button>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={loadModels}
+              disabled={loading}
+              title="Refresh"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+            >
+              <RefreshCw size={13} style={{ opacity: loading ? 0.5 : 1 }} />
+              Refresh
+            </button>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => { setFormOpen(v => !v); setFormError(''); }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+            >
+              {formOpen ? <ChevronDown size={14} /> : <Plus size={14} />}
+              {formOpen ? 'Cancel' : 'Add Model'}
+            </button>
+          </div>
         </div>
 
         {/* Add form */}
@@ -205,99 +239,139 @@ export default function ModelsPanel() {
           </div>
         )}
 
-        {/* Model cards */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {models.map((m, idx) => {
-            const active = isActive(m);
-            const justActivated = activatedName === m.name;
-            return (
-              <div
-                key={idx}
-                style={{
-                  background: active ? 'var(--accent-green-dim)' : 'var(--bg2)',
-                  border: `1px solid ${active ? 'var(--accent-green)' : 'var(--border)'}`,
-                  borderRadius: 'var(--radius-md)',
-                  padding: '13px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 14,
-                  transition: 'border-color 0.15s, background 0.15s',
-                }}
-              >
-                {/* Info */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontWeight: 700, fontSize: 13.5 }}>{m.name}</span>
-                    <span
-                      className="badge"
-                      style={{
-                        color: PROVIDER_COLORS[m.provider] ?? 'var(--text-secondary)',
-                        border: `1px solid ${PROVIDER_COLORS[m.provider] ?? 'var(--border)'}`,
-                        background: 'transparent',
-                        fontSize: 10.5,
-                        padding: '1px 7px',
-                        borderRadius: 20,
-                        fontFamily: 'var(--font-mono)',
-                      }}
-                    >
-                      {m.provider}
-                    </span>
-                    {active && (
-                      <span
-                        className="badge badge-connected"
-                        style={{ fontSize: 10.5 }}
-                      >
-                        active
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)' }}>
-                    {m.model}
-                  </div>
-                  {m.baseUrl && (
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                      {m.baseUrl}
-                    </div>
-                  )}
-                </div>
+        {/* Loading state */}
+        {loading && (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
+            Loading models…
+          </div>
+        )}
 
-                {/* Actions */}
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  <button
-                    className={`btn btn-sm ${active ? 'btn-ghost' : 'btn-success'}`}
-                    onClick={() => handleActivate(m)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, minWidth: 88 }}
-                  >
-                    <Check size={12} />
-                    {justActivated ? 'Activated!' : active ? 'Active' : 'Activate'}
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-icon btn-sm"
-                    onClick={() => handleDelete(idx)}
-                    title="Delete"
-                    style={{ color: 'var(--text-secondary)', transition: 'color 0.15s, border-color 0.15s' }}
-                    onMouseEnter={e => {
-                      (e.currentTarget as HTMLElement).style.color = 'var(--accent-red)';
-                      (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-red)';
-                    }}
-                    onMouseLeave={e => {
-                      (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
-                      (e.currentTarget as HTMLElement).style.borderColor = '';
-                    }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
+        {/* Empty state */}
+        {!loading && models.length === 0 && (
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '48px 0',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <Cpu size={32} style={{ color: 'var(--text-tertiary)' }} />
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No saved models yet.</div>
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', maxWidth: 320 }}>
+              Add a model configuration above, or start the gateway to use available models.
+            </div>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setActiveSection('gateway')}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginTop: 4 }}
+            >
+              <Zap size={13} />
+              Go to Gateway
+            </button>
+          </div>
+        )}
+
+        {/* Grouped model cards */}
+        {!loading && models.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {groupKeys.map((provider) => (
+              <div key={provider}>
+                <div
+                  className="section-label"
+                  style={{ marginBottom: 8 }}
+                >
+                  {providerLabel(provider)}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {grouped[provider].map(({ model: m, idx }) => {
+                    const active = isActive(m);
+                    const justActivated = activatedName === m.name;
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          background: active ? 'var(--accent-green-dim)' : 'var(--bg2)',
+                          border: `1px solid ${active ? 'var(--accent-green)' : 'var(--border)'}`,
+                          borderRadius: 'var(--radius-md)',
+                          padding: '13px 16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 14,
+                          transition: 'border-color 0.15s, background 0.15s',
+                        }}
+                      >
+                        {/* Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <span style={{ fontWeight: 700, fontSize: 13.5 }}>{m.name}</span>
+                            <span
+                              className="badge"
+                              style={{
+                                color: PROVIDER_COLORS[m.provider] ?? 'var(--text-secondary)',
+                                border: `1px solid ${PROVIDER_COLORS[m.provider] ?? 'var(--border)'}`,
+                                background: 'transparent',
+                                fontSize: 10.5,
+                                padding: '1px 7px',
+                                borderRadius: 20,
+                                fontFamily: 'var(--font-mono)',
+                              }}
+                            >
+                              {m.provider}
+                            </span>
+                            {active && (
+                              <span className="badge badge-connected" style={{ fontSize: 10.5 }}>
+                                active
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)' }}>
+                            {m.model}
+                          </div>
+                          {m.baseUrl && (
+                            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                              {m.baseUrl}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          <button
+                            className={`btn btn-sm ${active ? 'btn-ghost' : 'btn-success'}`}
+                            onClick={() => handleActivate(m)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, minWidth: 100 }}
+                          >
+                            <Check size={12} />
+                            {justActivated ? 'Activated!' : active ? 'Active' : 'Set as Active'}
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-icon btn-sm"
+                            onClick={() => handleDelete(idx)}
+                            title="Delete"
+                            style={{ color: 'var(--text-secondary)', transition: 'color 0.15s, border-color 0.15s' }}
+                            onMouseEnter={e => {
+                              (e.currentTarget as HTMLElement).style.color = 'var(--accent-red)';
+                              (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-red)';
+                            }}
+                            onMouseLeave={e => {
+                              (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
+                              (e.currentTarget as HTMLElement).style.borderColor = '';
+                            }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            );
-          })}
-
-          {models.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
-              No saved models yet. Click <strong>Add Model</strong> to save a configuration.
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
