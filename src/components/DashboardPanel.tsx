@@ -216,7 +216,7 @@ export default function DashboardPanel() {
         {/* Recent Sessions */}
         {(() => {
           const recentSessions = [...sessions]
-            .filter(s => s.messages.length > 0)
+            .filter(s => (s.messages?.length ?? 0) > 0)
             .sort((a, b) => b.timestamp - a.timestamp)
             .slice(0, 3);
           if (recentSessions.length === 0) return null;
@@ -259,7 +259,7 @@ export default function DashboardPanel() {
                         {s.title}
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-                        {s.messages.length} msg{s.messages.length !== 1 ? 's' : ''}
+                        {s.messages?.length ?? 0} msg{(s.messages?.length ?? 0) !== 1 ? 's' : ''}
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', marginLeft: 8 }}>
                         {ago}
