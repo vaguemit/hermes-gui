@@ -603,17 +603,19 @@ fn hermes_start_gateway(_state: tauri::State<GatewayState>) -> Result<CommandRes
 
     // ── Detached process flags ────────────────────────────────────────────────
     // Windows: DETACHED_PROCESS (0x08) + CREATE_NO_WINDOW (0x08000000) +
-    //          CREATE_NEW_PROCESS_GROUP (0x200)
-    // This exactly mirrors Node.js `spawn({ detached: true })` + `.unref()`.
-    // The gateway process is fully independent of the Tauri process and will
-    // NOT be killed when the app restarts or hot-reloads.
+    //          CREATE_NEW_PROCESS_GROUP (0x200) + CREATE_BREAKAWAY_FROM_JOB (0x1000000)
+    // CREATE_BREAKAWAY_FROM_JOB ensures the gateway (and every child it spawns,
+    // including Chrome launched by a Telegram "open chrome" tool call) escapes
+    // any Windows Job Object inherited from Tauri. Without it, Chrome is killed
+    // whenever the job is torn down.
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        const DETACHED_PROCESS: u32       = 0x00000008;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-        const CREATE_NO_WINDOW: u32       = 0x08000000;
-        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+        const DETACHED_PROCESS: u32          = 0x00000008;
+        const CREATE_NEW_PROCESS_GROUP: u32  = 0x00000200;
+        const CREATE_NO_WINDOW: u32          = 0x08000000;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB);
     }
 
     let child = cmd
@@ -1950,15 +1952,42 @@ fn launch_chrome(url: Option<String>) -> Result<String, String> {
         }
     }
 
-    let args_str: Vec<&str> = args.iter().map(String::as_str).collect();
-
-    Command::new(&chrome)
-        .args(&args_str)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("Failed to launch Chrome: {}", e))?;
+    // On Windows use `cmd /c start /B` so Chrome is launched via ShellExecuteEx.
+    // ShellExecuteEx always creates the process outside any Job Object, meaning
+    // Chrome survives even if the Tauri app or gateway restarts.
+    // /B suppresses the cmd window; the empty "" is the required window-title arg.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let chrome_str = chrome.to_string_lossy().to_string();
+        let mut start_args: Vec<String> = vec![
+            "/c".to_string(),
+            "start".to_string(),
+            String::new(),       // required window-title positional
+            "/B".to_string(),
+            chrome_str,
+        ];
+        start_args.extend(args);
+        Command::new("cmd")
+            .args(&start_args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .spawn()
+            .map_err(|e| format!("Failed to launch Chrome: {}", e))?;
+    }
+    #[cfg(not(windows))]
+    {
+        let args_str: Vec<&str> = args.iter().map(String::as_str).collect();
+        Command::new(&chrome)
+            .args(&args_str)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("Failed to launch Chrome: {}", e))?;
+    }
 
     Ok(String::from("http://127.0.0.1:9222"))
 }
