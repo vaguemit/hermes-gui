@@ -45,6 +45,8 @@ export interface CronJob {
   platform: string;
   lastRun?: string;
   active: boolean;
+  /** 'hermes' for jobs read from cron/jobs.json, undefined for GUI-created jobs */
+  source?: 'hermes';
 }
 
 export interface Skill {
