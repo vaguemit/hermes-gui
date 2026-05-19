@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, CronJob } from '../store';
-import { readFile, writeFile, isTauriApp } from '../api/desktop';
+import { readFile, writeFile, isTauriApp, runHermesCommand } from '../api/desktop';
 import { getBaseUrl, getAuthHeaders } from '../api/hermes';
 import { Clock, Plus, Trash2, Play } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).slice(2);
 
+// Extended type used locally — `mode` is not in the store CronJob interface
+// but is serialized to gui-crons.json and read back. Old entries without it default to 'auto'.
+type CronJobWithMode = CronJob & { mode?: 'auto' | 'gateway' | 'pty' };
+
 export default function CronPanel() {
   const { crons, addCron, toggleCron, deleteCron, updateCronLastRun, platforms, gatewayStatus, addToast } = useStore();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ schedule: '', description: '', platform: 'Telegram' });
+  const [form, setForm] = useState({ schedule: '', description: '', platform: 'Telegram', mode: 'auto' as 'auto' | 'gateway' | 'pty' });
 
   // Load crons from disk on mount
   useEffect(() => {
@@ -17,7 +21,7 @@ export default function CronPanel() {
 
     // Load GUI-created crons
     readFile('gui-crons.json').then(raw => {
-      const loaded: CronJob[] = JSON.parse(raw);
+      const loaded: CronJobWithMode[] = JSON.parse(raw);
       if (Array.isArray(loaded) && loaded.length > 0) {
         useStore.setState({ crons: loaded });
       }
@@ -63,6 +67,64 @@ export default function CronPanel() {
       writeFile('gui-crons.json', JSON.stringify(crons)).catch(() => {});
     }, 800);
   }, [crons]);
+
+  // Dispatch routing: 'auto' tries gateway first and falls back to PTY if the gateway
+  // is not connected. 'gateway' and 'pty' force a specific path. PTY runs hermes CLI
+  // directly (no gateway required); gateway sends to http://127.0.0.1:8642/v1/chat/completions.
+  async function dispatchCronTask(cron: CronJobWithMode): Promise<void> {
+    const effectiveMode = cron.mode ?? 'auto';
+    const gatewayAlive = useStore.getState().gatewayStatus === 'connected';
+
+    if (effectiveMode === 'gateway' && !gatewayAlive) {
+      addToast(`Cron "${cron.description.slice(0, 40)}" failed — gateway unreachable. Switching to PTY.`, 'error');
+      // Fall through to PTY
+    }
+
+    const usePty = effectiveMode === 'pty' || (effectiveMode === 'auto' && !gatewayAlive) || (effectiveMode === 'gateway' && !gatewayAlive);
+
+    if (usePty) {
+      try {
+        const result = await runHermesCommand(['chat', '--one-shot', cron.description], 120);
+        if (!result.success) {
+          addToast(`Cron "${cron.description.slice(0, 40)}" PTY run failed: ${result.stderr.slice(0, 80)}`, 'error');
+          console.error(`[cron] PTY task "${cron.description}" failed:`, result.stderr);
+        }
+      } catch (err) {
+        addToast(`Cron "${cron.description.slice(0, 40)}" PTY run error`, 'error');
+        console.error(`[cron] PTY task "${cron.description}" threw:`, err);
+      }
+      return;
+    }
+
+    // Gateway path
+    try {
+      const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          model: 'auto',
+          messages: [{ role: 'user', content: cron.description }],
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(120000),
+      });
+      if (!res.ok) {
+        addToast(`Cron "${cron.description.slice(0, 40)}" failed — gateway returned ${res.status}.`, 'error');
+        console.error(`[cron] task "${cron.description}" failed: gateway returned ${res.status}`);
+      }
+    } catch (err) {
+      addToast(`Cron "${cron.description.slice(0, 40)}" failed — gateway unreachable. Switching to PTY.`, 'error');
+      console.error(`[cron] task "${cron.description}" failed: gateway not reachable`, err);
+      // Auto-retry via PTY when gateway drops mid-run
+      if (effectiveMode === 'auto') {
+        try {
+          await runHermesCommand(['chat', '--one-shot', cron.description], 120);
+        } catch (ptyErr) {
+          console.error(`[cron] PTY fallback also failed:`, ptyErr);
+        }
+      }
+    }
+  }
 
   // Live scheduler: check every 60 seconds whether any active cron should fire
   useEffect(() => {
@@ -116,26 +178,8 @@ export default function CronPanel() {
         const now = new Date();
         const lastRun = now.toISOString().slice(0, 10);
         updateCronLastRun(cron.id, lastRun);
-        // Gateway-only execution — no CLI fallback (CLI crashes without a console)
-        (async () => {
-          try {
-            const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-              body: JSON.stringify({
-                model: 'auto',
-                messages: [{ role: 'user', content: cron.description }],
-                stream: false,
-              }),
-              signal: AbortSignal.timeout(120000),
-            });
-            if (!res.ok) {
-              console.error(`[cron] task "${cron.description}" failed: gateway returned ${res.status}`);
-            }
-          } catch (err) {
-            console.error(`[cron] task "${cron.description}" failed: gateway not reachable`, err);
-          }
-        })();
+        // Fire and forget — dispatch handles gateway/PTY routing
+        dispatchCronTask(cron as CronJobWithMode);
       }
     }
 
@@ -155,8 +199,8 @@ export default function CronPanel() {
   const handleAdd = () => {
     if (!form.schedule || !form.description) return;
     const id = generateId();
-    addCron({ id, ...form, active: true });
-    setForm({ schedule: '', description: '', platform: 'Telegram' });
+    addCron({ id, schedule: form.schedule, description: form.description, platform: form.platform, active: true, ...(form.mode !== 'auto' ? { mode: form.mode } : {}) } as CronJob);
+    setForm({ schedule: '', description: '', platform: 'Telegram', mode: 'auto' });
     setShowForm(false);
   };
 
@@ -167,6 +211,29 @@ export default function CronPanel() {
     if (!form.description || testRunning) return;
     setTestRunning(true);
     setTestResult(null);
+
+    const gatewayAlive = useStore.getState().gatewayStatus === 'connected';
+    const usePty = form.mode === 'pty' || (form.mode === 'auto' && !gatewayAlive);
+
+    if (usePty) {
+      try {
+        const result = await runHermesCommand(['chat', '--one-shot', form.description], 60);
+        if (result.success) {
+          setTestResult(`✓ ${result.stdout || '(task completed)'}`);
+          addToast('Task sent via PTY', 'success');
+        } else {
+          setTestResult(`PTY run failed: ${result.stderr || result.stdout || '(no output)'}`);
+          addToast(`PTY run failed`, 'error');
+        }
+      } catch (err) {
+        setTestResult(`PTY error: ${err instanceof Error ? err.message : String(err)}`);
+        addToast(`PTY run error`, 'error');
+      } finally {
+        setTestRunning(false);
+      }
+      return;
+    }
+
     const url = `${getBaseUrl()}/v1/chat/completions`;
     try {
       const res = await fetch(url, {
@@ -196,13 +263,32 @@ export default function CronPanel() {
         setTestResult('Request timed out (60s). The gateway may be processing — check Gateway panel logs.');
         addToast('Test run timed out', 'error');
       } else {
-        setTestResult(`Cannot reach gateway at ${url}.\n\nStart the gateway from the Gateway panel, then retry.`);
-        addToast('Gateway unreachable', 'error');
+        if (form.mode === 'auto') {
+          // Gateway down in auto mode — fall back to PTY for test run
+          addToast(`Cron "${form.description.slice(0, 40)}" failed — gateway unreachable. Switching to PTY.`, 'error');
+          setTestResult(`Gateway unreachable. Retrying via PTY…`);
+          try {
+            const result = await runHermesCommand(['chat', '--one-shot', form.description], 60);
+            if (result.success) {
+              setTestResult(`✓ (PTY fallback) ${result.stdout || '(task completed)'}`);
+              addToast('Task completed via PTY fallback', 'success');
+            } else {
+              setTestResult(`PTY fallback failed: ${result.stderr || '(no output)'}`);
+            }
+          } catch (ptyErr) {
+            setTestResult(`Both gateway and PTY unavailable: ${ptyErr instanceof Error ? ptyErr.message : String(ptyErr)}`);
+          }
+        } else {
+          setTestResult(`Cannot reach gateway at ${url}.\n\nStart the gateway from the Gateway panel, then retry.`);
+          addToast('Gateway unreachable', 'error');
+        }
       }
     } finally {
       setTestRunning(false);
     }
   };
+
+  const MODE_LABELS: Record<string, string> = { auto: 'Auto', gateway: 'Gateway', pty: 'PTY' };
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '20px 24px' }}>
@@ -235,7 +321,7 @@ export default function CronPanel() {
           }}>
             <span style={{ fontWeight: 700 }}>Gateway offline.</span>
             <span style={{ color: 'var(--text-secondary)' }}>
-              Cron tasks require the gateway to be running. Start it from the Gateway panel.
+              Tasks set to "Auto" or "PTY" mode will run via the Hermes CLI. "Gateway" mode tasks will fail.
             </span>
           </div>
         )}
@@ -278,6 +364,35 @@ export default function CronPanel() {
                 style={{ resize: 'vertical' }}
               />
             </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 7 }}>Execution Mode</label>
+              <div style={{ display: 'flex', gap: 0, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', overflow: 'hidden', width: 'fit-content' }}>
+                {(['auto', 'gateway', 'pty'] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setForm({ ...form, mode: m })}
+                    style={{
+                      padding: '5px 14px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      border: 'none',
+                      borderRight: m !== 'pty' ? '1px solid var(--border)' : 'none',
+                      cursor: 'pointer',
+                      background: form.mode === m ? 'var(--bg4)' : 'var(--bg1)',
+                      color: form.mode === m ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      transition: 'background 0.15s, color 0.15s',
+                    }}
+                  >
+                    {MODE_LABELS[m]}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                {form.mode === 'auto' && 'Try gateway first; fall back to PTY if gateway is offline.'}
+                {form.mode === 'gateway' && 'Gateway only — task will fail if gateway is not running.'}
+                {form.mode === 'pty' && 'PTY only — runs hermes CLI directly, no gateway required.'}
+              </div>
+            </div>
             {testResult && (
               <div style={{ marginBottom: 10, fontSize: 12, fontFamily: 'var(--font-mono)', background: 'var(--bg0)', borderRadius: 6, padding: '8px 12px', color: 'var(--text-secondary)', maxHeight: 80, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
                 {testResult}
@@ -307,38 +422,44 @@ export default function CronPanel() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {crons.map((c) => (
-              <div key={c.id} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>{c.description}</span>
-                    <span className={`badge ${c.active ? 'badge-connected' : 'badge-muted'}`}>{c.active ? 'Active' : 'Paused'}</span>
-                    {c.source === 'hermes' && (
-                      <span className="badge badge-info" style={{ fontSize: 10, letterSpacing: '0.04em' }}>hermes</span>
-                    )}
+            {crons.map((c) => {
+              const cWm = c as CronJobWithMode;
+              return (
+                <div key={c.id} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{c.description}</span>
+                      <span className={`badge ${c.active ? 'badge-connected' : 'badge-muted'}`}>{c.active ? 'Active' : 'Paused'}</span>
+                      {c.source === 'hermes' && (
+                        <span className="badge badge-info" style={{ fontSize: 10, letterSpacing: '0.04em' }}>hermes</span>
+                      )}
+                      {cWm.mode && cWm.mode !== 'auto' && (
+                        <span className="badge badge-muted" style={{ fontSize: 10, letterSpacing: '0.04em' }}>{MODE_LABELS[cWm.mode]}</span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <span>🕐 {c.schedule}</span>
+                      <span style={{ color: c.source === 'hermes' ? 'var(--accent-amber)' : 'var(--text-secondary)' }}>📡 {c.platform}</span>
+                      {c.lastRun && <span>↩ Last: {c.lastRun}</span>}
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <span>🕐 {c.schedule}</span>
-                    <span style={{ color: c.source === 'hermes' ? 'var(--accent-amber)' : 'var(--text-secondary)' }}>📡 {c.platform}</span>
-                    {c.lastRun && <span>↩ Last: {c.lastRun}</span>}
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                    <label className="toggle">
+                      <input type="checkbox" checked={c.active} onChange={() => handleToggle(c)} />
+                      <span className="toggle-slider" />
+                    </label>
+                    <button
+                      onClick={() => handleDelete(c.id)}
+                      style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 6, borderRadius: 6, transition: 'color 0.15s, background 0.15s' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--accent-red)'; (e.currentTarget as HTMLElement).style.background = 'var(--accent-red-dim)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; (e.currentTarget as HTMLElement).style.background = 'none'; }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                  <label className="toggle">
-                    <input type="checkbox" checked={c.active} onChange={() => handleToggle(c)} />
-                    <span className="toggle-slider" />
-                  </label>
-                  <button
-                    onClick={() => handleDelete(c.id)}
-                    style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 6, borderRadius: 6, transition: 'color 0.15s, background 0.15s' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--accent-red)'; (e.currentTarget as HTMLElement).style.background = 'var(--accent-red-dim)'; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; (e.currentTarget as HTMLElement).style.background = 'none'; }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
