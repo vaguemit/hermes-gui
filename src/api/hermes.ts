@@ -8,10 +8,15 @@ export function getBaseUrl(): string {
   return localStorage.getItem('hermes_remote_url') || LOCAL_BASE;
 }
 
+export function getAuthHeaders(): Record<string, string> {
+  const key = localStorage.getItem('hermes_remote_api_key');
+  return key ? { 'Authorization': `Bearer ${key}` } : {};
+}
+
 /** HTTP health check — used only to verify the API is actually serving (e.g. before chat). */
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${getBaseUrl()}/health`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${getBaseUrl()}/health`, { signal: AbortSignal.timeout(3000), headers: getAuthHeaders() });
     return res.ok;
   } catch {
     return false;
@@ -20,7 +25,7 @@ export async function checkHealth(): Promise<boolean> {
 
 export async function fetchModels(): Promise<string[]> {
   try {
-    const res = await fetch(`${getBaseUrl()}/v1/models`);
+    const res = await fetch(`${getBaseUrl()}/v1/models`, { headers: { ...getAuthHeaders() } });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.data || []).map((m: { id: string }) => m.id);
@@ -55,7 +60,7 @@ export async function* streamChat(
 
   const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(body),
     signal,
   });
