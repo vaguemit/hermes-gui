@@ -2,6 +2,12 @@ import { create } from 'zustand';
 
 export type GatewayStatus = 'unchecked' | 'connecting' | 'connected' | 'disconnected' | 'error';
 export type AgentState = 'idle' | 'thinking' | 'running_tool' | 'error';
+export type ToastType = 'info' | 'success' | 'error' | 'warning';
+export interface Toast {
+  id: string;
+  message: string;
+  type: ToastType;
+}
 export type NavSection = 'chat' | 'install' | 'commands' | 'agents' | 'gateway' | 'crons' | 'skills' | 'soul' | 'settings' | 'dashboard' | 'profiles' | 'sessions' | 'models' | 'terminal' | 'kanban' | 'providers' | 'memory';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageType = 'prose' | 'tool_call' | 'tool_output' | 'error' | 'info' | 'reasoning' | 'system';
@@ -139,6 +145,11 @@ interface AppState {
   // Settings modal
   settingsOpen: boolean;
   setSettingsOpen: (v: boolean) => void;
+
+  // Toasts
+  toasts: Toast[];
+  addToast: (message: string, type: ToastType) => void;
+  removeToast: (id: string) => void;
 }
 
 const generateId = () => Math.random().toString(36).slice(2);
@@ -315,4 +326,11 @@ export const useStore = create<AppState>((set, get) => ({
   // Settings
   settingsOpen: false,
   setSettingsOpen: (v) => set({ settingsOpen: v }),
+
+  // Toasts
+  toasts: [],
+  addToast: (message, type) => set(state => ({
+    toasts: [...state.toasts, { id: Date.now().toString() + Math.random().toString(36).slice(2), message, type }],
+  })),
+  removeToast: (id) => set(state => ({ toasts: state.toasts.filter(t => t.id !== id) })),
 }));
