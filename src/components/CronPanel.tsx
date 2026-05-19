@@ -13,12 +13,44 @@ export default function CronPanel() {
   // Load crons from disk on mount
   useEffect(() => {
     if (!isTauriApp()) return;
+
+    // Load GUI-created crons
     readFile('gui-crons.json').then(raw => {
       const loaded: CronJob[] = JSON.parse(raw);
       if (Array.isArray(loaded) && loaded.length > 0) {
         useStore.setState({ crons: loaded });
       }
     }).catch(() => {}); // file may not exist yet
+
+    // Load hermes-native cron jobs from cron/jobs.json
+    readFile('cron/jobs.json').then(raw => {
+      const nativeJobs = JSON.parse(raw);
+      if (!Array.isArray(nativeJobs)) return;
+      const mapped: CronJob[] = nativeJobs.map((j: {
+        id?: string;
+        prompt?: string;
+        name?: string;
+        schedule_display?: string;
+        schedule?: string;
+        deliver?: string | string[];
+        enabled?: boolean;
+        state?: string;
+        last_run_at?: string;
+      }) => ({
+        id: j.id || generateId(),
+        description: j.prompt || j.name || 'Unnamed',
+        schedule: j.schedule_display || j.schedule || 'Unknown',
+        platform: Array.isArray(j.deliver) ? j.deliver[0] : (j.deliver || 'local'),
+        active: j.enabled !== false && j.state !== 'paused',
+        lastRun: j.last_run_at ? new Date(j.last_run_at).toISOString().slice(0, 10) : undefined,
+        source: 'hermes' as const,
+      }));
+      useStore.setState(state => {
+        const existingIds = new Set(state.crons.map(c => c.id));
+        const newJobs = mapped.filter(j => !existingIds.has(j.id));
+        return { crons: [...state.crons, ...newJobs] };
+      });
+    }).catch(() => {}); // file may not exist
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist crons to disk whenever they change
@@ -214,10 +246,13 @@ export default function CronPanel() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
                     <span style={{ fontSize: 13, fontWeight: 600 }}>{c.description}</span>
                     <span className={`badge ${c.active ? 'badge-connected' : 'badge-muted'}`}>{c.active ? 'Active' : 'Paused'}</span>
+                    {c.source === 'hermes' && (
+                      <span className="badge badge-info" style={{ fontSize: 10, letterSpacing: '0.04em' }}>hermes</span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-secondary)' }}>
                     <span>🕐 {c.schedule}</span>
-                    <span>📡 {c.platform}</span>
+                    <span style={{ color: c.source === 'hermes' ? 'var(--accent-amber)' : 'var(--text-secondary)' }}>📡 {c.platform}</span>
                     {c.lastRun && <span>↩ Last: {c.lastRun}</span>}
                   </div>
                 </div>
