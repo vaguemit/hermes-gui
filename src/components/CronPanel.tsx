@@ -84,7 +84,7 @@ export default function CronPanel() {
 
     if (usePty) {
       try {
-        const result = await runHermesCommand(['chat', '--one-shot', cron.description], 120);
+        const result = await runHermesCommand(['chat', '-q', cron.description, '-Q'], 120);
         if (!result.success) {
           addToast(`Cron "${cron.description.slice(0, 40)}" PTY run failed: ${result.stderr.slice(0, 80)}`, 'error');
           console.error(`[cron] PTY task "${cron.description}" failed:`, result.stderr);
@@ -118,7 +118,7 @@ export default function CronPanel() {
       // Auto-retry via PTY when gateway drops mid-run
       if (effectiveMode === 'auto') {
         try {
-          await runHermesCommand(['chat', '--one-shot', cron.description], 120);
+          await runHermesCommand(['chat', '-q', cron.description, '-Q'], 120);
         } catch (ptyErr) {
           console.error(`[cron] PTY fallback also failed:`, ptyErr);
         }
