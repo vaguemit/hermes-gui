@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Globe, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
-import { getChromeCdpStatus, getGatewayStatus, launchChrome, readEnv, readFile, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv, writeEnvVar, writeFile } from '../api/desktop';
+import { getChromeCdpStatus, getGatewayStatus, launchChrome, onGatewayReady, readEnv, readFile, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv, writeEnvVar, writeFile } from '../api/desktop';
 
 interface ToolPlatform {
   id: string;
@@ -236,11 +236,27 @@ export default function GatewayPanel() {
   const startGateway = async () => {
     setGatewayStatus('connecting');
     setGatewayLog((lines) => [...lines, '[info] Starting hermes gateway run --replace']);
+
+    // Listen for the gateway-ready event emitted by the Rust backend once
+    // the gateway confirms it is accepting connections on port 8642.
+    const unlistenReady = onGatewayReady((ready) => {
+      if (ready) {
+        setGatewayStatus('connected');
+        setGatewayLog((lines) => [...lines, '[info] Gateway ready on port 8642']);
+        addToast('Gateway ready', 'success');
+      } else {
+        addToast('Gateway started but not responding on port 8642', 'warning');
+        setGatewayLog((lines) => [...lines, '[warn] Gateway started but not responding on port 8642']);
+      }
+    });
+
     try {
       const result = await startGatewayNative();
       setGatewayLog((lines) => [...lines, result.stdout || result.stderr || '[info] Start command completed']);
 
-      // Poll for health — gateway takes 3-8s to boot Python + bind port 8642
+      // Poll for health — gateway takes 3-8s to boot Python + bind port 8642.
+      // The gateway-ready event above will resolve first when the Rust backend
+      // emits it; polling is the fallback for environments that don't emit it.
       let attempts = 0;
       const maxAttempts = 10;
       const poll = setInterval(async () => {
@@ -248,16 +264,19 @@ export default function GatewayPanel() {
         const healthy = await getGatewayStatus();
         if (healthy) {
           clearInterval(poll);
+          unlistenReady();
           setGatewayStatus('connected');
           setGatewayLog((lines) => [...lines, `[info] Gateway healthy at :8642 (after ${attempts * 1.5}s)`]);
           addToast('Gateway started successfully', 'success');
         } else if (attempts >= maxAttempts) {
           clearInterval(poll);
+          unlistenReady();
           setGatewayStatus('error');
           setGatewayLog((lines) => [...lines, '[error] Gateway did not become healthy within 15s — check logs/gateway-desktop.log']);
         }
       }, 1500);
     } catch (err) {
+      unlistenReady();
       setGatewayStatus('error');
       setGatewayLog((lines) => [...lines, `[error] ${err instanceof Error ? err.message : String(err)}`]);
     }
@@ -431,6 +450,16 @@ export default function GatewayPanel() {
             <div style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
               {isConnected ? 'http://localhost:8642 - OpenAI-compatible API' : 'Start the gateway to enable chat, platform delivery, and cron dispatch'}
             </div>
+            {isConnecting && (
+              <div style={{ fontSize: 11.5, color: 'var(--accent-amber)', marginTop: 3 }}>
+                ⏳ Waiting for port 8642…
+              </div>
+            )}
+            {!isConnected && !isConnecting && (
+              <div style={{ fontSize: 11.5, color: 'var(--accent-amber)', marginTop: 3 }}>
+                Cron tasks will use PTY fallback while gateway is offline.
+              </div>
+            )}
           </div>
           {isConnected && <span className="badge badge-success"><CheckCircle2 size={11} /> Healthy</span>}
         </div>

@@ -146,6 +146,19 @@ export async function* streamChat(
   onEvent({ type: 'done' });
 }
 
+/** Non-throwing gateway reachability probe — does NOT update store state. */
+export async function pingGateway(): Promise<boolean> {
+  try {
+    const res = await fetch(`${getBaseUrl()}/health`, {
+      signal: AbortSignal.timeout(1500),
+      headers: getAuthHeaders(),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 let healthInterval: ReturnType<typeof setInterval> | null = null;
 
 /**
