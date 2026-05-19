@@ -10,6 +10,48 @@ const generateId = () => Math.random().toString(36).slice(2);
 // but is serialized to gui-crons.json and read back. Old entries without it default to 'auto'.
 type CronJobWithMode = CronJob & { mode?: 'auto' | 'gateway' | 'pty' };
 
+/** Returns true when a cron should fire right now based on its schedule string. */
+function shouldFire(cron: CronJob): boolean {
+  const now = new Date();
+  const schedule = cron.schedule.trim().toLowerCase();
+
+  // "Daily at HH:MM" — fire once per day at that time (within the current minute)
+  const dailyMatch = schedule.match(/^daily at (\d{1,2}):(\d{2})$/);
+  if (dailyMatch) {
+    const h = parseInt(dailyMatch[1], 10);
+    const m = parseInt(dailyMatch[2], 10);
+    if (now.getHours() === h && now.getMinutes() === m) {
+      const today = now.toISOString().slice(0, 10);
+      if (cron.lastRun === today) return false;
+      return true;
+    }
+    return false;
+  }
+
+  // "Every N minutes" — fire when elapsed minutes since lastRun >= N
+  const intervalMatch = schedule.match(/^every (\d+) minutes?$/);
+  if (intervalMatch) {
+    const n = parseInt(intervalMatch[1], 10);
+    if (!cron.lastRun) return true;
+    const last = new Date(cron.lastRun);
+    return (now.getTime() - last.getTime()) >= n * 60 * 1000;
+  }
+
+  // "Every Monday" / "Every [weekday]" — fire once on the matching weekday
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const dayMatch = schedule.match(/^every (\w+)$/);
+  if (dayMatch) {
+    const dayIndex = days.indexOf(dayMatch[1]);
+    if (dayIndex === -1) return false;
+    if (now.getDay() !== dayIndex) return false;
+    const today = now.toISOString().slice(0, 10);
+    if (cron.lastRun === today) return false;
+    return true;
+  }
+
+  return false;
+}
+
 export default function CronPanel() {
   const { crons, addCron, toggleCron, deleteCron, updateCronLastRun, platforms, gatewayStatus, addToast } = useStore();
   const [showForm, setShowForm] = useState(false);
@@ -128,48 +170,6 @@ export default function CronPanel() {
 
   // Live scheduler: check every 60 seconds whether any active cron should fire
   useEffect(() => {
-    function shouldFire(cron: CronJob): boolean {
-      const now = new Date();
-      const schedule = cron.schedule.trim().toLowerCase();
-
-      // "Daily at HH:MM" — fire once per day at that time (within the current minute)
-      const dailyMatch = schedule.match(/^daily at (\d{1,2}):(\d{2})$/);
-      if (dailyMatch) {
-        const h = parseInt(dailyMatch[1], 10);
-        const m = parseInt(dailyMatch[2], 10);
-        if (now.getHours() === h && now.getMinutes() === m) {
-          // Only fire once per day: check lastRun date
-          const today = now.toISOString().slice(0, 10);
-          if (cron.lastRun === today) return false;
-          return true;
-        }
-        return false;
-      }
-
-      // "Every N minutes" — fire when elapsed minutes since lastRun >= N
-      const intervalMatch = schedule.match(/^every (\d+) minutes?$/);
-      if (intervalMatch) {
-        const n = parseInt(intervalMatch[1], 10);
-        if (!cron.lastRun) return true;
-        const last = new Date(cron.lastRun);
-        return (now.getTime() - last.getTime()) >= n * 60 * 1000;
-      }
-
-      // "Every Monday" / "Every [weekday]" — fire once on the matching weekday
-      const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      const dayMatch = schedule.match(/^every (\w+)$/);
-      if (dayMatch) {
-        const dayIndex = days.indexOf(dayMatch[1]);
-        if (dayIndex === -1) return false;
-        if (now.getDay() !== dayIndex) return false;
-        const today = now.toISOString().slice(0, 10);
-        if (cron.lastRun === today) return false;
-        return true;
-      }
-
-      return false;
-    }
-
     async function tick() {
       const { crons: current } = useStore.getState();
       for (const cron of current) {
