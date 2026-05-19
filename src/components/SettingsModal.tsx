@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe } from 'lucide-react';
-import { readEnv, writeEnv, readFile, writeFile, readConfig, writeConfig, getAutostartEnabled, toggleAutostart } from '../api/desktop';
+import { readEnv, writeEnv, readFile, writeFile, readConfig, writeConfig, getAutostartEnabled, toggleAutostart, clearAllSessionsDisk } from '../api/desktop';
 
 const PROVIDERS_KEYS = [
   { label: 'OpenAI', key: 'OPENAI_API_KEY', hint: 'sk-...' },
@@ -95,6 +95,8 @@ export default function SettingsModal() {
   const [autostartLoading, setAutostartLoading] = useState(false);
   const [workspaceSaving, setWorkspaceSaving] = useState(false);
   const [workspaceSaveMsg, setWorkspaceSaveMsg] = useState('');
+  const [clearingSessions, setClearingSessions] = useState(false);
+  const [clearMsg, setClearMsg] = useState('');
 
   // Browser automation tab state
   const [browserKeys, setBrowserKeys] = useState<Record<string, string>>({});
@@ -447,6 +449,32 @@ export default function SettingsModal() {
                 >
                   {workspaceSaving ? 'Saving...' : workspaceSaveMsg || 'Save Workspace Config'}
                 </button>
+
+                <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-red)', marginBottom: 10, letterSpacing: '0.06em' }}>
+                    DANGER ZONE
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      disabled={clearingSessions}
+                      onClick={async () => {
+                        if (!window.confirm('Delete all saved sessions from disk? This cannot be undone.')) return;
+                        setClearingSessions(true);
+                        try {
+                          const n = await clearAllSessionsDisk();
+                          setClearMsg(`Cleared ${n} session${n !== 1 ? 's' : ''}.`);
+                          setTimeout(() => setClearMsg(''), 3000);
+                        } finally {
+                          setClearingSessions(false);
+                        }
+                      }}
+                    >
+                      {clearingSessions ? 'Clearing…' : 'Clear All Sessions'}
+                    </button>
+                    {clearMsg && <span style={{ fontSize: 12, color: 'var(--accent-green)' }}>{clearMsg}</span>}
+                  </div>
+                </div>
               </div>
             )}
           </div>
