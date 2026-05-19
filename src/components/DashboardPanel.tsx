@@ -6,7 +6,6 @@ import {
   startGateway,
   stopGateway,
   getModelConfig,
-  runHermesCommand,
   getSystemInfo,
 } from '../api/desktop';
 import { getBaseUrl, getAuthHeaders } from '../api/hermes';
@@ -115,14 +114,8 @@ export default function DashboardPanel() {
       }
     }
 
-    // CLI fallback: hermes -z "prompt" (one-shot mode, correct flag per hermes --help)
-    const result = await runHermesCommand(['-z', trimmed], 60);
     setChatLoading(false);
-    if (result.success) {
-      setChatResponse(result.stdout || '(no output)');
-    } else {
-      setChatError(result.stderr || result.stdout || 'Unknown error. Is the Gateway running?');
-    }
+    setChatError('Gateway is not running. Start it from the Gateway panel, then try again.');
     setMessage('');
   };
 
