@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Globe, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
 import { getChromeCdpStatus, getGatewayStatus, launchChrome, readEnv, readFile, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv, writeEnvVar, writeFile } from '../api/desktop';
-import { getBaseUrl } from '../api/hermes';
 
 interface ToolPlatform {
   id: string;
