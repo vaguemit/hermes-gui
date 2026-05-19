@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, CronJob } from '../store';
 import { runHermesCommand, readFile, writeFile, isTauriApp } from '../api/desktop';
+import { getBaseUrl, getAuthHeaders } from '../api/hermes';
 import { Clock, Plus, Trash2, Play } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).slice(2);
@@ -115,8 +116,26 @@ export default function CronPanel() {
         const now = new Date();
         const lastRun = now.toISOString().slice(0, 10);
         updateCronLastRun(cron.id, lastRun);
-        // Fire-and-forget; errors are intentionally swallowed for background tasks
-        runHermesCommand(['chat', '-q', cron.description], 120).catch(() => {});
+        // Fire-and-forget via gateway API; falls back to CLI if gateway is not running
+        (async () => {
+          try {
+            const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+              body: JSON.stringify({
+                model: 'auto',
+                messages: [{ role: 'user', content: cron.description }],
+                stream: false,
+              }),
+              signal: AbortSignal.timeout(120_000),
+            });
+            if (!res.ok) {
+              await runHermesCommand(['chat', '-q', cron.description], 120).catch(() => {});
+            }
+          } catch {
+            await runHermesCommand(['chat', '-q', cron.description], 120).catch(() => {});
+          }
+        })();
       }
     }
 
@@ -149,10 +168,32 @@ export default function CronPanel() {
     setTestRunning(true);
     setTestResult(null);
     try {
-      const result = await runHermesCommand(['chat', '-q', form.description], 60);
-      setTestResult(result.success ? (result.stdout.trim() || 'Done.') : (result.stderr.trim() || 'Task failed.'));
-    } catch (e) {
-      setTestResult(e instanceof Error ? e.message : 'Error running task');
+      const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          model: 'auto',
+          messages: [{ role: 'user', content: form.description }],
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+      if (res.ok) {
+        const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+        setTestResult(data.choices?.[0]?.message?.content ?? '(no response)');
+      } else {
+        // Fallback to CLI if gateway returns error
+        const result = await runHermesCommand(['chat', '-q', form.description], 60);
+        setTestResult(result.success ? (result.stdout.trim() || 'Done.') : (result.stderr.trim() || 'Task failed.'));
+      }
+    } catch {
+      // Fallback to CLI if fetch fails (gateway not running)
+      try {
+        const result = await runHermesCommand(['chat', '-q', form.description], 60);
+        setTestResult(result.success ? (result.stdout.trim() || 'Done.') : (result.stderr.trim() || 'Task failed.'));
+      } catch (e) {
+        setTestResult(e instanceof Error ? e.message : 'Error running task');
+      }
     } finally {
       setTestRunning(false);
     }
