@@ -167,8 +167,9 @@ export default function CronPanel() {
     if (!form.description || testRunning) return;
     setTestRunning(true);
     setTestResult(null);
+    const url = `${getBaseUrl()}/v1/chat/completions`;
     try {
-      const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
@@ -181,15 +182,23 @@ export default function CronPanel() {
       if (res.ok) {
         const data = await res.json() as { choices?: { message?: { content?: string } }[] };
         const reply = data.choices?.[0]?.message?.content ?? '(no response)';
-        setTestResult(reply);
+        setTestResult(`✓ ${reply}`);
         addToast('Task sent to gateway', 'success');
       } else {
-        setTestResult('Gateway is not running. Start the gateway from the Gateway panel, then retry.');
-        addToast('Error: gateway not available', 'error');
+        let body = '';
+        try { body = await res.text(); } catch { /* ignore */ }
+        setTestResult(`Gateway returned HTTP ${res.status}${body ? ': ' + body.slice(0, 300) : ''}.\n\nVerify the gateway is healthy in the Gateway panel.`);
+        addToast(`Gateway error ${res.status}`, 'error');
       }
-    } catch {
-      setTestResult('Gateway is not running. Start the gateway from the Gateway panel, then retry.');
-      addToast('Error: gateway not available', 'error');
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.name === 'TimeoutError';
+      if (isTimeout) {
+        setTestResult('Request timed out (60s). The gateway may be processing — check Gateway panel logs.');
+        addToast('Test run timed out', 'error');
+      } else {
+        setTestResult(`Cannot reach gateway at ${url}.\n\nStart the gateway from the Gateway panel, then retry.`);
+        addToast('Gateway unreachable', 'error');
+      }
     } finally {
       setTestRunning(false);
     }
