@@ -97,6 +97,13 @@ export default function SettingsModal() {
   const [workspaceSaveMsg, setWorkspaceSaveMsg] = useState('');
   const [clearingSessions, setClearingSessions] = useState(false);
   const [clearMsg, setClearMsg] = useState('');
+  // TODO: wire cronDefaultMode to store.ts once cronDefaultMode/setCronDefaultMode are added
+  const [cronDefaultMode, setCronDefaultMode] = useState<'Auto' | 'Gateway' | 'PTY'>('Auto');
+  // Gateway port — persisted to localStorage; hermes.ts reads hermes_gateway_port from localStorage
+  const [gatewayPort, setGatewayPort] = useState<number>(() => {
+    const saved = localStorage.getItem('hermes_gateway_port');
+    return saved ? parseInt(saved, 10) : 8642;
+  });
 
   // Browser automation tab state
   const [browserKeys, setBrowserKeys] = useState<Record<string, string>>({});
@@ -440,6 +447,38 @@ export default function SettingsModal() {
                     <option>Singularity</option>
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Controls where Hermes executes shell commands</div>
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Cron Delivery Mode</label>
+                  <select
+                    className="input-field"
+                    value={cronDefaultMode}
+                    onChange={e => setCronDefaultMode(e.target.value as 'Auto' | 'Gateway' | 'PTY')}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <option value="Auto">Auto</option>
+                    <option value="Gateway">Gateway</option>
+                    <option value="PTY">PTY</option>
+                  </select>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Auto tries the gateway first and falls back to PTY if it's offline.</div>
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Gateway Port</label>
+                  <input
+                    className="input-field"
+                    type="number"
+                    value={gatewayPort}
+                    onChange={e => {
+                      const port = parseInt(e.target.value, 10);
+                      if (!isNaN(port)) {
+                        setGatewayPort(port);
+                        localStorage.setItem('hermes_gateway_port', String(port));
+                      }
+                    }}
+                    style={{ fontFamily: 'var(--font-mono)' }}
+                  />
+                  {/* hermes.ts reads hermes_gateway_port from localStorage to build getBaseUrl() — another agent will wire this */}
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Hermes HTTP API port. Change if you run gateway on a custom port.</div>
                 </div>
                 <button
                   className="btn btn-primary"

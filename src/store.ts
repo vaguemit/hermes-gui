@@ -53,6 +53,7 @@ export interface CronJob {
   active: boolean;
   /** 'hermes' for jobs read from cron/jobs.json, undefined for GUI-created jobs */
   source?: 'hermes';
+  mode?: 'auto' | 'gateway' | 'pty';
 }
 
 export interface Skill {
@@ -145,6 +146,8 @@ interface AppState {
   // Settings modal
   settingsOpen: boolean;
   setSettingsOpen: (v: boolean) => void;
+  cronDefaultMode: 'auto' | 'gateway' | 'pty';
+  setCronDefaultMode: (mode: 'auto' | 'gateway' | 'pty') => void;
 
   // Toasts
   toasts: Toast[];
@@ -326,6 +329,8 @@ export const useStore = create<AppState>((set, get) => ({
   // Settings
   settingsOpen: false,
   setSettingsOpen: (v) => set({ settingsOpen: v }),
+  cronDefaultMode: 'auto',
+  setCronDefaultMode: (mode) => set({ cronDefaultMode: mode }),
 
   // Toasts
   toasts: [],
