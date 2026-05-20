@@ -1,15 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { User, Brain, Plus, Trash2, Edit2, X, Eye, Copy } from 'lucide-react';
 import {
-  listProfiles,
-  readProfile,
-  writeProfile,
-  deleteProfile,
   listMemoryFiles,
   readMemoryFile,
   deleteMemoryFile,
 } from '../api/desktop';
-import type { ProfileMeta, MemoryFileMeta } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
+import type { ProfileMeta } from '../lib/hermes';
+import type { MemoryFileMeta } from '../api/desktop';
 
 const DEFAULT_PROFILE_CONTENT = `# Profile
 
@@ -32,6 +30,7 @@ function formatSize(bytes: number): string {
 type Tab = 'profiles' | 'memory';
 
 export default function ProfilesPanel() {
+  const client = useHermesClient();
   const [tab, setTab] = useState<Tab>('profiles');
 
   // ── Profiles state ──
@@ -57,7 +56,7 @@ export default function ProfilesPanel() {
   const loadProfiles = useCallback(async () => {
     setProfilesLoading(true);
     try {
-      const data = await listProfiles();
+      const data = await client.listProfiles();
       setProfiles(data);
     } catch {
       setProfiles([]);
@@ -89,7 +88,7 @@ export default function ProfilesPanel() {
     const name = newName.trim();
     if (!name || creating) return;
     setCreating(true);
-    await writeProfile(name, DEFAULT_PROFILE_CONTENT);
+    await client.writeProfile(name, DEFAULT_PROFILE_CONTENT);
     setNewName('');
     setShowCreateForm(false);
     await loadProfiles();
@@ -98,7 +97,7 @@ export default function ProfilesPanel() {
 
   // ── Edit profile ──
   const handleEditOpen = async (name: string) => {
-    const content = await readProfile(name);
+    const content = await client.readProfile(name);
     setEditContent(content);
     setEditingName(name);
   };
@@ -106,7 +105,7 @@ export default function ProfilesPanel() {
   const handleEditSave = async () => {
     if (!editingName || editSaving) return;
     setEditSaving(true);
-    await writeProfile(editingName, editContent);
+    await client.writeProfile(editingName, editContent);
     setEditSaving(false);
     setEditingName(null);
     setEditContent('');
@@ -115,21 +114,21 @@ export default function ProfilesPanel() {
   // ── Delete profile ──
   const handleDelete = async (name: string) => {
     if (!window.confirm(`Delete profile "${name}"? This cannot be undone.`)) return;
-    await deleteProfile(name);
+    await client.deleteProfile(name);
     await loadProfiles();
     if (editingName === name) { setEditingName(null); setEditContent(''); }
   };
 
   // ── Duplicate profile ──
   const handleDuplicate = async (name: string) => {
-    const content = await readProfile(name);
+    const content = await client.readProfile(name);
     let copyName = `${name} (copy)`;
     const existing = profiles.map((p) => p.name);
     let n = 2;
     while (existing.includes(copyName)) {
       copyName = `${name} (copy ${n++})`;
     }
-    await writeProfile(copyName, content);
+    await client.writeProfile(copyName, content);
     await loadProfiles();
   };
 
