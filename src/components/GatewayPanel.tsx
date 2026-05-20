@@ -1,7 +1,32 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Globe, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
+// TODO Phase 2: replace with useHermesClient() from ../lib/hermes after client layer merge
 import { getChromeCdpStatus, getGatewayStatus, launchChrome, onGatewayReady, readEnv, readFile, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv, writeEnvVar, writeFile } from '../api/desktop';
+import { checkGatewayHealth } from '../api/hermes';
+
+/** Isolates gateway IPC calls so they can be swapped to HermesClient in Phase 2. */
+function useGateway() {
+  const { setGatewayStatus } = useStore();
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+
+  const checkStatus = useCallback(async () => {
+    const healthy = await getGatewayStatus();
+    setGatewayStatus(healthy ? 'connected' : 'disconnected');
+    return healthy;
+  }, [setGatewayStatus]);
+
+  const measureLatency = useCallback(async () => {
+    const { healthy, latencyMs: ms } = await checkGatewayHealth();
+    setLatencyMs(healthy ? ms : null);
+    return healthy;
+  }, []);
+
+  const start = useCallback(() => startGatewayNative(), []);
+  const stop = useCallback(() => stopGatewayNative(), []);
+
+  return { checkStatus, measureLatency, latencyMs, start, stop };
+}
 
 interface ToolPlatform {
   id: string;
@@ -78,6 +103,7 @@ const PLATFORM_FIELDS: Record<string, Array<{ label: string; key: string; type: 
 
 export default function GatewayPanel() {
   const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId, headedBrowserMode, setHeadedBrowserMode, agentState, setPlatformStatus, addToast } = useStore();
+  const gateway = useGateway();
   const [configPlatform, setConfigPlatform] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [savingPlatform, setSavingPlatform] = useState(false);
@@ -90,6 +116,7 @@ export default function GatewayPanel() {
 
   // Load persisted tool states from disk on mount
   useEffect(() => {
+    // TODO Phase 2: replace readFile with client.readFile or equivalent
     readFile('gui-tools.json').then(raw => {
       if (!raw) return;
       const saved: Record<string, boolean> = JSON.parse(raw);
@@ -116,6 +143,7 @@ export default function GatewayPanel() {
     const enabledMap: Record<string, boolean> = Object.fromEntries(
       Object.entries(newStates).map(([id, ts]) => [id, ts.enabled])
     );
+    // TODO Phase 2: replace writeFile with client.writeFile or equivalent
     writeFile('gui-tools.json', JSON.stringify(enabledMap)).catch(() => {});
 
     // Clear feedback after 3 seconds
@@ -202,11 +230,12 @@ export default function GatewayPanel() {
 
   useEffect(() => {
     let cancelled = false;
-    getGatewayStatus().then((healthy) => {
-      if (!cancelled) setGatewayStatus(healthy ? 'connected' : 'disconnected');
+    gateway.checkStatus().then(() => {
+      if (!cancelled && gatewayStatus === 'connected') gateway.measureLatency();
     });
     return () => { cancelled = true; };
-  }, [setGatewayStatus]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Pre-load saved env values when platform config modal opens
   useEffect(() => {
@@ -251,7 +280,7 @@ export default function GatewayPanel() {
     });
 
     try {
-      const result = await startGatewayNative();
+      const result = await gateway.start();
       setGatewayLog((lines) => [...lines, result.stdout || result.stderr || '[info] Start command completed']);
 
       // Poll for health — gateway takes 3-8s to boot Python + bind port 8642.
@@ -261,11 +290,11 @@ export default function GatewayPanel() {
       const maxAttempts = 10;
       const poll = setInterval(async () => {
         attempts++;
-        const healthy = await getGatewayStatus();
+        const healthy = await gateway.checkStatus();
         if (healthy) {
           clearInterval(poll);
           unlistenReady();
-          setGatewayStatus('connected');
+          await gateway.measureLatency();
           setGatewayLog((lines) => [...lines, `[info] Gateway healthy at :8642 (after ${attempts * 1.5}s)`]);
           addToast('Gateway started successfully', 'success');
         } else if (attempts >= maxAttempts) {
@@ -285,7 +314,7 @@ export default function GatewayPanel() {
   const stopGateway = async () => {
     setGatewayLog((lines) => [...lines, '[info] Stopping gateway']);
     try {
-      const result = await stopGatewayNative();
+      const result = await gateway.stop();
       setGatewayStatus('disconnected');
       setGatewayLog((lines) => [...lines, result.stdout || result.stderr || '[info] Gateway stopped']);
     } catch (err) {
@@ -461,7 +490,12 @@ export default function GatewayPanel() {
               </div>
             )}
           </div>
-          {isConnected && <span className="badge badge-success"><CheckCircle2 size={11} /> Healthy</span>}
+          {isConnected && (
+            <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <CheckCircle2 size={11} />
+              {gateway.latencyMs !== null ? `${gateway.latencyMs}ms` : 'Healthy'}
+            </span>
+          )}
         </div>
 
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tools</div>
