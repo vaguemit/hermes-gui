@@ -72,7 +72,7 @@ const TABS = [
 type SettingsTab = typeof TABS[number]['id'];
 
 export default function SettingsModal() {
-  const { settingsOpen, setSettingsOpen } = useStore();
+  const { settingsOpen, setSettingsOpen, cronDefaultMode, setCronDefaultMode } = useStore();
   const client = useHermesClient();
   const [tab, setTab] = useState<SettingsTab>('api-keys');
 
@@ -99,8 +99,6 @@ export default function SettingsModal() {
   const [workspaceSaveMsg, setWorkspaceSaveMsg] = useState('');
   const [clearingSessions, setClearingSessions] = useState(false);
   const [clearMsg, setClearMsg] = useState('');
-  // TODO: wire cronDefaultMode to store.ts once cronDefaultMode/setCronDefaultMode are added
-  const [cronDefaultMode, setCronDefaultMode] = useState<'Auto' | 'Gateway' | 'PTY'>('Auto');
   // Gateway port — persisted to localStorage; hermes.ts reads hermes_gateway_port from localStorage
   const [gatewayPort, setGatewayPort] = useState<number>(() => {
     const saved = localStorage.getItem('hermes_gateway_port');
@@ -455,12 +453,12 @@ export default function SettingsModal() {
                   <select
                     className="input-field"
                     value={cronDefaultMode}
-                    onChange={e => setCronDefaultMode(e.target.value as 'Auto' | 'Gateway' | 'PTY')}
+                    onChange={e => setCronDefaultMode(e.target.value as 'auto' | 'gateway' | 'pty')}
                     style={{ cursor: 'pointer' }}
                   >
-                    <option value="Auto">Auto</option>
-                    <option value="Gateway">Gateway</option>
-                    <option value="PTY">PTY</option>
+                    <option value="auto">Auto</option>
+                    <option value="gateway">Gateway</option>
+                    <option value="pty">PTY</option>
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Auto tries the gateway first and falls back to PTY if it's offline.</div>
                 </div>
