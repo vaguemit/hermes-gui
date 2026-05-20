@@ -35,6 +35,10 @@ export interface HermesClient {
   writeProfile(name: string, content: string): Promise<void>
   deleteProfile(name: string): Promise<void>
 
+  // Arbitrary file access (relative to hermes home)
+  readFile(path: string): Promise<string>
+  writeFile(path: string, content: string): Promise<void>
+
   // Config & env
   readConfig(): Promise<string>
   writeConfig(content: string): Promise<void>

@@ -30,6 +30,8 @@ export class RemoteHermesClient implements HermesClient {
   readProfile(_n: string): Promise<string> { return this.notImplemented() }
   writeProfile(_n: string, _c: string): Promise<void> { return this.notImplemented() }
   deleteProfile(_n: string): Promise<void> { return this.notImplemented() }
+  readFile(_p: string): Promise<string> { return this.notImplemented() }
+  writeFile(_p: string, _c: string): Promise<void> { return this.notImplemented() }
   readConfig(): Promise<string> { return this.notImplemented() }
   writeConfig(_c: string): Promise<void> { return this.notImplemented() }
   readEnv(): Promise<Record<string, string>> { return this.notImplemented() }

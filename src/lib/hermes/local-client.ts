@@ -11,6 +11,7 @@ import {
   listSessionsDisk, readSessionDisk, writeSessionDisk, deleteSessionDisk, clearAllSessionsDisk,
   listProfiles as ipcListProfiles, readProfile as ipcReadProfile,
   writeProfile as ipcWriteProfile, deleteProfile as ipcDeleteProfile,
+  readFile as ipcReadFile, writeFile as ipcWriteFile,
   readConfig as ipcReadConfig, writeConfig as ipcWriteConfig,
   readEnv as ipcReadEnv, writeEnv as ipcWriteEnv,
   getModelConfig as ipcGetModelConfig, setModelConfig as ipcSetModelConfig,
@@ -86,6 +87,9 @@ export class LocalHermesClient implements HermesClient {
   async readProfile(name: string): Promise<string> { return ipcReadProfile(name) }
   async writeProfile(name: string, content: string): Promise<void> { return ipcWriteProfile(name, content) }
   async deleteProfile(name: string): Promise<void> { return ipcDeleteProfile(name) }
+
+  async readFile(path: string): Promise<string> { return ipcReadFile(path) }
+  async writeFile(path: string, content: string): Promise<void> { return ipcWriteFile(path, content) }
 
   async readConfig(): Promise<string> { return ipcReadConfig() }
   async writeConfig(content: string): Promise<void> { return ipcWriteConfig(content) }
