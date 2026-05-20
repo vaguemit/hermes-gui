@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ArrowRight, CheckCircle2, Download, ExternalLink, Eye, EyeOff,
+  ArrowRight, CheckCircle2, Clipboard, Download, ExternalLink, Eye, EyeOff,
   Loader2, RefreshCw, XCircle, ChevronLeft,
 } from 'lucide-react';
 import { streamInstallHermes } from '../api/desktop';
@@ -298,6 +298,8 @@ export default function InstallWizard({ onComplete }: Props) {
   const installLogRef = useRef<HTMLPreElement>(null);
   const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [logCopied, setLogCopied] = useState(false);
+
   const [selectedProvider, setSelectedProvider] = useState(persisted.provider || 'openrouter');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -468,14 +470,29 @@ export default function InstallWizard({ onComplete }: Props) {
             <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.6 }}>
               Hermes Agent is not yet installed. Click below to run the official Nous Research installer — it handles Python, dependencies, and the agent itself automatically.
             </div>
-            {installing && installLines.length > 0 && (
+            {installLines.length > 0 && (
               <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: 12, color: '#a78bfa', fontWeight: 600 }}>
-                  {detectStage(installLines) || 'Installing…'}
+                  {installing ? (detectStage(installLines) || 'Installing…') : 'Install log'}
                 </span>
-                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-                  {installElapsed}s
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {installing && (
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                      {installElapsed}s
+                    </span>
+                  )}
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(installLines.join('\n')).then(() => {
+                        setLogCopied(true);
+                        setTimeout(() => setLogCopied(false), 1500);
+                      }).catch(() => {});
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: logCopied ? 'var(--accent-green)' : 'var(--text-secondary)' }}
+                  >
+                    <Clipboard size={11} />{logCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
               </div>
             )}
             {installLines.length > 0 && (
