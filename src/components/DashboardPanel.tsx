@@ -1,15 +1,10 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Play, Square, Cpu, MessageSquare, Zap, ChevronRight, RefreshCw, Hash, Clock, BookOpen, Radio, PlusSquare, CalendarClock, Layers, Server, Plug } from 'lucide-react';
 import { useStore } from '../store';
-import {
-  getGatewayStatus,
-  startGateway,
-  stopGateway,
-  getModelConfig,
-  getSystemInfo,
-} from '../api/desktop';
+import { getSystemInfo } from '../api/desktop';
 import { getBaseUrl, getAuthHeaders } from '../api/hermes';
-import type { ModelConfig } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
+import type { ModelConfig } from '../lib/hermes';
 
 function formatUptime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
@@ -20,6 +15,7 @@ function formatUptime(seconds: number): string {
 }
 
 export default function DashboardPanel() {
+  const client = useHermesClient();
   const { gatewayStatus, setGatewayStatus, setSettingsOpen, setActiveSection, sessions, crons, skills, platforms, addSession, setActiveSession } = useStore();
 
   const [isRunning, setIsRunning] = useState(false);
@@ -37,7 +33,7 @@ export default function DashboardPanel() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const checkStatus = useCallback(async () => {
-    const running = await getGatewayStatus();
+    const running = await client.getGatewayStatus();
     setIsRunning(running);
     setGatewayStatus(running ? 'connected' : 'disconnected');
     if (!running) setStartedAt(null);
@@ -62,13 +58,13 @@ export default function DashboardPanel() {
 
   // Load model config and system info on mount
   useEffect(() => {
-    getModelConfig().then(setModelConfig).catch(() => null);
+    client.getModelConfig().then(setModelConfig).catch(() => null);
     getSystemInfo().then(setSysInfo).catch(() => null);
   }, []);
 
   const handleStart = async () => {
     setGatewayLoading(true);
-    await startGateway();
+    await client.startGateway();
     await checkStatus();
     setStartedAt(Date.now());
     setGatewayLoading(false);
@@ -76,7 +72,7 @@ export default function DashboardPanel() {
 
   const handleStop = async () => {
     setGatewayLoading(true);
-    await stopGateway();
+    await client.stopGateway();
     await checkStatus();
     setGatewayLoading(false);
   };
