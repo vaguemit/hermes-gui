@@ -54,7 +54,7 @@ export default function TerminalPanel() {
     return () => {
       if (unlistenRef.current) unlistenRef.current();
       if (sessionRef.current) {
-        invoke('hermes_pty_stop', { pty_id: sessionRef.current.ptyId }).catch(() => {});
+        invoke('hermes_pty_stop', { ptyId: sessionRef.current.ptyId }).catch(() => {});
       }
     };
   }, [start]);
@@ -67,7 +67,7 @@ export default function TerminalPanel() {
     e.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || !sessionRef.current || status !== 'running') return;
-    invoke('hermes_pty_write', { pty_id: sessionRef.current.ptyId, input: trimmed }).catch(console.error);
+    invoke('hermes_pty_write', { ptyId: sessionRef.current.ptyId, input: trimmed }).catch(console.error);
     setInput('');
   };
 
@@ -77,7 +77,7 @@ export default function TerminalPanel() {
       unlistenRef.current = null;
     }
     if (sessionRef.current) {
-      invoke('hermes_pty_stop', { pty_id: sessionRef.current.ptyId }).catch(() => {});
+      invoke('hermes_pty_stop', { ptyId: sessionRef.current.ptyId }).catch(() => {});
       sessionRef.current = null;
     }
     setLines([]);

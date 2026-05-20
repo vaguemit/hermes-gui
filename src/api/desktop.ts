@@ -108,12 +108,12 @@ export async function getHermesInstallStatus(): Promise<HermesInstallStatus> {
 
 export async function runHermesCommand(args: string[], timeoutSecs = 45): Promise<CommandResult> {
   if (!isTauriApp()) return browserOnlyResult(['hermes', ...args].join(' '));
-  return invoke<CommandResult>('hermes_run_command', { args, timeout_secs: timeoutSecs });
+  return invoke<CommandResult>('hermes_run_command', { args, timeoutSecs });
 }
 
 export async function installHermes(): Promise<CommandResult> {
   if (!isTauriApp()) return browserOnlyResult('official Hermes installer');
-  return invoke<CommandResult>('hermes_install', { timeout_secs: 1800 });
+  return invoke<CommandResult>('hermes_install', { timeoutSecs: 1800 });
 }
 
 export async function startGateway(): Promise<CommandResult> {
@@ -167,7 +167,7 @@ export async function ptyStart(): Promise<PtyStartResult> {
 }
 
 export async function ptyStop(ptyId: string): Promise<void> {
-  return invoke<void>('hermes_pty_stop', { pty_id: ptyId });
+  return invoke<void>('hermes_pty_stop', { ptyId });
 }
 
 /**
@@ -227,12 +227,12 @@ export async function writeConfig(content: string): Promise<void> {
 
 export async function readFile(relPath: string): Promise<string> {
   if (!isTauriApp()) return '';
-  return invoke<string>('read_file', { rel_path: relPath });
+  return invoke<string>('read_file', { relPath });
 }
 
 export async function writeFile(relPath: string, content: string): Promise<void> {
   if (!isTauriApp()) return;
-  return invoke<void>('write_file', { rel_path: relPath, content });
+  return invoke<void>('write_file', { relPath, content });
 }
 
 export async function runHermesDoctor(): Promise<DoctorResult> {
@@ -408,22 +408,22 @@ export async function ptySpawn(
   eventId: string,
 ): Promise<string> {
   if (!isTauriApp()) return '';
-  return invoke<string>('pty_spawn', { program, args, rows, cols, event_id: eventId });
+  return invoke<string>('pty_spawn', { program, args, rows, cols, eventId });
 }
 
 export async function ptyWrite(ptyId: string, data: string): Promise<void> {
   if (!isTauriApp()) return;
-  return invoke<void>('pty_write', { pty_id: ptyId, data });
+  return invoke<void>('pty_write', { ptyId, data });
 }
 
 export async function ptyResize(ptyId: string, rows: number, cols: number): Promise<void> {
   if (!isTauriApp()) return;
-  return invoke<void>('pty_resize', { pty_id: ptyId, rows, cols });
+  return invoke<void>('pty_resize', { ptyId, rows, cols });
 }
 
 export async function ptyKill(ptyId: string): Promise<void> {
   if (!isTauriApp()) return;
-  return invoke<void>('pty_kill', { pty_id: ptyId });
+  return invoke<void>('pty_kill', { ptyId });
 }
 
 /** Launch Chrome with remote debugging. Returns CDP HTTP URL (e.g. http://127.0.0.1:9222). */
