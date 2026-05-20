@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { streamInstallHermes } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
-import type { HermesInstallStatus } from '../lib/hermes';
+import type { ApiKeyStatus, HermesInstallStatus } from '../lib/hermes';
 
 // ── Provider catalogue (mirrored from reference app constants.ts) ─────────────
 
@@ -300,6 +300,7 @@ export default function InstallWizard({ onComplete }: Props) {
   const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [logCopied, setLogCopied] = useState(false);
+  const [existingKeys, setExistingKeys] = useState<ApiKeyStatus | null>(null);
 
   const [selectedProvider, setSelectedProvider] = useState(persisted.provider || 'openrouter');
   const [apiKey, setApiKey] = useState('');
@@ -324,9 +325,10 @@ export default function InstallWizard({ onComplete }: Props) {
         setTimeout(() => goTo('install'), 600);
         return;
       }
-      // Check for existing API keys — if any found, skip to done
+      // Check for existing API keys — if any found, skip to done or pre-populate hints
       try {
         const keys = await client.detectApiKeys();
+        setExistingKeys(keys);
         const hasAnyKey = Object.values(keys).some(Boolean);
         if (hasAnyKey && s.model_configured) {
           setTimeout(() => goTo('done'), 600);
@@ -372,7 +374,8 @@ export default function InstallWizard({ onComplete }: Props) {
 
   // ── Step 4: save API key + model config ──────────────────────────────────
   async function handleSave() {
-    if (provider.needsKey && !apiKey.trim()) {
+    const hasExisting = existingKeys?.providers.includes(provider.id) ?? false;
+    if (provider.needsKey && !apiKey.trim() && !hasExisting) {
       setSaveError('Please enter your API key.');
       return;
     }
@@ -651,6 +654,12 @@ export default function InstallWizard({ onComplete }: Props) {
               </>
             ) : (
               <>
+                {existingKeys?.providers.includes(provider.id) && (
+                  <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5, color: 'var(--accent-green)', display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <CheckCircle2 size={13} />
+                    A key for {provider.name} is already saved — you can update it below or click Save & Continue to keep the existing one.
+                  </div>
+                )}
                 <label style={{ display: 'block', fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 6 }}>
                   {provider.name} API Key
                 </label>
@@ -695,7 +704,7 @@ export default function InstallWizard({ onComplete }: Props) {
             <button
               className="btn btn-primary"
               onClick={handleSave}
-              disabled={saving || (provider.needsKey && !apiKey.trim()) || (isLocal && !baseUrl.trim())}
+              disabled={saving || (provider.needsKey && !apiKey.trim() && !(existingKeys?.providers.includes(provider.id))) || (isLocal && !baseUrl.trim())}
               style={{ width: '100%', justifyContent: 'center', gap: 8, fontSize: 14 }}
             >
               {saving
