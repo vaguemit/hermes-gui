@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, CheckCircle2, Download, Play, RefreshCw, Settings, Terminal, XCircle } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle2, Clipboard, Download, Play, RefreshCw, Settings, Terminal, XCircle } from 'lucide-react';
 import { CommandResult, HermesInstallStatus, runHermesCommand, streamInstallHermes } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import { CLI_COMMANDS } from '../data/hermesCatalog';
@@ -14,6 +14,7 @@ function StatusPill({ ok, label }: { ok: boolean; label: string }) {
 }
 
 function ResultBlock({ result, streamLines }: { result: CommandResult | null; streamLines?: string[] }) {
+  const [copied, setCopied] = useState(false);
   if (!result && (!streamLines || streamLines.length === 0)) return null;
   const body = result
     ? [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n\n')
@@ -21,12 +22,27 @@ function ResultBlock({ result, streamLines }: { result: CommandResult | null; st
   const success = result ? result.success : true;
   const command = result?.command ?? 'hermes install';
   const code = result?.code ?? null;
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(body || '(no output)').then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  };
+
   return (
     <div style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         {success ? <CheckCircle2 size={14} style={{ color: 'var(--accent-green)' }} /> : <XCircle size={14} style={{ color: 'var(--accent-red)' }} />}
         <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)' }}>{command}</span>
         {code !== null && <span className="badge badge-muted">exit {code}</span>}
+        <button
+          onClick={copyToClipboard}
+          title="Copy output"
+          style={{ marginLeft: 'auto', background: 'none', border: 'none', color: copied ? 'var(--accent-green)' : 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5 }}
+        >
+          <Clipboard size={12} />{copied ? 'Copied' : 'Copy'}
+        </button>
       </div>
       <pre style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.55, maxHeight: 260, overflow: 'auto', padding: 12, whiteSpace: 'pre-wrap' }}>
         {body || '(no output)'}
