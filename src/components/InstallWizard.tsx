@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight, CheckCircle2, Download, ExternalLink, Eye, EyeOff,
-  Loader2, XCircle, ChevronLeft,
+  Loader2, RefreshCw, XCircle, ChevronLeft,
 } from 'lucide-react';
 import { streamInstallHermes } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
@@ -489,22 +489,43 @@ export default function InstallWizard({ onComplete }: Props) {
               </pre>
             )}
             {installError && (
-              <div style={{ color: 'var(--accent-red)', fontSize: 13, marginBottom: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <XCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-                {installError}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ color: 'var(--accent-red)', fontSize: 13, marginBottom: 10, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <XCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                  {installError}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={runInstall}
+                    disabled={installing}
+                    style={{ flex: 1, justifyContent: 'center', gap: 7, fontSize: 13 }}
+                  >
+                    <RefreshCw size={13} /> Retry
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => goTo('provider')}
+                    style={{ flex: 1, justifyContent: 'center', gap: 7, fontSize: 13 }}
+                  >
+                    Skip install <ArrowRight size={13} />
+                  </button>
+                </div>
               </div>
             )}
-            <button
-              className="btn btn-primary"
-              onClick={runInstall}
-              disabled={installing}
-              style={{ width: '100%', justifyContent: 'center', gap: 8, fontSize: 14 }}
-            >
-              {installing
-                ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />Installing…</>
-                : <><Download size={14} />Install Hermes Agent</>
-              }
-            </button>
+            {!installError && (
+              <button
+                className="btn btn-primary"
+                onClick={runInstall}
+                disabled={installing}
+                style={{ width: '100%', justifyContent: 'center', gap: 8, fontSize: 14 }}
+              >
+                {installing
+                  ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />Installing…</>
+                  : <><Download size={14} />Install Hermes Agent</>
+                }
+              </button>
+            )}
           </>
         )}
 
