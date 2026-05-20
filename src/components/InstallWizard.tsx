@@ -271,6 +271,7 @@ export default function InstallWizard({ onComplete }: Props) {
 
   const [step, setStep] = useState<Step>(persisted.step || 'detect');
   const [status, setStatus] = useState<HermesInstallStatus | null>(null);
+  const [detectMsg, setDetectMsg] = useState('');
   const [installLines, setInstallLines] = useState<string[]>([]);
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState('');
@@ -291,13 +292,15 @@ export default function InstallWizard({ onComplete }: Props) {
     if (step !== 'detect') return;
     client.getInstallStatus().then((s) => {
       setStatus(s);
+      if (s.installed) {
+        setDetectMsg(`Found Hermes ${s.version ?? ''} at ${s.hermes_home}`);
+      }
       if (s.installed && s.configured) {
-        // Already set up, skip straight to provider step
-        goTo('provider');
+        setTimeout(() => goTo('provider'), 600);
       } else if (s.installed) {
-        goTo('provider');
+        setTimeout(() => goTo('provider'), 600);
       } else {
-        goTo('install');
+        setTimeout(() => goTo('install'), 600);
       }
     }).catch(() => goTo('install'));
   }, []);
@@ -412,7 +415,12 @@ export default function InstallWizard({ onComplete }: Props) {
         {step === 'detect' && (
           <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '20px 0' }}>
             <Loader2 size={28} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 12px' }} />
-            Checking for existing Hermes installation…
+            <div>Checking for existing Hermes installation…</div>
+            {detectMsg && (
+              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
+                {detectMsg}
+              </div>
+            )}
           </div>
         )}
 
