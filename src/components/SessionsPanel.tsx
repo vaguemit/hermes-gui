@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { History, RefreshCw, Trash2, Play, MessageSquare, Search } from 'lucide-react';
-import { listSessionsDisk, deleteSessionDisk, readSessionDisk } from '../api/desktop';
 import { useStore } from '../store';
-import type { SessionMeta } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
+import type { SessionMeta } from '../lib/hermes';
 import type { Session, Message } from '../store';
 
 function formatDate(iso: string): string {
@@ -20,6 +20,7 @@ function formatDate(iso: string): string {
 const generateId = () => Math.random().toString(36).slice(2);
 
 export default function SessionsPanel() {
+  const client = useHermesClient();
   const { setHermesSessionId, setActiveSection, addMessage, sessions: storeSessions, activeSessionId } = useStore();
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +31,7 @@ export default function SessionsPanel() {
   const fetchSessions = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await listSessionsDisk();
+      const list = await client.listSessions();
       const sorted = [...list].sort(
         (a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime()
       );
@@ -61,7 +62,7 @@ export default function SessionsPanel() {
   const handleLoad = async (session: SessionMeta) => {
     setLoading2((prev) => ({ ...prev, [session.name]: true }));
     try {
-      const raw = await readSessionDisk(session.name);
+      const raw = await client.readSession(session.name);
       if (!raw || !raw.trim()) {
         handleResume(session);
         return;
@@ -128,7 +129,7 @@ export default function SessionsPanel() {
     if (!window.confirm('Delete this session?')) return;
     setDeleting((prev) => ({ ...prev, [session.name]: true }));
     try {
-      await deleteSessionDisk(session.name);
+      await client.deleteSession(session.name);
       setSessions((prev) => prev.filter((s) => s.name !== session.name));
     } finally {
       setDeleting((prev) => {
