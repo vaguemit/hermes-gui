@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Brain, RefreshCw, Save } from 'lucide-react';
-import { readFile, writeFile } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
 
 const DEFAULT_SOUL = `You are Hermes, a helpful AI assistant with access to tools for browsing the web, running code, and managing files.
 
@@ -9,6 +9,7 @@ Be concise, accurate, and helpful. When unsure, say so. When you make mistakes, 
 Always think step by step for complex tasks.`;
 
 export default function SoulPanel() {
+  const client = useHermesClient();
   const [content, setContent] = useState('');
   const [savedIndicator, setSavedIndicator] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -16,7 +17,7 @@ export default function SoulPanel() {
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    readFile('soul.md')
+    client.readFile('soul.md')
       .then((text) => setContent(text))
       .catch(() => setContent(DEFAULT_SOUL))
       .finally(() => setLoading(false));
@@ -25,7 +26,7 @@ export default function SoulPanel() {
   const triggerSave = useCallback((text: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      writeFile('soul.md', text)
+      client.writeFile('soul.md', text)
         .then(() => {
           setSavedIndicator(true);
           if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
