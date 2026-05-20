@@ -201,6 +201,25 @@ const PROVIDERS: ProviderDef[] = [
   },
 ];
 
+// Matches Hermes Desktop STAGE_MARKERS — used to show progress during install
+const INSTALL_STAGES: { pattern: RegExp; label: string }[] = [
+  { pattern: /checking prerequisites|checking.*requirement/i, label: 'Checking prerequisites…' },
+  { pattern: /setting up package manager|installing uv|uv.*install/i, label: 'Setting up package manager…' },
+  { pattern: /setting up python|python.*install/i, label: 'Setting up Python…' },
+  { pattern: /downloading hermes|cloning|git clone/i, label: 'Downloading Hermes Agent…' },
+  { pattern: /creating.*environment|virtualenv|venv/i, label: 'Creating Python environment…' },
+  { pattern: /installing.*dep|pip install|uv pip/i, label: 'Installing dependencies…' },
+  { pattern: /finishing|finaliz|setup complete|done/i, label: 'Finishing setup…' },
+];
+
+function detectStage(lines: string[]): string {
+  const last = lines.slice(-8).join('\n');
+  for (let i = INSTALL_STAGES.length - 1; i >= 0; i--) {
+    if (INSTALL_STAGES[i].pattern.test(last)) return INSTALL_STAGES[i].label;
+  }
+  return '';
+}
+
 const LOCAL_PRESETS = [
   { id: 'lmstudio', name: 'LM Studio', baseUrl: 'http://localhost:1234/v1' },
   { id: 'ollama', name: 'Ollama', baseUrl: 'http://localhost:11434/v1' },
@@ -437,6 +456,11 @@ export default function InstallWizard({ onComplete }: Props) {
             <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.6 }}>
               Hermes Agent is not yet installed. Click below to run the official Nous Research installer — it handles Python, dependencies, and the agent itself automatically.
             </div>
+            {installing && installLines.length > 0 && (
+              <div style={{ marginBottom: 8, fontSize: 12, color: '#a78bfa', fontWeight: 600 }}>
+                {detectStage(installLines) || 'Installing…'}
+              </div>
+            )}
             {installLines.length > 0 && (
               <pre style={{
                 background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 8,
