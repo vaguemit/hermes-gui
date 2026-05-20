@@ -3,10 +3,9 @@ import {
   ArrowRight, CheckCircle2, Download, ExternalLink, Eye, EyeOff,
   Loader2, XCircle, ChevronLeft,
 } from 'lucide-react';
-import {
-  getHermesInstallStatus, streamInstallHermes, writeEnv, setModelConfig,
-  HermesInstallStatus,
-} from '../api/desktop';
+import { streamInstallHermes } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
+import type { HermesInstallStatus } from '../lib/hermes';
 
 // ── Provider catalogue (mirrored from reference app constants.ts) ─────────────
 
@@ -228,6 +227,7 @@ function saveState(s: PersistedState) {
 interface Props { onComplete: () => void }
 
 export default function InstallWizard({ onComplete }: Props) {
+  const client = useHermesClient();
   const persisted = loadState();
 
   const [step, setStep] = useState<Step>(persisted.step || 'detect');
@@ -250,7 +250,7 @@ export default function InstallWizard({ onComplete }: Props) {
   // ── Step 1: detect existing install ──────────────────────────────────────
   useEffect(() => {
     if (step !== 'detect') return;
-    getHermesInstallStatus().then((s) => {
+    client.getInstallStatus().then((s) => {
       setStatus(s);
       if (s.installed && s.configured) {
         // Already set up, skip straight to provider step
@@ -321,13 +321,13 @@ export default function InstallWizard({ onComplete }: Props) {
     setSaveError('');
     try {
       if (provider.needsKey && provider.envKey) {
-        await writeEnv(provider.envKey, apiKey.trim());
+        await client.writeEnv(provider.envKey, apiKey.trim());
       } else if (isLocal && apiKey.trim()) {
-        await writeEnv('CUSTOM_API_KEY', apiKey.trim());
+        await client.writeEnv('CUSTOM_API_KEY', apiKey.trim());
       }
       const configProvider = isLocal ? 'custom' : provider.configProvider;
       const configBase = isLocal ? baseUrl.trim() : provider.baseUrl;
-      await setModelConfig(configProvider, modelName.trim(), configBase);
+      await client.setModelConfig(configProvider, modelName.trim(), configBase);
       localStorage.removeItem(STATE_KEY);
       goTo('done');
     } catch (e) {
