@@ -625,12 +625,14 @@ fn hermes_start_gateway(app_handle: tauri::AppHandle, _state: tauri::State<Gatew
     kill_existing_gateway(&home);
 
     // Write API_SERVER_ENABLED to .env so it persists even when launched outside this app.
+    // GATEWAY_ALLOW_ALL_USERS is intentionally NOT persisted here — it is only injected
+    // as a runtime env var below for the local loopback gateway. Persisting it would make
+    // it apply to any remote or shared gateway started outside this app.
     let env_path = home.join(".env");
     let env_content = std::fs::read_to_string(&env_path).unwrap_or_default();
     if !env_content.contains("API_SERVER_ENABLED") {
         let mut lines: Vec<String> = env_content.lines().map(String::from).collect();
         lines.push(String::from("API_SERVER_ENABLED=true"));
-        lines.push(String::from("GATEWAY_ALLOW_ALL_USERS=true"));
         let _ = std::fs::write(&env_path, lines.join("\n") + "\n");
     }
 
@@ -641,6 +643,10 @@ fn hermes_start_gateway(app_handle: tauri::AppHandle, _state: tauri::State<Gatew
         .map_err(|e| format!("Cannot create gateway log: {}", e))?;
 
     let mut cmd = Command::new(command_program());
+    // --accept-hooks: intentional for local desktop use — allows the gateway to execute
+    // shell hooks defined in the user's own hermes config. This is scoped to localhost.
+    // GATEWAY_ALLOW_ALL_USERS: runtime-only, allows the WebView to call the local API
+    // without per-session auth. Not written to disk (see comment above).
     cmd.args(["gateway", "run", "--accept-hooks"])
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
