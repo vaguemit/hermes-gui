@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, Download, Play, RefreshCw, Settings, Terminal, XCircle } from 'lucide-react';
-import { CommandResult, HermesInstallStatus, getHermesInstallStatus, runHermesCommand, streamInstallHermes } from '../api/desktop';
+import { CommandResult, HermesInstallStatus, runHermesCommand, streamInstallHermes } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
 import { CLI_COMMANDS } from '../data/hermesCatalog';
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
@@ -35,6 +36,7 @@ function ResultBlock({ result, streamLines }: { result: CommandResult | null; st
 }
 
 export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => void }) {
+  const client = useHermesClient();
   const [status, setStatus] = useState<HermesInstallStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
   const refresh = async () => {
     setLoading(true);
     try {
-      setStatus(await getHermesInstallStatus());
+      setStatus(await client.getInstallStatus() as HermesInstallStatus);
     } catch (err) {
       setStatus({
         installed: false,
