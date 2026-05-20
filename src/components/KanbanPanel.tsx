@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { readFile, writeFile, isTauriApp } from '../api/desktop';
+import { isTauriApp } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
 
 interface KanbanTask {
   id: string;
@@ -51,6 +52,7 @@ interface AddFormState {
 }
 
 export default function KanbanPanel() {
+  const client = useHermesClient();
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [addForm, setAddForm] = useState<AddFormState | null>(null);
@@ -65,7 +67,7 @@ export default function KanbanPanel() {
       setLoaded(true);
       return;
     }
-    readFile(PERSIST_KEY)
+    client.readFile(PERSIST_KEY)
       .then((raw) => {
         if (raw) {
           try {
@@ -88,7 +90,7 @@ export default function KanbanPanel() {
     if (!isTauriApp()) return;
     if (persistTimer.current) clearTimeout(persistTimer.current);
     persistTimer.current = setTimeout(() => {
-      writeFile(PERSIST_KEY, JSON.stringify(tasks)).catch(() => {});
+      client.writeFile(PERSIST_KEY, JSON.stringify(tasks)).catch(() => {});
     }, 800);
     return () => {
       if (persistTimer.current) clearTimeout(persistTimer.current);
