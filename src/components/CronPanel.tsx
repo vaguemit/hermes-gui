@@ -6,6 +6,20 @@ import { Clock, Plus, Trash2, Play } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).slice(2);
 
+/** Convert a hermes schedule value (string OR {kind,expr/minutes/run_at} object) to a display string. */
+function formatSchedule(raw: unknown): string {
+  if (!raw) return '';
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'object' && raw !== null) {
+    const s = raw as Record<string, unknown>;
+    if (s.kind === 'cron' && s.expr) return String(s.expr);
+    if (s.kind === 'interval' && s.minutes) return `Every ${s.minutes} min`;
+    if (s.kind === 'once' && s.run_at) return `Once at ${s.run_at}`;
+    if (s.value) return String(s.value);
+  }
+  return '';
+}
+
 // Extended type used locally — `mode` is not in the store CronJob interface
 // but is serialized to gui-crons.json and read back. Old entries without it default to 'auto'.
 type CronJobWithMode = CronJob & { mode?: 'auto' | 'gateway' | 'pty' };
@@ -86,7 +100,7 @@ export default function CronPanel() {
       }) => ({
         id: j.id || generateId(),
         description: j.prompt || j.name || 'Unnamed',
-        schedule: j.schedule_display || j.schedule || 'Unknown',
+        schedule: j.schedule_display || formatSchedule(j.schedule) || 'Unknown',
         platform: Array.isArray(j.deliver) ? j.deliver[0] : (j.deliver || 'local'),
         active: j.enabled !== false && j.state !== 'paused',
         lastRun: j.last_run_at ? new Date(j.last_run_at).toISOString().slice(0, 10) : undefined,
@@ -126,7 +140,7 @@ export default function CronPanel() {
 
     if (usePty) {
       try {
-        const result = await runHermesCommand(['chat', '--one-shot', cron.description], 120);
+        const result = await runHermesCommand(['chat', '-q', cron.description, '-Q', '--source', 'cron'], 120);
         if (!result.success) {
           addToast(`Cron "${cron.description.slice(0, 40)}" PTY run failed: ${result.stderr.slice(0, 80)}`, 'error');
           console.error(`[cron] PTY task "${cron.description}" failed:`, result.stderr);
@@ -160,7 +174,7 @@ export default function CronPanel() {
       // Auto-retry via PTY when gateway drops mid-run
       if (effectiveMode === 'auto') {
         try {
-          await runHermesCommand(['chat', '--one-shot', cron.description], 120);
+          await runHermesCommand(['chat', '-q', cron.description, '-Q', '--source', 'cron'], 120);
         } catch (ptyErr) {
           console.error(`[cron] PTY fallback also failed:`, ptyErr);
         }
@@ -168,17 +182,21 @@ export default function CronPanel() {
     }
   }
 
-  // Live scheduler: check every 60 seconds whether any active cron should fire
+  // Live scheduler: check every 60 seconds whether any active cron should fire.
+  // Guard: when the gateway is connected its internal scheduler already fires crons every 60s —
+  // skip GUI-side dispatch for 'hermes'-sourced jobs to avoid double-firing. GUI-created jobs
+  // (no source field) always run here since the gateway doesn't know about them.
   useEffect(() => {
     async function tick() {
-      const { crons: current } = useStore.getState();
+      const { crons: current, gatewayStatus: gStatus } = useStore.getState();
+      const gatewayManaging = gStatus === 'connected';
       for (const cron of current) {
         if (!cron.active) continue;
+        // Skip hermes-native jobs when gateway is managing them
+        if (gatewayManaging && (cron as CronJobWithMode & { source?: string }).source === 'hermes') continue;
         if (!shouldFire(cron)) continue;
-        const now = new Date();
-        const lastRun = now.toISOString().slice(0, 10);
+        const lastRun = new Date().toISOString().slice(0, 10);
         updateCronLastRun(cron.id, lastRun);
-        // Fire and forget — dispatch handles gateway/PTY routing
         dispatchCronTask(cron as CronJobWithMode);
       }
     }
@@ -217,7 +235,7 @@ export default function CronPanel() {
 
     if (usePty) {
       try {
-        const result = await runHermesCommand(['chat', '--one-shot', form.description], 60);
+        const result = await runHermesCommand(['chat', '-q', form.description, '-Q', '--source', 'cron'], 60);
         if (result.success) {
           setTestResult(`✓ ${result.stdout || '(task completed)'}`);
           addToast('Task sent via PTY', 'success');
@@ -268,7 +286,7 @@ export default function CronPanel() {
           addToast(`Cron "${form.description.slice(0, 40)}" failed — gateway unreachable. Switching to PTY.`, 'error');
           setTestResult(`Gateway unreachable. Retrying via PTY…`);
           try {
-            const result = await runHermesCommand(['chat', '--one-shot', form.description], 60);
+            const result = await runHermesCommand(['chat', '-q', form.description, '-Q', '--source', 'cron'], 60);
             if (result.success) {
               setTestResult(`✓ (PTY fallback) ${result.stdout || '(task completed)'}`);
               addToast('Task completed via PTY fallback', 'success');
