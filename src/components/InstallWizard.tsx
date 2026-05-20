@@ -290,18 +290,25 @@ export default function InstallWizard({ onComplete }: Props) {
   // ── Step 1: detect existing install ──────────────────────────────────────
   useEffect(() => {
     if (step !== 'detect') return;
-    client.getInstallStatus().then((s) => {
+    client.getInstallStatus().then(async (s) => {
       setStatus(s);
       if (s.installed) {
         setDetectMsg(`Found Hermes ${s.version ?? ''} at ${s.hermes_home}`);
       }
-      if (s.installed && s.configured) {
-        setTimeout(() => goTo('provider'), 600);
-      } else if (s.installed) {
-        setTimeout(() => goTo('provider'), 600);
-      } else {
+      if (!s.installed) {
         setTimeout(() => goTo('install'), 600);
+        return;
       }
+      // Check for existing API keys — if any found, skip to done
+      try {
+        const keys = await client.detectApiKeys();
+        const hasAnyKey = Object.values(keys).some(Boolean);
+        if (hasAnyKey && s.model_configured) {
+          setTimeout(() => goTo('done'), 600);
+          return;
+        }
+      } catch { /* non-fatal */ }
+      setTimeout(() => goTo('provider'), 600);
     }).catch(() => goTo('install'));
   }, []);
 
