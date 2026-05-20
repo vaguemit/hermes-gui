@@ -20,6 +20,7 @@ interface ProviderDef {
   configProvider: string;
   baseUrl: string;
   needsKey: boolean;
+  keyPrefix?: string;
   steps?: { text: string; url?: string }[];
 }
 
@@ -28,7 +29,7 @@ const PROVIDERS: ProviderDef[] = [
     id: 'openrouter', name: 'OpenRouter', tag: '⭐ Recommended — 200+ models',
     desc: 'One key, hundreds of models. Best starting point.',
     envKey: 'OPENROUTER_API_KEY', url: 'https://openrouter.ai/keys',
-    placeholder: 'sk-or-v1-...', configProvider: 'openrouter',
+    placeholder: 'sk-or-v1-...', configProvider: 'openrouter', keyPrefix: 'sk-or-v1-',
     baseUrl: 'https://openrouter.ai/api/v1', needsKey: true,
     steps: [
       { text: 'Go to openrouter.ai and create a free account', url: 'https://openrouter.ai' },
@@ -50,7 +51,7 @@ const PROVIDERS: ProviderDef[] = [
   {
     id: 'anthropic', name: 'Anthropic', desc: 'Claude Opus, Sonnet, Haiku. Best reasoning.',
     envKey: 'ANTHROPIC_API_KEY', url: 'https://console.anthropic.com/settings/keys',
-    placeholder: 'sk-ant-...', configProvider: 'anthropic', baseUrl: '', needsKey: true,
+    placeholder: 'sk-ant-...', configProvider: 'anthropic', keyPrefix: 'sk-ant-', baseUrl: '', needsKey: true,
     steps: [
       { text: 'Go to console.anthropic.com and sign in', url: 'https://console.anthropic.com' },
       { text: 'Click "API Keys" in the left sidebar', url: 'https://console.anthropic.com/settings/keys' },
@@ -61,7 +62,7 @@ const PROVIDERS: ProviderDef[] = [
   {
     id: 'openai', name: 'OpenAI', desc: 'GPT-4o, o1, o3, Codex. Most widely supported.',
     envKey: 'OPENAI_API_KEY', url: 'https://platform.openai.com/api-keys',
-    placeholder: 'sk-...', configProvider: 'openai', baseUrl: '', needsKey: true,
+    placeholder: 'sk-...', configProvider: 'openai', keyPrefix: 'sk-', baseUrl: '', needsKey: true,
     steps: [
       { text: 'Go to platform.openai.com and sign in', url: 'https://platform.openai.com' },
       { text: 'Click your profile → "API keys"', url: 'https://platform.openai.com/api-keys' },
@@ -72,7 +73,7 @@ const PROVIDERS: ProviderDef[] = [
   {
     id: 'google', name: 'Google Gemini', desc: 'Gemini 2.5 Flash/Pro. Free tier available.',
     envKey: 'GOOGLE_API_KEY', url: 'https://aistudio.google.com/app/apikey',
-    placeholder: 'AIza...', configProvider: 'google', baseUrl: '', needsKey: true,
+    placeholder: 'AIza...', configProvider: 'google', keyPrefix: 'AIza', baseUrl: '', needsKey: true,
     steps: [
       { text: 'Go to Google AI Studio and sign in', url: 'https://aistudio.google.com' },
       { text: 'Click "Get API key" on the left', url: 'https://aistudio.google.com/app/apikey' },
@@ -94,7 +95,7 @@ const PROVIDERS: ProviderDef[] = [
   {
     id: 'xai', name: 'xAI (Grok)', desc: 'Grok 3, Grok Vision.',
     envKey: 'XAI_API_KEY', url: 'https://console.x.ai',
-    placeholder: 'xai-...', configProvider: 'xai', baseUrl: '', needsKey: true,
+    placeholder: 'xai-...', configProvider: 'xai', keyPrefix: 'xai-', baseUrl: '', needsKey: true,
     steps: [
       { text: 'Go to console.x.ai and sign in with your X account', url: 'https://console.x.ai' },
       { text: 'Click "API Keys" → "Create API Key"' },
@@ -104,7 +105,7 @@ const PROVIDERS: ProviderDef[] = [
   {
     id: 'github-copilot', name: 'GitHub Copilot', desc: 'Uses GITHUB_TOKEN or gh auth token.',
     envKey: 'GITHUB_TOKEN', url: 'https://github.com/settings/tokens',
-    placeholder: 'ghp_...', configProvider: 'github-copilot', baseUrl: '', needsKey: true,
+    placeholder: 'ghp_...', configProvider: 'github-copilot', keyPrefix: 'ghp_', baseUrl: '', needsKey: true,
     steps: [
       { text: 'Go to GitHub Settings → Developer settings → Tokens', url: 'https://github.com/settings/tokens' },
       { text: 'Generate a new token with copilot scope' },
@@ -115,7 +116,7 @@ const PROVIDERS: ProviderDef[] = [
   {
     id: 'huggingface', name: 'Hugging Face', desc: '20+ open models via Inference Providers.',
     envKey: 'HF_TOKEN', url: 'https://huggingface.co/settings/tokens',
-    placeholder: 'hf_...', configProvider: 'huggingface', baseUrl: '', needsKey: true,
+    placeholder: 'hf_...', configProvider: 'huggingface', keyPrefix: 'hf_', baseUrl: '', needsKey: true,
     steps: [
       { text: 'Go to huggingface.co and sign in', url: 'https://huggingface.co' },
       { text: 'Click your profile → "Access Tokens"', url: 'https://huggingface.co/settings/tokens' },
@@ -126,7 +127,7 @@ const PROVIDERS: ProviderDef[] = [
   {
     id: 'nvidia', name: 'NVIDIA NIM', desc: 'Nemotron models via build.nvidia.com.',
     envKey: 'NVIDIA_API_KEY', url: 'https://build.nvidia.com',
-    placeholder: 'nvapi-...', configProvider: 'nvidia', baseUrl: '', needsKey: true,
+    placeholder: 'nvapi-...', configProvider: 'nvidia', keyPrefix: 'nvapi-', baseUrl: '', needsKey: true,
     steps: [
       { text: 'Go to build.nvidia.com and sign in', url: 'https://build.nvidia.com' },
       { text: 'Navigate to any model → "Get API Key"' },
@@ -664,6 +665,11 @@ export default function InstallWizard({ onComplete }: Props) {
                     autoFocus
                     style={{ width: '100%', paddingRight: 44 }}
                   />
+                  {provider.keyPrefix && apiKey.length > 4 && !apiKey.startsWith(provider.keyPrefix) && (
+                    <div style={{ position: 'absolute', right: 40, top: '50%', transform: 'translateY(-50%)', fontSize: 10.5, color: 'var(--accent-amber)', whiteSpace: 'nowrap' }}>
+                      should start with {provider.keyPrefix}
+                    </div>
+                  )}
                   <button
                     onClick={() => setShowKey(!showKey)}
                     style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
