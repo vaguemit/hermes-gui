@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight, CheckCircle2, Download, ExternalLink, Eye, EyeOff,
   Loader2, XCircle, ChevronLeft,
@@ -294,6 +294,9 @@ export default function InstallWizard({ onComplete }: Props) {
   const [installLines, setInstallLines] = useState<string[]>([]);
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState('');
+  const [installElapsed, setInstallElapsed] = useState(0);
+  const installLogRef = useRef<HTMLPreElement>(null);
+  const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [selectedProvider, setSelectedProvider] = useState(persisted.provider || 'openrouter');
   const [apiKey, setApiKey] = useState('');
@@ -341,8 +344,16 @@ export default function InstallWizard({ onComplete }: Props) {
     setInstalling(true);
     setInstallError('');
     setInstallLines([]);
+    setInstallElapsed(0);
+    elapsedRef.current = setInterval(() => setInstallElapsed(s => s + 1), 1000);
     try {
-      const result = await streamInstallHermes((line) => setInstallLines((prev) => [...prev, line]));
+      const result = await streamInstallHermes((line) => {
+        setInstallLines((prev) => [...prev, line]);
+        // Auto-scroll log to bottom
+        if (installLogRef.current) {
+          installLogRef.current.scrollTop = installLogRef.current.scrollHeight;
+        }
+      });
       if (result.success || result.stdout.toLowerCase().includes('installed')) {
         goTo('provider');
       } else {
@@ -352,6 +363,7 @@ export default function InstallWizard({ onComplete }: Props) {
       setInstallError(e instanceof Error ? e.message : String(e));
     } finally {
       setInstalling(false);
+      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
     }
   }
 
@@ -457,12 +469,17 @@ export default function InstallWizard({ onComplete }: Props) {
               Hermes Agent is not yet installed. Click below to run the official Nous Research installer — it handles Python, dependencies, and the agent itself automatically.
             </div>
             {installing && installLines.length > 0 && (
-              <div style={{ marginBottom: 8, fontSize: 12, color: '#a78bfa', fontWeight: 600 }}>
-                {detectStage(installLines) || 'Installing…'}
+              <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 12, color: '#a78bfa', fontWeight: 600 }}>
+                  {detectStage(installLines) || 'Installing…'}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                  {installElapsed}s
+                </span>
               </div>
             )}
             {installLines.length > 0 && (
-              <pre style={{
+              <pre ref={installLogRef} style={{
                 background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 8,
                 padding: '10px 12px', fontSize: 11.5, lineHeight: 1.55, maxHeight: 200,
                 overflow: 'auto', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap',
