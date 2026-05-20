@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Cpu, Plus, Trash2, Check, ChevronDown, RefreshCw, Zap } from 'lucide-react';
-import { readFile, writeFile } from '../api/desktop';
 import { useStore } from '../store';
 import { useHermesClient } from '../lib/hermes';
 
@@ -46,7 +45,7 @@ export default function ModelsPanel() {
     setLoading(true);
     try {
       const [raw, cfg] = await Promise.allSettled([
-        readFile('models.json'),
+        client.readFile('models.json'),
         client.getModelConfig(),
       ]);
 
@@ -72,7 +71,7 @@ export default function ModelsPanel() {
   }, [loadModels]);
 
   const persist = async (updated: SavedModel[]) => {
-    await writeFile('models.json', JSON.stringify(updated, null, 2)).catch(() => {});
+    await client.writeFile('models.json', JSON.stringify(updated, null, 2)).catch(() => {});
   };
 
   const handleActivate = async (m: SavedModel) => {

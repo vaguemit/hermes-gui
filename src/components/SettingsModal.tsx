@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe } from 'lucide-react';
-import { readFile, writeFile, getAutostartEnabled, toggleAutostart } from '../api/desktop';
+import { getAutostartEnabled, toggleAutostart } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 
 const PROVIDERS_KEYS = [
@@ -126,7 +126,7 @@ export default function SettingsModal() {
   // Personality: load on tab open
   useEffect(() => {
     if (settingsOpen && tab === 'personality') {
-      readFile('personalities/default.md').then(content => {
+      client.readFile('personalities/default.md').then(content => {
         setPersonality(content);
       }).catch(() => {
         setPersonality(DEFAULT_PERSONALITY);
@@ -137,12 +137,12 @@ export default function SettingsModal() {
   // Memory: load both files on tab open
   useEffect(() => {
     if (settingsOpen && tab === 'memory') {
-      readFile('memory/MEMORY.md').then(content => {
+      client.readFile('memory/MEMORY.md').then(content => {
         setMemoryContent(content);
       }).catch(() => {
         setMemoryContent('# Memory\n\nNo memories recorded yet. Hermes will populate this automatically.');
       });
-      readFile('memory/USER.md').then(content => {
+      client.readFile('memory/USER.md').then(content => {
         setUserContent(content);
       }).catch(() => {
         setUserContent('# User Profile\n\nNo user profile recorded yet.');
@@ -190,7 +190,7 @@ export default function SettingsModal() {
     setPersonalitySaving(true);
     setPersonalitySaveMsg('');
     try {
-      await writeFile('personalities/default.md', personality);
+      await client.writeFile('personalities/default.md', personality);
       setPersonalitySaveMsg('Saved');
     } catch {
       setPersonalitySaveMsg('Error');
