@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe } from 'lucide-react';
-import { readEnv, writeEnv, readFile, writeFile, readConfig, writeConfig, getAutostartEnabled, toggleAutostart, clearAllSessionsDisk } from '../api/desktop';
+import { readFile, writeFile, getAutostartEnabled, toggleAutostart } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
 
 const PROVIDERS_KEYS = [
   { label: 'OpenAI', key: 'OPENAI_API_KEY', hint: 'sk-...' },
@@ -72,6 +73,7 @@ type SettingsTab = typeof TABS[number]['id'];
 
 export default function SettingsModal() {
   const { settingsOpen, setSettingsOpen } = useStore();
+  const client = useHermesClient();
   const [tab, setTab] = useState<SettingsTab>('api-keys');
 
   // API Keys tab state
@@ -115,7 +117,7 @@ export default function SettingsModal() {
   // API Keys: load on tab open
   useEffect(() => {
     if (settingsOpen && tab === 'api-keys') {
-      readEnv().then(env => {
+      client.readEnv().then(env => {
         const keys: Record<string, string> = {};
         PROVIDERS_KEYS.forEach(p => { if (env[p.key]) keys[p.key] = env[p.key]; });
         setApiKeys(keys);
@@ -153,7 +155,7 @@ export default function SettingsModal() {
   // Workspace: load config and autostart on tab open
   useEffect(() => {
     if (settingsOpen && tab === 'workspace') {
-      readConfig().then(yaml => {
+      client.readConfig().then(yaml => {
         const match = yaml.match(/working_dir:\s*(.+)/);
         setWorkingDir(match ? match[1].trim() : '~/workspace');
       }).catch(() => {
@@ -174,7 +176,7 @@ export default function SettingsModal() {
       for (const p of PROVIDERS_KEYS) {
         const val = apiKeys[p.key];
         if (val && val.trim()) {
-          await writeEnv(p.key, val.trim());
+          await client.writeEnv(p.key, val.trim());
         }
       }
       setApiSaveMsg('Saved');
@@ -215,7 +217,7 @@ export default function SettingsModal() {
   // Browser automation: load on tab open
   useEffect(() => {
     if (settingsOpen && tab === 'browser') {
-      readEnv().then(env => {
+      client.readEnv().then(env => {
         const keys: Record<string, string> = {};
         BROWSER_KEYS.forEach(k => { if (env[k.key]) keys[k.key] = env[k.key]; });
         setBrowserKeys(keys);
@@ -229,12 +231,12 @@ export default function SettingsModal() {
     setBrowserSaving(true);
     setBrowserSaveMsg('');
     try {
-      await writeEnv('PLAYWRIGHT_HEADLESS', headedMode ? 'false' : 'true');
-      await writeEnv('HEADLESS', headedMode ? 'false' : 'true');
-      await writeEnv('BH_DOMAIN_SKILLS', domainSkills ? '1' : '');
+      await client.writeEnv('PLAYWRIGHT_HEADLESS', headedMode ? 'false' : 'true');
+      await client.writeEnv('HEADLESS', headedMode ? 'false' : 'true');
+      await client.writeEnv('BH_DOMAIN_SKILLS', domainSkills ? '1' : '');
       for (const k of BROWSER_KEYS) {
         const val = browserKeys[k.key];
-        if (val !== undefined) await writeEnv(k.key, val.trim());
+        if (val !== undefined) await client.writeEnv(k.key, val.trim());
       }
       setBrowserSaveMsg('Saved');
     } catch {
@@ -249,13 +251,13 @@ export default function SettingsModal() {
     setWorkspaceSaving(true);
     setWorkspaceSaveMsg('');
     try {
-      let yaml = await readConfig().catch(() => '');
+      let yaml = await client.readConfig().catch(() => '');
       if (/working_dir:\s*.+/.test(yaml)) {
         yaml = yaml.replace(/working_dir:\s*.+/, `working_dir: ${workingDir}`);
       } else {
         yaml = yaml ? `${yaml.trimEnd()}\nworking_dir: ${workingDir}\n` : `working_dir: ${workingDir}\n`;
       }
-      await writeConfig(yaml);
+      await client.writeConfig(yaml);
       setWorkspaceSaveMsg('Saved');
     } catch {
       setWorkspaceSaveMsg('Error');
@@ -501,7 +503,7 @@ export default function SettingsModal() {
                         if (!window.confirm('Delete all saved sessions from disk? This cannot be undone.')) return;
                         setClearingSessions(true);
                         try {
-                          const n = await clearAllSessionsDisk();
+                          const n = await client.clearAllSessions();
                           setClearMsg(`Cleared ${n} session${n !== 1 ? 's' : ''}.`);
                           setTimeout(() => setClearMsg(''), 3000);
                         } finally {
