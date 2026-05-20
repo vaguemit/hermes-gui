@@ -3,6 +3,8 @@ import { getGatewayStatus as getGatewayStatusIpc, isTauriApp } from './desktop';
 
 const DEFAULT_PORT = 8642;
 
+export const GATEWAY_TIMEOUT_MS = 3000;
+
 /** Returns the active gateway base URL — remote if configured, else 127.0.0.1:<port>. */
 export function getBaseUrl(): string {
   const remote = localStorage.getItem('hermes_remote_url');
@@ -19,11 +21,28 @@ export function getAuthHeaders(): Record<string, string> {
 /** HTTP health check — used only to verify the API is actually serving (e.g. before chat). */
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${getBaseUrl()}/health`, { signal: AbortSignal.timeout(3000), headers: getAuthHeaders() });
+    const res = await fetch(`${getBaseUrl()}/health`, { signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS), headers: getAuthHeaders() });
     return res.ok;
   } catch {
     return false;
   }
+}
+
+/** Health check that also measures round-trip latency. */
+export async function checkGatewayHealth(): Promise<{ healthy: boolean; latencyMs: number }> {
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`${getBaseUrl()}/health`, { signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS), headers: getAuthHeaders() });
+    return { healthy: res.ok, latencyMs: Date.now() - t0 };
+  } catch {
+    return { healthy: false, latencyMs: Date.now() - t0 };
+  }
+}
+
+/** Returns gateway latency in ms, or null if unreachable. */
+export async function getGatewayLatency(): Promise<number | null> {
+  const { healthy, latencyMs } = await checkGatewayHealth();
+  return healthy ? latencyMs : null;
 }
 
 export async function fetchModels(): Promise<string[]> {
@@ -159,6 +178,16 @@ export async function pingGateway(): Promise<boolean> {
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/** Map a StreamMessage to the appropriate Zustand store actions. */
+export function mapStreamEventToStore(event: StreamMessage): void {
+  const store = useStore.getState();
+  if (event.type === 'tool_call' && event.toolCallId && event.toolName) {
+    store.addToolCall({ id: event.toolCallId, name: event.toolName, input: event.toolInput ?? '', status: 'running', output: '', timestamp: Date.now() });
+  } else if (event.type === 'tool_result' && event.toolCallId) {
+    store.updateToolCallGlobal(event.toolCallId, { status: 'done', output: event.toolOutput ?? '' });
   }
 }
 
