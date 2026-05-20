@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, CronJob } from '../store';
-import { readFile, writeFile, isTauriApp, runHermesCommand } from '../api/desktop';
+import { isTauriApp, runHermesCommand } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
 import { getBaseUrl, getAuthHeaders } from '../api/hermes';
 import { Clock, Plus, Trash2, Play } from 'lucide-react';
 
@@ -67,6 +68,7 @@ function shouldFire(cron: CronJob): boolean {
 }
 
 export default function CronPanel() {
+  const client = useHermesClient();
   const { crons, addCron, toggleCron, deleteCron, updateCronLastRun, platforms, gatewayStatus, addToast } = useStore();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ schedule: '', description: '', platform: 'Telegram', mode: 'auto' as 'auto' | 'gateway' | 'pty' });
@@ -76,7 +78,7 @@ export default function CronPanel() {
     if (!isTauriApp()) return;
 
     // Load GUI-created crons
-    readFile('gui-crons.json').then(raw => {
+    client.readFile('gui-crons.json').then(raw => {
       const loaded: CronJobWithMode[] = JSON.parse(raw);
       if (Array.isArray(loaded) && loaded.length > 0) {
         useStore.setState({ crons: loaded });
@@ -84,7 +86,7 @@ export default function CronPanel() {
     }).catch(() => {}); // file may not exist yet
 
     // Load hermes-native cron jobs from cron/jobs.json
-    readFile('cron/jobs.json').then(raw => {
+    client.readFile('cron/jobs.json').then(raw => {
       const nativeJobs = JSON.parse(raw);
       if (!Array.isArray(nativeJobs)) return;
       const mapped: CronJob[] = nativeJobs.map((j: {
@@ -120,7 +122,7 @@ export default function CronPanel() {
     if (!isTauriApp()) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      writeFile('gui-crons.json', JSON.stringify(crons)).catch(() => {});
+      client.writeFile('gui-crons.json', JSON.stringify(crons)).catch(() => {});
     }, 800);
   }, [crons]);
 
