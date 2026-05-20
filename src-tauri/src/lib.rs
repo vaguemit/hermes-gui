@@ -362,6 +362,25 @@ fn api_healthy() -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(650)).is_ok()
 }
 
+/// Reject env keys that could break the .env file format.
+fn validate_env_key(key: &str) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("Env key cannot be empty".to_string());
+    }
+    if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err("Env key must contain only alphanumeric characters and underscores".to_string());
+    }
+    Ok(())
+}
+
+/// Reject env values that contain unescaped newlines (would inject extra lines).
+fn validate_env_value(value: &str) -> Result<(), String> {
+    if value.contains('\n') || value.contains('\r') {
+        return Err("Env value cannot contain newline characters".to_string());
+    }
+    Ok(())
+}
+
 /// Reject filenames that could escape the intended directory.
 /// Accepts plain names (no path separators) with optional extensions.
 fn validate_name(name: &str) -> Result<(), String> {
@@ -1327,6 +1346,8 @@ fn read_env() -> HashMap<String, String> {
 
 #[tauri::command]
 fn write_env(key: String, value: String) -> Result<(), String> {
+    validate_env_key(&key)?;
+    validate_env_value(&value)?;
     let path = hermes_home().join(".env");
     let content = std::fs::read_to_string(&path).unwrap_or_default();
     let mut lines: Vec<String> = content.lines().map(String::from).collect();
@@ -2068,6 +2089,8 @@ fn get_chrome_cdp_status() -> bool {
 
 #[tauri::command]
 fn write_env_var(key: String, val: String) -> Result<(), String> {
+    validate_env_key(&key)?;
+    validate_env_value(&val)?;
     let path = hermes_home().join(".env");
     let content = std::fs::read_to_string(&path).unwrap_or_default();
     let mut lines: Vec<String> = content.lines().map(String::from).collect();
