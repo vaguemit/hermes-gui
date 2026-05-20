@@ -221,6 +221,49 @@ function detectStage(lines: string[]): string {
   return '';
 }
 
+const PROVIDER_MODELS: Record<string, { id: string; label: string }[]> = {
+  openrouter: [
+    { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+    { id: 'openai/gpt-4o', label: 'GPT-4o' },
+    { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
+    { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3' },
+    { id: 'google/gemini-2.5-flash-preview', label: 'Gemini 2.5 Flash' },
+  ],
+  anthropic: [
+    { id: 'claude-opus-4-5', label: 'Claude Opus 4.5' },
+    { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+  ],
+  openai: [
+    { id: 'gpt-4o', label: 'GPT-4o' },
+    { id: 'gpt-4o-mini', label: 'GPT-4o mini' },
+    { id: 'o3', label: 'o3' },
+    { id: 'o4-mini', label: 'o4-mini' },
+  ],
+  google: [
+    { id: 'gemini-2.5-pro-preview', label: 'Gemini 2.5 Pro' },
+    { id: 'gemini-2.5-flash-preview', label: 'Gemini 2.5 Flash' },
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  ],
+  deepseek: [
+    { id: 'deepseek-chat', label: 'DeepSeek V3' },
+    { id: 'deepseek-reasoner', label: 'DeepSeek R1' },
+  ],
+  xai: [
+    { id: 'grok-3', label: 'Grok 3' },
+    { id: 'grok-3-mini', label: 'Grok 3 mini' },
+  ],
+  huggingface: [
+    { id: 'meta-llama/Llama-3.3-70B-Instruct', label: 'Llama 3.3 70B' },
+    { id: 'Qwen/Qwen2.5-72B-Instruct', label: 'Qwen 2.5 72B' },
+    { id: 'mistralai/Mistral-7B-Instruct-v0.3', label: 'Mistral 7B' },
+  ],
+  nvidia: [
+    { id: 'nvidia/llama-3.3-nemotron-super-49b-v1', label: 'Nemotron Super 49B' },
+    { id: 'nvidia/llama-3.1-nemotron-ultra-253b-v1', label: 'Nemotron Ultra 253B' },
+  ],
+};
+
 const LOCAL_PRESETS = [
   { id: 'lmstudio', name: 'LM Studio', baseUrl: 'http://localhost:1234/v1' },
   { id: 'ollama', name: 'Ollama', baseUrl: 'http://localhost:11434/v1' },
@@ -312,6 +355,14 @@ export default function InstallWizard({ onComplete }: Props) {
 
   const provider = PROVIDERS.find((p) => p.id === selectedProvider) ?? PROVIDERS[0];
   const isLocal = selectedProvider === 'local' || selectedProvider === 'lmstudio';
+
+  // Pre-select first suggested model when entering model step
+  useEffect(() => {
+    if (step === 'model' && !modelName) {
+      const suggested = PROVIDER_MODELS[provider.id]?.[0]?.id ?? '';
+      if (suggested) setModelName(suggested);
+    }
+  }, [step, selectedProvider]);
 
   // ── Step 1: detect existing install ──────────────────────────────────────
   useEffect(() => {
@@ -406,20 +457,40 @@ export default function InstallWizard({ onComplete }: Props) {
     setSaving(true);
     setSaveError('');
     try {
-      if (provider.needsKey && provider.envKey) {
+      if (provider.needsKey && provider.envKey && apiKey.trim()) {
         await client.writeEnv(provider.envKey, apiKey.trim());
       } else if (isLocal && apiKey.trim()) {
         await client.writeEnv('CUSTOM_API_KEY', apiKey.trim());
       }
+      // Pre-set provider config without model — model step will call setModelConfig with chosen model
+      const configProvider = isLocal ? 'custom' : provider.configProvider;
+      const configBase = isLocal ? baseUrl.trim() : provider.baseUrl;
+      await client.setModelConfig(configProvider, '', configBase);
+      goTo('model');
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Step 5: pick model ────────────────────────────────────────────────────
+  const [modelSaving, setModelSaving] = useState(false);
+  const [modelSaveError, setModelSaveError] = useState('');
+
+  async function handleModelSave() {
+    setModelSaving(true);
+    setModelSaveError('');
+    try {
       const configProvider = isLocal ? 'custom' : provider.configProvider;
       const configBase = isLocal ? baseUrl.trim() : provider.baseUrl;
       await client.setModelConfig(configProvider, modelName.trim(), configBase);
       localStorage.removeItem(STATE_KEY);
       goTo('done');
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e));
+      setModelSaveError(e instanceof Error ? e.message : String(e));
     } finally {
-      setSaving(false);
+      setModelSaving(false);
     }
   }
 
@@ -448,6 +519,7 @@ export default function InstallWizard({ onComplete }: Props) {
             {step === 'install' && 'Install Hermes Agent'}
             {step === 'provider' && 'Choose your AI provider'}
             {step === 'apikey' && 'Enter your API key'}
+            {step === 'model' && 'Choose a model'}
             {step === 'done' && 'All set!'}
           </div>
         </div>
@@ -710,6 +782,64 @@ export default function InstallWizard({ onComplete }: Props) {
               {saving
                 ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />Saving…</>
                 : <>Save & Continue <ArrowRight size={14} /></>
+              }
+            </button>
+          </>
+        )}
+
+        {/* ── model ── */}
+        {step === 'model' && (
+          <>
+            <button
+              onClick={() => goTo('apikey')}
+              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 20 }}
+            >
+              <ChevronLeft size={14} /> Back
+            </button>
+            {(PROVIDER_MODELS[provider.id] ?? []).length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                {(PROVIDER_MODELS[provider.id] ?? []).map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => setModelName(m.id)}
+                    style={{
+                      background: modelName === m.id ? 'rgba(124,106,247,0.18)' : 'var(--bg2)',
+                      border: `1.5px solid ${modelName === m.id ? '#7c6af7' : 'var(--border)'}`,
+                      borderRadius: 8, padding: '10px 14px', textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{m.label}</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text-tertiary)' }}>{m.id}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <label style={{ display: 'block', fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 6 }}>
+              Custom model ID <span style={{ opacity: 0.5 }}>(or leave blank for provider default)</span>
+            </label>
+            <input
+              className="input"
+              value={modelName}
+              onChange={(e) => setModelName(e.target.value)}
+              placeholder="e.g. anthropic/claude-sonnet-4-5"
+              onKeyDown={(e) => e.key === 'Enter' && handleModelSave()}
+              style={{ width: '100%', marginBottom: 16 }}
+            />
+            {modelSaveError && (
+              <div style={{ color: 'var(--accent-red)', fontSize: 13, marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <XCircle size={14} />{modelSaveError}
+              </div>
+            )}
+            <button
+              className="btn btn-primary"
+              onClick={handleModelSave}
+              disabled={modelSaving}
+              style={{ width: '100%', justifyContent: 'center', gap: 8, fontSize: 14 }}
+            >
+              {modelSaving
+                ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />Saving…</>
+                : <>Finish Setup <ArrowRight size={14} /></>
               }
             </button>
           </>
