@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Key, Eye, EyeOff, Check, ChevronDown, Cpu, RefreshCw } from 'lucide-react';
-import { readEnv, writeEnv, getModelConfig, setModelConfig, listOllamaModels } from '../api/desktop';
-import type { ModelConfig } from '../api/desktop';
+import { listOllamaModels } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
+import type { ModelConfig } from '../lib/hermes';
 
 const PROVIDERS = [
   { id: 'openai',     label: 'OpenAI',        envKey: 'OPENAI_API_KEY',     hint: 'sk-...' },
@@ -77,6 +78,7 @@ function SavedFlash({ show }: { show: boolean }) {
 }
 
 export default function ProvidersPanel() {
+  const client = useHermesClient();
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
   const [savedKeys, setSavedKeys] = useState<Record<string, boolean>>({});
   const [testStates, setTestStates] = useState<Record<string, TestState>>({});
@@ -92,13 +94,13 @@ export default function ProvidersPanel() {
 
   // Load env values and model config on mount
   useEffect(() => {
-    readEnv().then(env => {
+    client.readEnv().then(env => {
       const init: Record<string, string> = {};
       PROVIDERS.forEach(p => { init[p.envKey] = env[p.envKey] ?? ''; });
       setEnvValues(init);
     }).catch(() => {});
 
-    getModelConfig().then(cfg => setModelConfigState(cfg)).catch(() => {});
+    client.getModelConfig().then(cfg => setModelConfigState(cfg)).catch(() => {});
   }, []);
 
   // Debounced model config save
@@ -106,7 +108,7 @@ export default function ProvidersPanel() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        await setModelConfig(cfg.provider, cfg.model, cfg.base_url);
+        await client.setModelConfig(cfg.provider, cfg.model, cfg.base_url);
         setModelSaved(true);
         setTimeout(() => setModelSaved(false), 2000);
       } catch { /* ignore */ }
@@ -128,7 +130,7 @@ export default function ProvidersPanel() {
   const handleKeyBlur = async (envKey: string) => {
     const value = envValues[envKey] ?? '';
     try {
-      await writeEnv(envKey, value);
+      await client.writeEnv(envKey, value);
       setSavedKeys(prev => ({ ...prev, [envKey]: true }));
       setTimeout(() => setSavedKeys(prev => ({ ...prev, [envKey]: false })), 2000);
     } catch { /* ignore */ }
