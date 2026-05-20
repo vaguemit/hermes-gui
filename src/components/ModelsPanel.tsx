@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Cpu, Plus, Trash2, Check, ChevronDown, RefreshCw, Zap } from 'lucide-react';
-import { readFile, writeFile, getModelConfig, setModelConfig } from '../api/desktop';
+import { readFile, writeFile } from '../api/desktop';
 import { useStore } from '../store';
+import { useHermesClient } from '../lib/hermes';
 
 interface SavedModel {
   name: string;
@@ -29,6 +30,7 @@ function providerLabel(provider: string): string {
 }
 
 export default function ModelsPanel() {
+  const client = useHermesClient();
   const { setActiveModel, setActiveSection } = useStore();
 
   const [models, setModels] = useState<SavedModel[]>([]);
@@ -45,7 +47,7 @@ export default function ModelsPanel() {
     try {
       const [raw, cfg] = await Promise.allSettled([
         readFile('models.json'),
-        getModelConfig(),
+        client.getModelConfig(),
       ]);
 
       if (raw.status === 'fulfilled' && raw.value && raw.value.trim()) {
@@ -74,7 +76,7 @@ export default function ModelsPanel() {
   };
 
   const handleActivate = async (m: SavedModel) => {
-    await setModelConfig(m.provider, m.model, m.baseUrl).catch(() => {});
+    await client.setModelConfig(m.provider, m.model, m.baseUrl).catch(() => {});
     setActiveModel(m.model);
     setActiveModelId(`${m.provider}::${m.model}`);
     setActivatedName(m.name);
