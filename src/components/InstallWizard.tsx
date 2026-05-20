@@ -356,7 +356,7 @@ export default function InstallWizard({ onComplete }: Props) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 26, boxShadow: '0 8px 24px rgba(124,106,247,0.4)',
           }}>🤖</div>
-          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em' }}>Hermes Desktop</div>
+          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em' }}>Hermes GUI</div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
             {step === 'detect' && 'Checking environment…'}
             {step === 'install' && 'Install Hermes Agent'}
