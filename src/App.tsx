@@ -1,8 +1,8 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useStore } from './store';
 import { startHealthPolling } from './api/hermes';
-// TODO Phase 2: replace these direct imports with useHermesClient() after lib/hermes merge
 import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp, listSessionsDisk, readSessionDisk, writeSessionDisk } from './api/desktop';
+import { HermesClientContext, getHermesClient } from './lib/hermes';
 import type { UpdateInfo } from './api/desktop';
 import Sidebar from './components/Sidebar';
 import ConversationPanel from './components/ConversationPanel';
@@ -285,6 +285,7 @@ export default function App() {
   }
 
   return (
+    <HermesClientContext.Provider value={getHermesClient()}>
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--bg0)' }}>
       {/* Sidebar */}
       <div style={{ width: 220, flexShrink: 0, height: '100%' }}>
@@ -384,5 +385,6 @@ export default function App() {
       {/* Toast notifications */}
       <Toast toasts={toasts} onDismiss={removeToast} />
     </div>
+    </HermesClientContext.Provider>
   );
 }
