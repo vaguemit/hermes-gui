@@ -362,6 +362,40 @@ fn api_healthy() -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(650)).is_ok()
 }
 
+/// Reject filenames that could escape the intended directory.
+/// Accepts plain names (no path separators) with optional extensions.
+fn validate_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Name cannot be empty".to_string());
+    }
+    const FORBIDDEN: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
+    if name.chars().any(|c| FORBIDDEN.contains(&c)) {
+        return Err("Name contains invalid characters".to_string());
+    }
+    if name.contains("..") || name == "." {
+        return Err("Name contains invalid path component".to_string());
+    }
+    Ok(())
+}
+
+/// Reject relative paths that could escape the hermes home directory.
+fn validate_subpath(rel: &str) -> Result<(), String> {
+    if rel.is_empty() {
+        return Err("Path cannot be empty".to_string());
+    }
+    if rel.contains("..") {
+        return Err("Path traversal not allowed".to_string());
+    }
+    if rel.starts_with('/') || rel.starts_with('\\') {
+        return Err("Absolute paths not allowed".to_string());
+    }
+    #[cfg(windows)]
+    if rel.len() >= 2 && rel.as_bytes()[1] == b':' {
+        return Err("Absolute paths not allowed".to_string());
+    }
+    Ok(())
+}
+
 fn run_command(program: PathBuf, args: &[String], timeout_secs: u64) -> Result<CommandResult, String> {
     let command_text = std::iter::once(program.to_string_lossy().to_string())
         .chain(args.iter().cloned())
@@ -1331,11 +1365,13 @@ fn write_config(content: String) -> Result<(), String> {
 
 #[tauri::command]
 fn read_file(rel_path: String) -> Result<String, String> {
+    validate_subpath(&rel_path)?;
     std::fs::read_to_string(hermes_home().join(&rel_path)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn write_file(rel_path: String, content: String) -> Result<(), String> {
+    validate_subpath(&rel_path)?;
     let path = hermes_home().join(&rel_path);
     if let Some(p) = path.parent() {
         std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
@@ -1532,6 +1568,7 @@ fn list_profiles() -> Vec<ProfileMeta> {
 
 #[tauri::command]
 fn read_profile(name: String) -> Result<String, String> {
+    validate_name(&name)?;
     std::fs::read_to_string(
         hermes_home()
             .join("profiles")
@@ -1542,6 +1579,7 @@ fn read_profile(name: String) -> Result<String, String> {
 
 #[tauri::command]
 fn write_profile(name: String, content: String) -> Result<(), String> {
+    validate_name(&name)?;
     let dir = hermes_home().join("profiles");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::write(dir.join(format!("{}.md", name)), content).map_err(|e| e.to_string())
@@ -1549,6 +1587,7 @@ fn write_profile(name: String, content: String) -> Result<(), String> {
 
 #[tauri::command]
 fn delete_profile(name: String) -> Result<(), String> {
+    validate_name(&name)?;
     std::fs::remove_file(
         hermes_home()
             .join("profiles")
@@ -1583,12 +1622,14 @@ fn list_memory_files() -> Vec<MemoryFileMeta> {
 
 #[tauri::command]
 fn read_memory_file(name: String) -> Result<String, String> {
+    validate_name(&name)?;
     std::fs::read_to_string(hermes_home().join("memory").join(&name))
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_memory_file(name: String) -> Result<(), String> {
+    validate_name(&name)?;
     std::fs::remove_file(hermes_home().join("memory").join(&name))
         .map_err(|e| e.to_string())
 }
@@ -1638,12 +1679,14 @@ fn list_sessions_disk() -> Vec<SessionMeta> {
 
 #[tauri::command]
 fn read_session_disk(name: String) -> Result<String, String> {
+    validate_name(&name)?;
     std::fs::read_to_string(hermes_home().join("sessions").join(&name))
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn write_session_disk(name: String, content: String) -> Result<(), String> {
+    validate_name(&name)?;
     let dir = hermes_home().join("sessions");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::write(dir.join(&name), content).map_err(|e| e.to_string())
@@ -1651,6 +1694,7 @@ fn write_session_disk(name: String, content: String) -> Result<(), String> {
 
 #[tauri::command]
 fn delete_session_disk(name: String) -> Result<(), String> {
+    validate_name(&name)?;
     std::fs::remove_file(hermes_home().join("sessions").join(&name))
         .map_err(|e| e.to_string())
 }
