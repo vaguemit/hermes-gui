@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Brain, User, Save, Trash2, RefreshCw, BarChart2 } from 'lucide-react';
-import { readFile, writeFile, isTauriApp } from '../api/desktop';
+import { isTauriApp } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
 
 type Tab = 'agent' | 'user';
 
@@ -42,6 +43,7 @@ function CapacityBar({ chars, max }: { chars: number; max: number }) {
 }
 
 export default function MemoryPanel() {
+  const client = useHermesClient();
   const [activeTab, setActiveTab] = useState<Tab>('agent');
   const [agentContent, setAgentContent] = useState('');
   const [userContent, setUserContent] = useState('');
@@ -60,7 +62,7 @@ export default function MemoryPanel() {
     setError(null);
     try {
       const name = tab === 'agent' ? AGENT_FILE : USER_FILE;
-      const content = await readFile(name);
+      const content = await client.readFile(name);
       if (tab === 'agent') setAgentContent(content);
       else setUserContent(content);
     } catch (e) {
@@ -96,7 +98,7 @@ export default function MemoryPanel() {
     timerRef.current = setTimeout(async () => {
       try {
         const name = tab === 'agent' ? AGENT_FILE : USER_FILE;
-        await writeFile(name, content);
+        await client.writeFile(name, content);
         flashSaved(tab);
       } catch {
         // silent — no IPC in browser mode
@@ -119,7 +121,7 @@ export default function MemoryPanel() {
     if (!window.confirm(`Clear ${label}? This cannot be undone.`)) return;
     try {
       const name = tab === 'agent' ? AGENT_FILE : USER_FILE;
-      await writeFile(name, '');
+      await client.writeFile(name, '');
       if (tab === 'agent') setAgentContent('');
       else setUserContent('');
       flashSaved(tab);
