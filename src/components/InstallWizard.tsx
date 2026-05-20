@@ -211,7 +211,46 @@ const LOCAL_PRESETS = [
 
 
 // ── Step identifiers ──────────────────────────────────────────────────────────
-type Step = 'detect' | 'install' | 'provider' | 'apikey' | 'done';
+type Step = 'detect' | 'install' | 'provider' | 'apikey' | 'model' | 'done';
+
+const STEP_ORDER: Step[] = ['install', 'provider', 'apikey', 'model', 'done'];
+const STEP_LABELS: Record<string, string> = {
+  install: 'Install', provider: 'Provider', apikey: 'API Key', model: 'Model', done: 'Done',
+};
+
+function StepDots({ current }: { current: Step }) {
+  const idx = STEP_ORDER.indexOf(current);
+  if (idx === -1) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, marginBottom: 28 }}>
+      {STEP_ORDER.map((s, i) => {
+        const done = i < idx;
+        const active = i === idx;
+        return (
+          <React.Fragment key={s}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              <div style={{
+                width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, fontWeight: 700, transition: 'all 0.2s',
+                background: done ? 'var(--accent-green)' : active ? '#7c6af7' : 'var(--bg3)',
+                color: done || active ? '#fff' : 'var(--text-tertiary)',
+                border: active ? '2px solid rgba(124,106,247,0.4)' : '2px solid transparent',
+              }}>
+                {done ? '✓' : i + 1}
+              </div>
+              <div style={{ fontSize: 9, color: active ? '#a78bfa' : done ? 'var(--accent-green)' : 'var(--text-tertiary)', fontWeight: active ? 700 : 400 }}>
+                {STEP_LABELS[s]}
+              </div>
+            </div>
+            {i < STEP_ORDER.length - 1 && (
+              <div style={{ width: 28, height: 2, background: i < idx ? 'var(--accent-green)' : 'var(--bg3)', margin: '0 2px', marginBottom: 16, transition: 'background 0.3s' }} />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
 
 // ── Persisted state ───────────────────────────────────────────────────────────
 const STATE_KEY = 'hermes-wizard-state';
@@ -365,6 +404,9 @@ export default function InstallWizard({ onComplete }: Props) {
             {step === 'done' && 'All set!'}
           </div>
         </div>
+
+        {/* Step progress dots (hidden during detect) */}
+        <StepDots current={step} />
 
         {/* ── detect ── */}
         {step === 'detect' && (
