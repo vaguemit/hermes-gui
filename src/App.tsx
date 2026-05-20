@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useStore } from './store';
 import { startHealthPolling } from './api/hermes';
+// TODO Phase 2: replace these direct imports with useHermesClient() after lib/hermes merge
 import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp, listSessionsDisk, readSessionDisk, writeSessionDisk } from './api/desktop';
 import type { UpdateInfo } from './api/desktop';
 import Sidebar from './components/Sidebar';
@@ -29,36 +30,136 @@ import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import { PanelRightClose, PanelRight } from 'lucide-react';
 
-export default function App() {
-  const {
-    activeSection,
-    gatewayStatus, setGatewayStatus,
-    rightPanelOpen, setRightPanelOpen,
-    paletteOpen, setPaletteOpen,
-    sessions,
-    toasts, addToast, removeToast,
-  } = useStore();
+// ─── Local hooks ─────────────────────────────────────────────────────────────
 
-  // Wizard state
-  const [wizardDone, setWizardDone] = useState(false);
-  const [checkingInstall, setCheckingInstall] = useState(true);
-  const [showWizard, setShowWizard] = useState(false);
+function useSessionPersistence() {
+  const sessions = useStore(s => s.sessions);
+  const sessionsRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Update banner state
-  const [updateBanner, setUpdateBanner] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo>({ current_version: null, latest_version: null, update_available: false, release_url: null });
+  // Load persisted sessions from disk on startup
+  useEffect(() => {
+    if (!isTauriApp()) return;
+    listSessionsDisk().then(metas => {
+      if (metas.length === 0) return;
+      Promise.all(metas.map(m => readSessionDisk(m.name).catch(() => null))).then(raws => {
+        const loaded = raws
+          .filter((r): r is string => r !== null)
+          .map(r => { try { return JSON.parse(r); } catch { return null; } })
+          .filter(Boolean);
+        if (loaded.length > 0) {
+          useStore.setState(state => ({
+            sessions: loaded,
+            activeSessionId: loaded[0]?.id ?? state.activeSessionId,
+          }));
+        }
+      });
+    }).catch(() => {});
+  }, []);
 
-  // Gateway auto-restart refs
+  // Persist sessions to disk on change (debounced 2s)
+  useEffect(() => {
+    if (!isTauriApp()) return;
+    if (sessionsRef.current) clearTimeout(sessionsRef.current);
+    sessionsRef.current = setTimeout(() => {
+      sessions.forEach(s => {
+        if (s.messages.length > 0) {
+          writeSessionDisk(`${s.id}.json`, JSON.stringify(s)).catch(() => {});
+        }
+      });
+    }, 2000);
+  }, [sessions]);
+}
+
+type GatewayStatus = 'unchecked' | 'connecting' | 'connected' | 'disconnected' | 'error';
+
+function useGatewayRestart(
+  gatewayStatus: GatewayStatus,
+  setGatewayStatus: (s: GatewayStatus) => void,
+) {
+  const { addToast } = useStore();
   const failureCount = useRef(0);
   const gatewayPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastRestartTime = useRef(0);
-  const RESTART_COOLDOWN_MS = 60_000; // Don't restart more than once per minute
-  const FAILURE_THRESHOLD = 5; // Require 5 consecutive failures (2.5 min at 30s intervals)
+  const RESTART_COOLDOWN_MS = 60_000;
+  const FAILURE_THRESHOLD = 5;
 
-  // Check install status on mount — show wizard only in Tauri desktop mode
+  useEffect(() => {
+    if (gatewayStatus !== 'connected') {
+      if (gatewayPollRef.current) {
+        clearInterval(gatewayPollRef.current);
+        gatewayPollRef.current = null;
+      }
+      failureCount.current = 0;
+      return;
+    }
+
+    const tryRestart = async () => {
+      failureCount.current += 1;
+      const now = Date.now();
+      if (failureCount.current >= FAILURE_THRESHOLD && (now - lastRestartTime.current) > RESTART_COOLDOWN_MS) {
+        failureCount.current = 0;
+        lastRestartTime.current = now;
+        await startGateway().catch(() => {});
+        addToast('Gateway restarted automatically', 'info');
+      }
+    };
+
+    gatewayPollRef.current = setInterval(async () => {
+      try {
+        const alive = await getGatewayStatus();
+        if (alive) {
+          failureCount.current = 0;
+        } else {
+          await tryRestart();
+        }
+      } catch {
+        await tryRestart();
+      }
+    }, 30000);
+
+    return () => {
+      if (gatewayPollRef.current) {
+        clearInterval(gatewayPollRef.current);
+        gatewayPollRef.current = null;
+      }
+    };
+  }, [gatewayStatus, addToast]);
+}
+
+function useUpdateCheck() {
+  const [updateBanner, setUpdateBanner] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo>({
+    current_version: null,
+    latest_version: null,
+    update_available: false,
+    release_url: null,
+  });
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      checkUpdate().then(info => {
+        if (info.update_available) {
+          setUpdateInfo(info);
+          setUpdateBanner(true);
+        }
+      }).catch(() => {});
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const dismissBanner = () => setUpdateBanner(false);
+
+  return { updateBanner, updateInfo, dismissBanner };
+}
+
+function useInstallCheck() {
+  const [showWizard, setShowWizard] = useState(false);
+  const [wizardDone, setWizardDone] = useState(false);
+  const [checkingInstall, setCheckingInstall] = useState(true);
+
   useEffect(() => {
     if (!isTauriApp()) {
-      setCheckingInstall(false); // browser preview: skip wizard entirely
+      setCheckingInstall(false);
       return;
     }
     getHermesInstallStatus().then(s => {
@@ -70,6 +171,24 @@ export default function App() {
       setCheckingInstall(false);
     });
   }, []);
+
+  return { showWizard, setShowWizard, wizardDone, setWizardDone, checkingInstall };
+}
+
+export default function App() {
+  const {
+    activeSection,
+    gatewayStatus, setGatewayStatus,
+    rightPanelOpen, setRightPanelOpen,
+    paletteOpen, setPaletteOpen,
+    toasts, removeToast,
+  } = useStore();
+
+  // Install check (wizard)
+  const { showWizard, setShowWizard, wizardDone, setWizardDone, checkingInstall } = useInstallCheck();
+
+  // Update banner
+  const { updateBanner, updateInfo, dismissBanner } = useUpdateCheck();
 
   // Check gateway status on startup using IPC (PID probe) — mirrors reference app.
   // Lazy-auto-starts the gateway exactly like the reference's "lazy-start on first message".
@@ -113,64 +232,8 @@ export default function App() {
     updateTrayStatus(gatewayStatus).catch(() => {});
   }, [gatewayStatus]);
 
-  // Check for updates after 3s
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      checkUpdate().then(info => {
-        if (info.update_available) {
-          setUpdateInfo(info);
-          setUpdateBanner(true);
-        }
-      }).catch(() => {});
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Gateway auto-restart polling — only when connected
-  useEffect(() => {
-    if (gatewayStatus !== 'connected') {
-      if (gatewayPollRef.current) {
-        clearInterval(gatewayPollRef.current);
-        gatewayPollRef.current = null;
-      }
-      failureCount.current = 0;
-      return;
-    }
-
-    gatewayPollRef.current = setInterval(async () => {
-      try {
-        const alive = await getGatewayStatus();
-        if (alive) {
-          failureCount.current = 0;
-        } else {
-          failureCount.current += 1;
-          const now = Date.now();
-          if (failureCount.current >= FAILURE_THRESHOLD && (now - lastRestartTime.current) > RESTART_COOLDOWN_MS) {
-            failureCount.current = 0;
-            lastRestartTime.current = now;
-            await startGateway().catch(() => {});
-            addToast('Gateway restarted automatically', 'info');
-          }
-        }
-      } catch {
-        failureCount.current += 1;
-        const now = Date.now();
-        if (failureCount.current >= FAILURE_THRESHOLD && (now - lastRestartTime.current) > RESTART_COOLDOWN_MS) {
-          failureCount.current = 0;
-          lastRestartTime.current = now;
-          await startGateway().catch(() => {});
-          addToast('Gateway restarted automatically', 'info');
-        }
-      }
-    }, 30000);
-
-    return () => {
-      if (gatewayPollRef.current) {
-        clearInterval(gatewayPollRef.current);
-        gatewayPollRef.current = null;
-      }
-    };
-  }, [gatewayStatus, addToast]);
+  // Gateway auto-restart polling
+  useGatewayRestart(gatewayStatus, setGatewayStatus);
 
   // Global keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -184,40 +247,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  // Load persisted sessions on startup
-  useEffect(() => {
-    if (!isTauriApp()) return;
-    listSessionsDisk().then(metas => {
-      if (metas.length === 0) return;
-      Promise.all(metas.map(m => readSessionDisk(m.name).catch(() => null))).then(raws => {
-        const loaded = raws
-          .filter((r): r is string => r !== null)
-          .map(r => { try { return JSON.parse(r); } catch { return null; } })
-          .filter(Boolean);
-        if (loaded.length > 0) {
-          // Merge with existing empty sessions — replace if disk has data
-          useStore.setState(state => ({
-            sessions: loaded,
-            activeSessionId: loaded[0]?.id ?? state.activeSessionId,
-          }));
-        }
-      });
-    }).catch(() => {});
-  }, []);
-
-  // Persist sessions to disk when they change (debounced via ref)
-  const sessionsRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!isTauriApp()) return;
-    if (sessionsRef.current) clearTimeout(sessionsRef.current);
-    sessionsRef.current = setTimeout(() => {
-      sessions.forEach(s => {
-        if (s.messages.length > 0) {
-          writeSessionDisk(`${s.id}.json`, JSON.stringify(s)).catch(() => {});
-        }
-      });
-    }, 2000); // debounce 2s
-  }, [sessions]);
+  // Session persistence (load from disk + auto-save on change)
+  useSessionPersistence();
 
   const mainContent = () => {
     switch (activeSection) {
@@ -326,7 +357,7 @@ export default function App() {
             <span style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>Update available</span>
             <span style={{ color: 'var(--text-secondary)' }}>{updateInfo.current_version} → {updateInfo.latest_version}</span>
             <button className="btn btn-ghost" style={{ fontSize: 11.5, marginLeft: 'auto' }} onClick={() => runHermesCommand(['update'])}>Update</button>
-            <button onClick={() => setUpdateBanner(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>×</button>
+            <button onClick={dismissBanner} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>×</button>
           </div>
         )}
 
