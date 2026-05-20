@@ -364,6 +364,26 @@ export default function InstallWizard({ onComplete }: Props) {
     }
   }, [step, selectedProvider]);
 
+  // Global keyboard shortcuts: Enter to advance, Escape to go back
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      if (e.key === 'Escape') {
+        if (step === 'provider') return; // no back from provider (first step after install)
+        if (step === 'apikey') goTo('provider');
+        if (step === 'model') goTo('apikey');
+        if (step === 'done') onComplete();
+      }
+      if (e.key === 'Enter' && !isInput) {
+        if (step === 'provider') goTo('apikey');
+        if (step === 'done') onComplete();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [step]);
+
   // ── Step 1: detect existing install ──────────────────────────────────────
   useEffect(() => {
     if (step !== 'detect') return;
