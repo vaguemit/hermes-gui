@@ -850,9 +850,27 @@ export default function InstallWizard({ onComplete }: Props) {
           <div style={{ textAlign: 'center' }}>
             <CheckCircle2 size={48} style={{ color: 'var(--accent-green)', margin: '0 auto 16px' }} />
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Hermes is ready!</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 28, lineHeight: 1.6 }}>
-              Your provider and API key have been saved. Start the Gateway from the Gateway tab, then head to the Chat tab to start a conversation.
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.6 }}>
+              Your provider and model have been saved. Start the Gateway from the Gateway tab, then head to Chat.
             </div>
+
+            {/* Setup summary */}
+            <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px', marginBottom: 24, textAlign: 'left' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Setup summary</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Provider</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{provider.name}</span>
+                </div>
+                {modelName && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Model</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{modelName}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <button
               className="btn btn-primary"
               onClick={onComplete}
