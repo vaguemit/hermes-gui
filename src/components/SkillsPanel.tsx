@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, Skill } from '../store';
 import { Zap, Plus, Edit2, Trash2, Play, X, Save, Copy, Check, CopyPlus } from 'lucide-react';
-import { readFile, writeFile } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
 
 const generateId = () => Math.random().toString(36).slice(2);
 
@@ -14,6 +14,7 @@ const SOURCE_BADGE: Record<string, string> = {
 };
 
 export default function SkillsPanel() {
+  const client = useHermesClient();
   const { skills, addSkill, updateSkill, deleteSkill, setActiveSection } = useStore();
   const [editSkill, setEditSkill] = useState<Skill | null>(null);
   const [newSkill, setNewSkill] = useState(false);
@@ -26,7 +27,7 @@ export default function SkillsPanel() {
 
   // Load persisted skills from disk on mount (overrides defaults if file exists)
   useEffect(() => {
-    readFile(SKILLS_FILE).then(raw => {
+    client.readFile(SKILLS_FILE).then(raw => {
       if (!raw) { setLoaded(true); return; }
       try {
         const parsed: Skill[] = JSON.parse(raw);
@@ -45,7 +46,7 @@ export default function SkillsPanel() {
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      writeFile(SKILLS_FILE, JSON.stringify(skills, null, 2)).catch(() => {});
+      client.writeFile(SKILLS_FILE, JSON.stringify(skills, null, 2)).catch(() => {});
     }, 500);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [skills, loaded]);
