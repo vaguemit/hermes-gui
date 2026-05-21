@@ -1,6 +1,29 @@
 // Shared types for the HermesClient abstraction layer.
 // Field names on structs match Rust serde defaults (snake_case) to avoid mapping overhead.
 
+export type HermesMode = 'local' | 'remote' | 'cli'
+
+export interface ConnectionConfig {
+  mode: HermesMode
+  remoteUrl: string
+  hasApiKey: boolean
+  apiKeyLength: number
+}
+
+export interface SkillMeta {
+  name: string
+  description: string
+  has_skill_md: boolean
+}
+
+export interface CronJobMeta {
+  id: string
+  description: string
+  schedule: string
+  enabled: boolean
+  lastRun?: string
+}
+
 export type GatewayStatus = 'unchecked' | 'connecting' | 'connected' | 'disconnected' | 'error'
 
 export interface HealthStatus {
