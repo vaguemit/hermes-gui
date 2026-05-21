@@ -1,7 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { Bot, CheckCircle2, Copy, GitBranch, Play, Radio, Send, XCircle } from 'lucide-react';
 import { useStore } from '../store';
-import { CommandResult, runHermesCommand, startGateway, streamHermesCommand } from '../api/desktop';
+import type { CommandResult } from '../api/desktop';
+import { streamHermesCommand } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
 import { AGENT_MODES, AgentMode } from '../data/hermesCatalog';
 
 function modeIcon(mode: AgentMode) {
@@ -57,6 +59,7 @@ function ResultBlock({ result, streamLines }: { result: CommandResult | null; st
 }
 
 export default function AgentsPanel() {
+  const client = useHermesClient();
   const { setActiveSection } = useStore();
   const [prompt, setPrompt] = useState('Review this repository and summarize the next useful improvements.');
   const [running, setRunning] = useState<string | null>(null);
@@ -133,7 +136,7 @@ export default function AgentsPanel() {
 
     try {
       if (mode.id === 'gateway') {
-        setResult(await startGateway());
+        setResult(await client.startGateway());
       } else if (mode.id === 'background' || mode.id === 'goal') {
         fillChat(commandFor(mode));
         setResult({
@@ -167,7 +170,7 @@ export default function AgentsPanel() {
         }
         cancelRef.current = null;
       } else {
-        setResult(await runHermesCommand([...mode.args, '--no-color'], 20));
+        setResult(await client.runHermesCommand([...mode.args, '--no-color'], 20));
       }
     } catch (err) {
       setResult({
