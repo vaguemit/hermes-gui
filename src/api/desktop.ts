@@ -360,6 +360,21 @@ export async function deleteProfile(name: string): Promise<void> {
   return invoke<void>('delete_profile', { name });
 }
 
+export interface HermesSkillMeta {
+  name: string;
+  description: string;
+  has_skill_md: boolean;
+}
+
+export async function listHermesSkillsDir(): Promise<HermesSkillMeta[]> {
+  if (!isTauriApp()) return [];
+  try {
+    return await invoke<HermesSkillMeta[]>('list_hermes_skills_dir');
+  } catch {
+    return [];
+  }
+}
+
 export async function listMemoryFiles(): Promise<MemoryFileMeta[]> {
   if (!isTauriApp()) return [];
   return invoke<MemoryFileMeta[]>('list_memory_files');
