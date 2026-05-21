@@ -317,7 +317,7 @@ function StepDots({ current }: { current: Step }) {
 
 // ── Persisted state ───────────────────────────────────────────────────────────
 const STATE_KEY = 'hermes-wizard-state';
-interface PersistedState { step: Step; provider: string }
+interface PersistedState { step: Step; provider: string; model?: string }
 function loadState(): PersistedState {
   try { return JSON.parse(localStorage.getItem(STATE_KEY) ?? '{}'); } catch { return {} as PersistedState; }
 }
@@ -349,7 +349,7 @@ export default function InstallWizard({ onComplete }: Props) {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [baseUrl, setBaseUrl] = useState('http://localhost:1234/v1');
-  const [modelName, setModelName] = useState('');
+  const [modelName, setModelName] = useState(persisted.model ?? '');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
@@ -412,7 +412,7 @@ export default function InstallWizard({ onComplete }: Props) {
 
   function goTo(s: Step) {
     setStep(s);
-    saveState({ step: s, provider: selectedProvider });
+    saveState({ step: s, provider: selectedProvider, model: modelName });
   }
 
   // ── Step 2: run installer ────────────────────────────────────────────────
