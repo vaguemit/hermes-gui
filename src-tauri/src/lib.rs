@@ -107,6 +107,13 @@ struct MemoryFileMeta {
     modified: String,
 }
 
+#[derive(serde::Serialize)]
+struct HermesSkillMeta {
+    name: String,
+    description: String,
+    has_skill_md: bool,
+}
+
 #[derive(Serialize)]
 struct SessionMeta {
     name: String,
@@ -1594,6 +1601,42 @@ fn list_profiles() -> Vec<ProfileMeta> {
 }
 
 #[tauri::command]
+fn list_hermes_skills_dir() -> Vec<HermesSkillMeta> {
+    let dir = hermes_home().join("skills");
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() { continue; }
+            let name = match path.file_name().and_then(|s| s.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            let skill_md_path = path.join("SKILL.md");
+            let has_skill_md = skill_md_path.exists();
+            let description = if has_skill_md {
+                std::fs::read_to_string(&skill_md_path)
+                    .ok()
+                    .and_then(|content| {
+                        content.lines()
+                            .find(|l| {
+                                let t = l.trim();
+                                !t.is_empty() && !t.starts_with('#') && !t.starts_with("---")
+                            })
+                            .map(|l| l.trim().to_string())
+                    })
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            out.push(HermesSkillMeta { name, description, has_skill_md });
+        }
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+#[tauri::command]
 fn read_profile(name: String) -> Result<String, String> {
     validate_name(&name)?;
     std::fs::read_to_string(
@@ -2434,6 +2477,7 @@ pub fn run() {
             ollama_list_models,
             ollama_pull_stream,
             list_profiles,
+            list_hermes_skills_dir,
             read_profile,
             write_profile,
             delete_profile,
