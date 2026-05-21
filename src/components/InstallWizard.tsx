@@ -916,12 +916,34 @@ export default function InstallWizard({ onComplete }: Props) {
               </div>
             </div>
 
+            {/* Next steps checklist */}
+            <div style={{ textAlign: 'left', marginBottom: 20 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Next steps</div>
+              {[
+                { label: 'Go to the Gateway tab and click Start', done: false },
+                { label: 'Open the Chat tab and send a message', done: false },
+              ].map((item, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8, fontSize: 13, color: 'var(--text-secondary)' }}>
+                  <div style={{ width: 20, height: 20, borderRadius: '50%', border: '1.5px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)' }}>
+                    {i + 1}
+                  </div>
+                  {item.label}
+                </div>
+              ))}
+            </div>
+
             <button
               className="btn btn-primary"
               onClick={onComplete}
               style={{ width: '100%', justifyContent: 'center', gap: 8, fontSize: 14 }}
             >
               Open Hermes <ArrowRight size={14} />
+            </button>
+            <button
+              onClick={() => goTo('provider')}
+              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12, marginTop: 10, textDecoration: 'underline', display: 'block', textAlign: 'center', width: '100%' }}
+            >
+              Change provider or model
             </button>
           </div>
         )}
