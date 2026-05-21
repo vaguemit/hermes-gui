@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Globe, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
-// TODO Phase 2: replace with useHermesClient() from ../lib/hermes after client layer merge
-import { getChromeCdpStatus, getGatewayStatus, launchChrome, onGatewayReady, readEnv, readFile, runHermesCommand, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnv, writeEnvVar, writeFile } from '../api/desktop';
-import { checkGatewayHealth } from '../api/hermes';
+import { useHermesClient } from '../lib/hermes';
+import { getChromeCdpStatus, getConnectionApiKey, getConnectionConfig, getGatewayStatus, launchChrome, onGatewayReady, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnvVar } from '../api/desktop';
+import { checkGatewayHealth, setInMemoryConnectionConfig } from '../api/hermes';
 
 /** Isolates gateway IPC calls so they can be swapped to HermesClient in Phase 2. */
 function useGateway() {
@@ -102,6 +102,7 @@ const PLATFORM_FIELDS: Record<string, Array<{ label: string; key: string; type: 
 };
 
 export default function GatewayPanel() {
+  const client = useHermesClient();
   const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId, headedBrowserMode, setHeadedBrowserMode, agentState, setPlatformStatus, addToast } = useStore();
   const gateway = useGateway();
   const [configPlatform, setConfigPlatform] = useState<string | null>(null);
@@ -116,8 +117,7 @@ export default function GatewayPanel() {
 
   // Load persisted tool states from disk on mount
   useEffect(() => {
-    // TODO Phase 2: replace readFile with client.readFile or equivalent
-    readFile('gui-tools.json').then(raw => {
+    client.readFile('gui-tools.json').then(raw => {
       if (!raw) return;
       const saved: Record<string, boolean> = JSON.parse(raw);
       setToolStates(prev => {
@@ -128,7 +128,7 @@ export default function GatewayPanel() {
         return next;
       });
     }).catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [client]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleTool = async (platformId: string, enable: boolean) => {
     setToolStates((prev) => ({
@@ -143,8 +143,7 @@ export default function GatewayPanel() {
     const enabledMap: Record<string, boolean> = Object.fromEntries(
       Object.entries(newStates).map(([id, ts]) => [id, ts.enabled])
     );
-    // TODO Phase 2: replace writeFile with client.writeFile or equivalent
-    writeFile('gui-tools.json', JSON.stringify(enabledMap)).catch(() => {});
+    client.writeFile('gui-tools.json', JSON.stringify(enabledMap)).catch(() => {});
 
     // Clear feedback after 3 seconds
     setTimeout(() => {
@@ -175,7 +174,7 @@ export default function GatewayPanel() {
   const [bhExpanded, setBhExpanded] = useState(false);
 
   useEffect(() => {
-    readEnv().then(env => {
+    client.readEnv().then(env => {
       setBhDomainSkills(env['BH_DOMAIN_SKILLS'] === '1');
       // Restore platform connected status from saved env keys
       Object.entries(PLATFORM_FIELDS).forEach(([platformName, fields]) => {
@@ -192,18 +191,23 @@ export default function GatewayPanel() {
         setRemoteApiKey(env['HERMES_REMOTE_API_KEY']);
       }
     }).catch(() => {
-      // Fallback: check localStorage
-      const saved = localStorage.getItem('hermes_remote_url');
-      if (saved) {
-        setRemoteUrl(saved);
-        setRemoteConnected(true);
-        setRemoteExpanded(true);
-      }
+      // Fallback: load from desktop.json via IPC
+      getConnectionConfig().then(async (cfg) => {
+        if (cfg.remoteUrl) {
+          setRemoteUrl(cfg.remoteUrl);
+          if (cfg.hasApiKey) {
+            const key = await getConnectionApiKey();
+            setRemoteApiKey(key);
+          }
+          setRemoteConnected(cfg.mode === 'remote');
+          if (cfg.mode === 'remote') setRemoteExpanded(true);
+        }
+      }).catch(() => {});
     });
-    runHermesCommand(['run', 'browser-harness', '--help'], 5)
+    client.runHermesCommand(['run', 'browser-harness', '--help'], 5)
       .then(r => setBhInstalled(r.success || r.stdout.includes('browser-harness')))
       .catch(() => setBhInstalled(false));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [client]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const installBrowserHarness = async () => {
     setBhInstalling(true);
@@ -242,12 +246,12 @@ export default function GatewayPanel() {
     if (!configPlatform) { setFormValues({}); setSaveSuccess(false); return; }
     const fields = PLATFORM_FIELDS[configPlatform] || [];
     if (fields.length === 0) return;
-    readEnv().then(env => {
+    client.readEnv().then(env => {
       const existing: Record<string, string> = {};
       fields.forEach(f => { if (env[f.key]) existing[f.key] = env[f.key]; });
       setFormValues(existing);
     }).catch(() => {});
-  }, [configPlatform]);
+  }, [configPlatform, client]);
 
   // Poll CDP every 3s while browser is connected — disconnect if Chrome closes
   useEffect(() => {
@@ -353,7 +357,7 @@ export default function GatewayPanel() {
     setBrowserConnecting(true);
     setBrowserError(null);
     try {
-      const result = await runHermesCommand(['browser', 'connect', cdpUrl], 15);
+      const result = await client.runHermesCommand(['browser', 'connect', cdpUrl], 15);
       if (result.success) {
         setBrowserConnected(true);
         setLocalBrowserUrl(cdpUrl);
@@ -382,7 +386,7 @@ export default function GatewayPanel() {
 
   async function handleBrowserDisconnect() {
     try {
-      await runHermesCommand(['browser', 'disconnect'], 10);
+      await client.runHermesCommand(['browser', 'disconnect'], 10);
     } catch {
       // best-effort
     }
@@ -418,12 +422,12 @@ export default function GatewayPanel() {
   const handleRemoteConnect = async () => {
     if (!remoteUrl.trim()) return;
     try {
-      await writeEnv('HERMES_REMOTE_URL', remoteUrl.trim()).catch(() => {});
+      await client.writeEnv('HERMES_REMOTE_URL', remoteUrl.trim()).catch(() => {});
       if (remoteApiKey.trim()) {
-        await writeEnv('HERMES_REMOTE_API_KEY', remoteApiKey.trim()).catch(() => {});
+        await client.writeEnv('HERMES_REMOTE_API_KEY', remoteApiKey.trim()).catch(() => {});
       }
-      localStorage.setItem('hermes_remote_url', remoteUrl.trim());
-      if (remoteApiKey.trim()) localStorage.setItem('hermes_remote_api_key', remoteApiKey.trim());
+      await client.setConnectionConfig('remote', remoteUrl.trim(), remoteApiKey.trim() || undefined);
+      setInMemoryConnectionConfig(remoteUrl.trim(), remoteApiKey.trim());
       setRemoteConnected(true);
       setRemoteError(null);
       setGatewayStatus('connected');
@@ -434,11 +438,11 @@ export default function GatewayPanel() {
 
   const handleRemoteDisconnect = async () => {
     try {
-      await writeEnv('HERMES_REMOTE_URL', '').catch(() => {});
-      await writeEnv('HERMES_REMOTE_API_KEY', '').catch(() => {});
+      await client.writeEnv('HERMES_REMOTE_URL', '').catch(() => {});
+      await client.writeEnv('HERMES_REMOTE_API_KEY', '').catch(() => {});
     } catch { /* best-effort */ }
-    localStorage.removeItem('hermes_remote_url');
-    localStorage.removeItem('hermes_remote_api_key');
+    await client.setConnectionConfig('local', '', '').catch(() => {});
+    setInMemoryConnectionConfig('', '');
     setRemoteConnected(false);
     setRemoteUrl('');
     setRemoteApiKey('');
@@ -827,7 +831,7 @@ export default function GatewayPanel() {
                       let anyFilled = false;
                       for (const f of fields) {
                         if (formValues[f.key]?.trim()) {
-                          await writeEnv(f.key, formValues[f.key].trim()).catch(() => {});
+                          await client.writeEnv(f.key, formValues[f.key].trim()).catch(() => {});
                           anyFilled = true;
                         }
                       }
