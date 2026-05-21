@@ -316,23 +316,16 @@ function StepDots({ current }: { current: Step }) {
 }
 
 // ── Persisted state ───────────────────────────────────────────────────────────
-const STATE_KEY = 'hermes-wizard-state';
+const SETUP_STATE_FILE = 'gui-setup-state.json';
 interface PersistedState { step: Step; provider: string; model?: string }
-function loadState(): PersistedState {
-  try { return JSON.parse(localStorage.getItem(STATE_KEY) ?? '{}'); } catch { return {} as PersistedState; }
-}
-function saveState(s: PersistedState) {
-  localStorage.setItem(STATE_KEY, JSON.stringify(s));
-}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 interface Props { onComplete: () => void }
 
 export default function InstallWizard({ onComplete }: Props) {
   const client = useHermesClient();
-  const persisted = loadState();
 
-  const [step, setStep] = useState<Step>(persisted.step || 'detect');
+  const [step, setStep] = useState<Step>('detect');
   const [status, setStatus] = useState<HermesInstallStatus | null>(null);
   const [detectMsg, setDetectMsg] = useState('');
   const [installLines, setInstallLines] = useState<string[]>([]);
@@ -346,11 +339,28 @@ export default function InstallWizard({ onComplete }: Props) {
   const [logCopied, setLogCopied] = useState(false);
   const [existingKeys, setExistingKeys] = useState<ApiKeyStatus | null>(null);
 
-  const [selectedProvider, setSelectedProvider] = useState(persisted.provider || 'openrouter');
+  const [selectedProvider, setSelectedProvider] = useState('openrouter');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [baseUrl, setBaseUrl] = useState('http://localhost:1234/v1');
-  const [modelName, setModelName] = useState(persisted.model ?? '');
+  const [modelName, setModelName] = useState('');
+
+  // Load persisted wizard state from hermes home on mount
+  useEffect(() => {
+    client.readFile(SETUP_STATE_FILE).then(raw => {
+      try {
+        const s = JSON.parse(raw) as Partial<PersistedState>;
+        if (s.step) setStep(s.step);
+        if (s.provider) setSelectedProvider(s.provider);
+        if (s.model) setModelName(s.model);
+      } catch { /* ignore malformed state */ }
+    }).catch(() => { /* no saved state */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function saveState(s: PersistedState) {
+    client.writeFile(SETUP_STATE_FILE, JSON.stringify(s)).catch(() => {});
+  }
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
@@ -528,7 +538,7 @@ export default function InstallWizard({ onComplete }: Props) {
       const configProvider = isLocal ? 'custom' : provider.configProvider;
       const configBase = isLocal ? baseUrl.trim() : provider.baseUrl;
       await client.setModelConfig(configProvider, modelName.trim(), configBase);
-      localStorage.removeItem(STATE_KEY);
+      client.writeFile(SETUP_STATE_FILE, '{}').catch(() => {});
       goTo('done');
     } catch (e) {
       setModelSaveError(e instanceof Error ? e.message : String(e));
@@ -717,7 +727,7 @@ export default function InstallWizard({ onComplete }: Props) {
               </button>
               <button
                 className="btn btn-ghost"
-                onClick={() => { localStorage.removeItem(STATE_KEY); onComplete(); }}
+                onClick={() => { client.writeFile(SETUP_STATE_FILE, '{}').catch(() => {}); onComplete(); }}
                 style={{ fontSize: 13, whiteSpace: 'nowrap' }}
               >
                 Skip for now
