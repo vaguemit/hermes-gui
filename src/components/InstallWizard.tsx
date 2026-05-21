@@ -639,6 +639,14 @@ export default function InstallWizard({ onComplete }: Props) {
                 }
               </button>
             )}
+            {!installing && (
+              <button
+                onClick={() => goTo('provider')}
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, marginTop: 12, textDecoration: 'underline', display: 'block', textAlign: 'center', width: '100%' }}
+              >
+                Already installed? Skip to provider setup
+              </button>
+            )}
           </>
         )}
 
