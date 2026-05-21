@@ -3,7 +3,6 @@ import {
   ArrowRight, CheckCircle2, Clipboard, Download, ExternalLink, Eye, EyeOff,
   Loader2, RefreshCw, XCircle, ChevronLeft,
 } from 'lucide-react';
-import { streamInstallHermes } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import type { ApiKeyStatus, HermesInstallStatus } from '../lib/hermes';
 
@@ -434,7 +433,7 @@ export default function InstallWizard({ onComplete }: Props) {
     setInstallElapsed(0);
     elapsedRef.current = setInterval(() => setInstallElapsed(s => s + 1), 1000);
     try {
-      const result = await streamInstallHermes((line) => {
+      const result = await client.installHermes((line) => {
         setInstallLines((prev) => [...prev, line]);
         // Auto-scroll log to bottom
         if (installLogRef.current) {
