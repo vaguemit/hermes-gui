@@ -115,34 +115,36 @@ function MessageBubble({ msg }: { msg: Message }) {
   );
 }
 
-function exportSessionToMarkdown(messages: Message[]): string {
-  const lines: string[] = [];
+function generateMarkdownExport(messages: Message[]): string {
+  const header = `# Hermes Chat Export\n\nExported: ${new Date().toISOString()}\n\n---\n\n`;
+  const lines: string[] = [header];
   for (const msg of messages) {
-    const ts = formatTimestamp(msg.timestamp);
+    const ts = msg.timestamp ? `\n\n*${formatTimestamp(msg.timestamp)}*` : '';
     if (msg.type === 'reasoning') {
       const clean = msg.content.replace(/<think>|<\/think>|^Thinking:\s*/gi, '').trim();
-      lines.push(`## reasoning ${ts}\n\n> ${clean.replace(/\n/g, '\n> ')}\n`);
+      lines.push(`## Reasoning\n\n> ${clean.replace(/\n/g, '\n> ')}${ts}\n\n`);
     } else if (msg.type === 'tool_call' || msg.type === 'tool_output') {
-      lines.push(`## ${msg.role} ${ts}\n\n\`\`\`json\n${msg.content}\n\`\`\`\n`);
+      const toolName = msg.toolCalls?.[0]?.name ?? 'Tool Call';
+      lines.push(`## Tool: ${toolName}\n\n\`\`\`json\n${msg.content}\n\`\`\`${ts}\n\n`);
       if (msg.toolCalls && msg.toolCalls.length > 0) {
         for (const tc of msg.toolCalls) {
-          lines.push(`### tool: ${tc.name}\n`);
-          if (tc.input) lines.push(`**Input:**\n\`\`\`json\n${tc.input}\n\`\`\`\n`);
-          if (tc.output) lines.push(`**Output:**\n\`\`\`json\n${tc.output}\n\`\`\`\n`);
+          if (tc.input) lines.push(`**Input:**\n\`\`\`json\n${tc.input}\n\`\`\`\n\n`);
+          if (tc.output) lines.push(`**Output:**\n\`\`\`json\n${tc.output}\n\`\`\`\n\n`);
         }
       }
-    } else {
-      lines.push(`## ${msg.role} ${ts}\n\n${msg.content}\n`);
+    } else if (msg.type === 'prose' && (msg.role === 'user' || msg.role === 'assistant')) {
+      const label = msg.role === 'user' ? 'User' : 'Assistant';
+      lines.push(`## ${label}\n\n${msg.content}${ts}\n\n`);
       if (msg.toolCalls && msg.toolCalls.length > 0) {
         for (const tc of msg.toolCalls) {
-          lines.push(`### tool: ${tc.name}\n`);
-          if (tc.input) lines.push(`**Input:**\n\`\`\`json\n${tc.input}\n\`\`\`\n`);
-          if (tc.output) lines.push(`**Output:**\n\`\`\`json\n${tc.output}\n\`\`\`\n`);
+          lines.push(`### Tool: ${tc.name}\n\n`);
+          if (tc.input) lines.push(`**Input:**\n\`\`\`json\n${tc.input}\n\`\`\`\n\n`);
+          if (tc.output) lines.push(`**Output:**\n\`\`\`json\n${tc.output}\n\`\`\`\n\n`);
         }
       }
     }
   }
-  return lines.join('\n');
+  return lines.join('');
 }
 
 function isUrl(s: string): boolean {
@@ -226,7 +228,7 @@ export default function ConversationPanel() {
   const handleStop = () => { abortRef.current?.abort(); setIsRunning(false); setAgentState('idle'); };
 
   const handleExport = () => {
-    const md = exportSessionToMarkdown(messages);
+    const md = generateMarkdownExport(messages);
     const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -542,7 +544,7 @@ export default function ConversationPanel() {
         <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 20px 0', borderBottom: '1px solid var(--border)' }}>
           <button className="btn btn-ghost btn-sm" onClick={handleExport} title="Export session to Markdown" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <Download size={13} />
-            Export
+            Export ↗
           </button>
         </div>
       )}
