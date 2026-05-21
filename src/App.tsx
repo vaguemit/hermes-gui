@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useStore } from './store';
-import { startHealthPolling, setInMemoryConnectionConfig, setInMemoryGatewayPort } from './api/hermes';
-import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp, listSessionsDisk, readSessionDisk, writeSessionDisk, getConnectionConfig, getConnectionApiKey, getGatewayPort } from './api/desktop';
+import { startHealthPolling, setInMemoryGatewayPort } from './api/hermes';
+import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp, listSessionsDisk, readSessionDisk, writeSessionDisk } from './api/desktop';
 import { HermesProvider, useHermesClient } from './lib/hermes';
 import type { UpdateInfo } from './api/desktop';
 import Sidebar from './components/Sidebar';
@@ -226,14 +226,9 @@ function AppInner() {
       }
     }).catch(() => setGatewayStatus('disconnected'));
     startHealthPolling();
-    // Load connection config and gateway port from desktop.json into memory
-    getConnectionConfig().then(async (cfg) => {
-      if (cfg.mode === 'remote' && cfg.remoteUrl) {
-        const key = await getConnectionApiKey();
-        setInMemoryConnectionConfig(cfg.remoteUrl, key);
-      }
-    }).catch(() => {});
-    getGatewayPort().then(port => setInMemoryGatewayPort(port)).catch(() => {});
+    // Load gateway port from desktop.json into memory for health-polling URL
+    client.getGatewayPort().then(port => setInMemoryGatewayPort(port)).catch(() => {});
+    // Connection config is loaded by HermesProvider at startup
   }, []);
 
   // Mirror gateway status to system tray menu
