@@ -93,3 +93,8 @@ export function useHermesContext(): HermesContextValue {
 export function useHermesClient(): HermesClient {
   return useHermesContext().client
 }
+
+/** Convenience hook that returns the current connection mode without requiring the full context. */
+export function useHermesMode(): HermesMode {
+  return useHermesContext().mode
+}

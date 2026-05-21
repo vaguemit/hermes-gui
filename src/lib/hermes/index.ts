@@ -21,7 +21,7 @@ export function getHermesClient() {
 }
 
 // Re-export primary surfaces so components only need one import path
-export { HermesProvider, HermesClientContext, useHermesClient, useHermesContext } from './provider'
+export { HermesProvider, HermesClientContext, useHermesClient, useHermesContext, useHermesMode } from './provider'
 export type { HermesContextValue } from './provider'
 export type { HermesClient } from './client'
 export * from './types'
