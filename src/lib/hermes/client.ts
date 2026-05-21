@@ -78,4 +78,8 @@ export interface HermesClient {
   // Connection config
   getConnectionConfig(): Promise<ConnectionConfig>
   setConnectionConfig(mode: 'local' | 'remote', remoteUrl: string, apiKey?: string): Promise<void>
+
+  // Gateway port
+  getGatewayPort(): Promise<number>
+  setGatewayPort(port: number): Promise<void>
 }
