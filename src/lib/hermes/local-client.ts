@@ -2,6 +2,7 @@ import type { HermesClient } from './client'
 import type {
   HealthStatus, HermesInstallStatus, CommandResult, ChatMessage, StreamEvent,
   SessionMeta, ProfileMeta, ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
+  SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
 } from './types'
 import {
   getHermesInstallStatus,
@@ -16,8 +17,13 @@ import {
   readEnv as ipcReadEnv, writeEnv as ipcWriteEnv,
   getModelConfig as ipcGetModelConfig, setModelConfig as ipcSetModelConfig,
   detectApiKeys as ipcDetectApiKeys, runHermesDoctor, checkUpdate as ipcCheckUpdate,
+  runHermesCommand as ipcRunHermesCommand,
+  listMemoryFiles as ipcListMemoryFiles, readMemoryFile as ipcReadMemoryFile,
+  deleteMemoryFile as ipcDeleteMemoryFile,
+  listHermesSkillsDir,
+  getConnectionConfig as ipcGetConnectionConfig, setConnectionConfig as ipcSetConnectionConfig,
 } from '../../api/desktop'
-import { checkHealth, streamChat as gatewayStreamChat } from '../../api/hermes'
+import { checkHealth, checkGatewayHealth, fetchModels as gatewayFetchModels, streamChat as gatewayStreamChat } from '../../api/hermes'
 
 export class LocalHermesClient implements HermesClient {
   async getHealth(): Promise<HealthStatus> {
@@ -104,4 +110,40 @@ export class LocalHermesClient implements HermesClient {
   async detectApiKeys(): Promise<ApiKeyStatus> { return ipcDetectApiKeys() }
   async runDoctor(): Promise<DoctorResult> { return runHermesDoctor() }
   async checkUpdate(): Promise<UpdateInfo> { return ipcCheckUpdate() }
+
+  async getGatewayLatency(): Promise<number | null> {
+    const { healthy, latencyMs } = await checkGatewayHealth()
+    return healthy ? latencyMs : null
+  }
+
+  async fetchModels(): Promise<string[]> {
+    return gatewayFetchModels()
+  }
+
+  async runHermesCommand(args: string[], timeoutSecs = 45): Promise<CommandResult> {
+    return ipcRunHermesCommand(args, timeoutSecs)
+  }
+
+  async listMemoryFiles(): Promise<MemoryFileMeta[]> { return ipcListMemoryFiles() }
+  async readMemoryFile(name: string): Promise<string> { return ipcReadMemoryFile(name) }
+  async deleteMemoryFile(name: string): Promise<void> { return ipcDeleteMemoryFile(name) }
+
+  async listSkills(): Promise<SkillMeta[]> {
+    const raw = await listHermesSkillsDir()
+    return raw.map(s => ({ name: s.name, description: s.description, has_skill_md: s.has_skill_md }))
+  }
+
+  async listCronJobs(): Promise<CronJobMeta[]> {
+    // Cron jobs are stored in gui-state via store; no IPC command yet — return empty
+    return []
+  }
+
+  async getConnectionConfig(): Promise<ConnectionConfig> {
+    const raw = await ipcGetConnectionConfig()
+    return { mode: raw.mode, remoteUrl: raw.remoteUrl, hasApiKey: raw.hasApiKey, apiKeyLength: raw.apiKeyLength }
+  }
+
+  async setConnectionConfig(mode: 'local' | 'remote', remoteUrl: string, apiKey?: string): Promise<void> {
+    return ipcSetConnectionConfig(mode, remoteUrl, apiKey)
+  }
 }
