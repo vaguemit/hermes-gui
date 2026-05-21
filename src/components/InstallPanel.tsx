@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, Clipboard, Download, Play, RefreshCw, Settings, Terminal, XCircle } from 'lucide-react';
-import { CommandResult, runHermesCommand, streamInstallHermes } from '../api/desktop';
+import type { CommandResult } from '../api/desktop';
+import { streamInstallHermes } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import type { HermesInstallStatus } from '../lib/hermes';
 import { CLI_COMMANDS } from '../data/hermesCatalog';
@@ -220,7 +221,7 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
             <Play size={13} /> Configure Provider
           </button>
           {safeAdminCommands.map((cmd) => (
-            <button key={cmd.id} className="btn btn-ghost" onClick={() => runAction(cmd.id, () => runHermesCommand(cmd.args, cmd.id === 'doctor' ? 120 : 45))} disabled={running !== null} style={{ fontSize: 12.5 }}>
+            <button key={cmd.id} className="btn btn-ghost" onClick={() => runAction(cmd.id, () => client.runHermesCommand(cmd.args, cmd.id === 'doctor' ? 120 : 45))} disabled={running !== null} style={{ fontSize: 12.5 }}>
               {running === cmd.id ? 'Running...' : cmd.title}
             </button>
           ))}
