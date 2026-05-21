@@ -77,15 +77,7 @@ export default function CronPanel() {
   useEffect(() => {
     if (!isTauriApp()) return;
 
-    // Load GUI-created crons
-    client.readFile('gui-crons.json').then(raw => {
-      const loaded: CronJobWithMode[] = JSON.parse(raw);
-      if (Array.isArray(loaded) && loaded.length > 0) {
-        useStore.setState({ crons: loaded });
-      }
-    }).catch(() => {}); // file may not exist yet
-
-    // Load hermes-native cron jobs from cron/jobs.json
+    // Load cron jobs from hermes-native cron/jobs.json
     client.readFile('cron/jobs.json').then(raw => {
       const nativeJobs = JSON.parse(raw);
       if (!Array.isArray(nativeJobs)) return;
@@ -116,13 +108,24 @@ export default function CronPanel() {
     }).catch(() => {}); // file may not exist
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persist crons to disk whenever they change
+  // Persist crons to disk in hermes-native format so hermes scheduler can execute them
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!isTauriApp()) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      client.writeFile('gui-crons.json', JSON.stringify(crons)).catch(() => {});
+      const nativeCrons = crons.map(c => ({
+        id: c.id,
+        prompt: c.description,
+        name: c.description,
+        schedule_display: c.schedule,
+        schedule: c.schedule,
+        deliver: [c.platform],
+        enabled: c.active,
+        state: c.active ? 'idle' : 'paused',
+        last_run_at: c.lastRun ?? null,
+      }));
+      client.writeFile('cron/jobs.json', JSON.stringify(nativeCrons, null, 2)).catch(() => {});
     }, 800);
   }, [crons]);
 
