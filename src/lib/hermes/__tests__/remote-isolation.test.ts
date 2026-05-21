@@ -61,6 +61,8 @@ async function run() {
     { name: 'setConnectionConfig', call: () => client.setConnectionConfig('local', '') },
     { name: 'streamCommand', call: () => client.streamCommand(['status'], () => {}) },
     { name: 'installHermes', call: () => client.installHermes(() => {}) },
+    { name: 'getGatewayPort', call: () => client.getGatewayPort() },
+    { name: 'setGatewayPort', call: () => client.setGatewayPort(8642) },
   ]
 
   for (const m of ipcOnlyMethods) {
