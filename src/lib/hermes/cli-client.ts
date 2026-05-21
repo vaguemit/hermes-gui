@@ -2,38 +2,145 @@ import type { HermesClient } from './client'
 import type {
   HealthStatus, HermesInstallStatus, CommandResult, ChatMessage, StreamEvent,
   SessionMeta, ProfileMeta, ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
+  SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
 } from './types'
+import { UnsupportedCapabilityError } from './errors'
+import {
+  getHermesInstallStatus,
+  startGateway as ipcStartGateway,
+  stopGateway as ipcStopGateway,
+  getGatewayStatus as ipcGetGatewayStatus,
+  listSessionsDisk, readSessionDisk, writeSessionDisk, deleteSessionDisk, clearAllSessionsDisk,
+  listProfiles as ipcListProfiles, readProfile as ipcReadProfile,
+  writeProfile as ipcWriteProfile, deleteProfile as ipcDeleteProfile,
+  readFile as ipcReadFile, writeFile as ipcWriteFile,
+  readConfig as ipcReadConfig, writeConfig as ipcWriteConfig,
+  readEnv as ipcReadEnv, writeEnv as ipcWriteEnv,
+  getModelConfig as ipcGetModelConfig, setModelConfig as ipcSetModelConfig,
+  detectApiKeys as ipcDetectApiKeys, runHermesDoctor, checkUpdate as ipcCheckUpdate,
+  runHermesCommand as ipcRunHermesCommand,
+  listMemoryFiles as ipcListMemoryFiles, readMemoryFile as ipcReadMemoryFile,
+  deleteMemoryFile as ipcDeleteMemoryFile,
+  listHermesSkillsDir,
+  getConnectionConfig as ipcGetConnectionConfig, setConnectionConfig as ipcSetConnectionConfig,
+} from '../../api/desktop'
 
-// Placeholder — CLI-only operations (no HTTP gateway) will be implemented here.
+// CLI mode: delegates file/config ops to IPC like LocalHermesClient,
+// but chat goes through the hermes CLI process rather than the HTTP gateway.
 export class CliHermesClient implements HermesClient {
-  private notImplemented(): never {
-    throw new Error('CLI client mode is not yet implemented. Use the local gateway client.')
+  async getHealth(): Promise<HealthStatus> {
+    const running = await ipcGetGatewayStatus()
+    return { healthy: running }
   }
 
-  getHealth(): Promise<HealthStatus> { return this.notImplemented() }
-  getInstallStatus(): Promise<HermesInstallStatus> { return this.notImplemented() }
-  startGateway(): Promise<CommandResult> { return this.notImplemented() }
-  stopGateway(): Promise<CommandResult> { return this.notImplemented() }
-  getGatewayStatus(): Promise<boolean> { return this.notImplemented() }
-  streamChat(_m: ChatMessage[], _model: string, _cb: (e: StreamEvent) => void, _sig?: AbortSignal): Promise<void> { return this.notImplemented() }
-  listSessions(): Promise<SessionMeta[]> { return this.notImplemented() }
-  readSession(_n: string): Promise<string> { return this.notImplemented() }
-  writeSession(_n: string, _c: string): Promise<void> { return this.notImplemented() }
-  deleteSession(_n: string): Promise<void> { return this.notImplemented() }
-  clearAllSessions(): Promise<number> { return this.notImplemented() }
-  listProfiles(): Promise<ProfileMeta[]> { return this.notImplemented() }
-  readProfile(_n: string): Promise<string> { return this.notImplemented() }
-  writeProfile(_n: string, _c: string): Promise<void> { return this.notImplemented() }
-  deleteProfile(_n: string): Promise<void> { return this.notImplemented() }
-  readFile(_p: string): Promise<string> { return this.notImplemented() }
-  writeFile(_p: string, _c: string): Promise<void> { return this.notImplemented() }
-  readConfig(): Promise<string> { return this.notImplemented() }
-  writeConfig(_c: string): Promise<void> { return this.notImplemented() }
-  readEnv(): Promise<Record<string, string>> { return this.notImplemented() }
-  writeEnv(_k: string, _v: string): Promise<void> { return this.notImplemented() }
-  getModelConfig(): Promise<ModelConfig> { return this.notImplemented() }
-  setModelConfig(_p: string, _m: string, _b: string): Promise<void> { return this.notImplemented() }
-  detectApiKeys(): Promise<ApiKeyStatus> { return this.notImplemented() }
-  runDoctor(): Promise<DoctorResult> { return this.notImplemented() }
-  checkUpdate(): Promise<UpdateInfo> { return this.notImplemented() }
+  async getInstallStatus(): Promise<HermesInstallStatus> { return getHermesInstallStatus() }
+  async startGateway(): Promise<CommandResult> { return ipcStartGateway() }
+  async stopGateway(): Promise<CommandResult> { return ipcStopGateway() }
+  async getGatewayStatus(): Promise<boolean> { return ipcGetGatewayStatus() }
+
+  async streamChat(
+    messages: ChatMessage[],
+    _model: string,
+    onEvent: (e: StreamEvent) => void,
+    _signal?: AbortSignal,
+  ): Promise<void> {
+    // CLI mode sends the last user message through `hermes chat -q`.
+    // Multi-turn context is limited to the final message for now.
+    const last = messages.filter(m => m.role === 'user').pop()
+    if (!last) { onEvent({ type: 'done' }); return }
+
+    const { listen } = await import('@tauri-apps/api/event')
+    const eventId = `cli-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const { chatCli } = await import('../../api/desktop')
+
+    await new Promise<void>((resolve, reject) => {
+      listen<string>(`chat-chunk-${eventId}`, ev => {
+        onEvent({ type: 'delta', content: ev.payload })
+      }).then(unlistenChunk => {
+        listen<string>(`chat-done-${eventId}`, () => {
+          unlistenChunk()
+          onEvent({ type: 'done' })
+          resolve()
+        }).then(unlistenDone => {
+          listen<string>(`chat-error-${eventId}`, ev => {
+            unlistenChunk()
+            unlistenDone()
+            onEvent({ type: 'error', message: ev.payload })
+            reject(new Error(ev.payload))
+          }).then(() => {
+            chatCli(eventId, last.content, null).catch(reject)
+          }).catch(reject)
+        }).catch(reject)
+      }).catch(reject)
+    })
+  }
+
+  async listSessions(): Promise<SessionMeta[]> { return listSessionsDisk() }
+  async readSession(name: string): Promise<string> { return readSessionDisk(name) }
+  async writeSession(name: string, content: string): Promise<void> { return writeSessionDisk(name, content) }
+  async deleteSession(name: string): Promise<void> { return deleteSessionDisk(name) }
+  async clearAllSessions(): Promise<number> { return clearAllSessionsDisk() }
+
+  async listProfiles(): Promise<ProfileMeta[]> { return ipcListProfiles() }
+  async readProfile(name: string): Promise<string> { return ipcReadProfile(name) }
+  async writeProfile(name: string, content: string): Promise<void> { return ipcWriteProfile(name, content) }
+  async deleteProfile(name: string): Promise<void> { return ipcDeleteProfile(name) }
+
+  async readFile(path: string): Promise<string> { return ipcReadFile(path) }
+  async writeFile(path: string, content: string): Promise<void> { return ipcWriteFile(path, content) }
+
+  async readConfig(): Promise<string> { return ipcReadConfig() }
+  async writeConfig(content: string): Promise<void> { return ipcWriteConfig(content) }
+  async readEnv(): Promise<Record<string, string>> { return ipcReadEnv() }
+  async writeEnv(key: string, value: string): Promise<void> { return ipcWriteEnv(key, value) }
+
+  async getModelConfig(): Promise<ModelConfig> { return ipcGetModelConfig() }
+  async setModelConfig(provider: string, model: string, baseUrl: string): Promise<void> {
+    return ipcSetModelConfig(provider, model, baseUrl)
+  }
+
+  async detectApiKeys(): Promise<ApiKeyStatus> { return ipcDetectApiKeys() }
+  async runDoctor(): Promise<DoctorResult> { return runHermesDoctor() }
+  async checkUpdate(): Promise<UpdateInfo> { return ipcCheckUpdate() }
+
+  async getGatewayLatency(): Promise<number | null> { return null }
+
+  async fetchModels(): Promise<string[]> {
+    const result = await ipcRunHermesCommand(['models', 'list', '--json'], 10).catch(() => null)
+    if (!result?.success) return []
+    try {
+      const parsed = JSON.parse(result.stdout)
+      return Array.isArray(parsed) ? parsed.map((m: { id?: string; name?: string }) => m.id || m.name || '').filter(Boolean) : []
+    } catch {
+      return []
+    }
+  }
+
+  async runHermesCommand(args: string[], timeoutSecs = 45): Promise<CommandResult> {
+    return ipcRunHermesCommand(args, timeoutSecs)
+  }
+
+  async listMemoryFiles(): Promise<MemoryFileMeta[]> { return ipcListMemoryFiles() }
+  async readMemoryFile(name: string): Promise<string> { return ipcReadMemoryFile(name) }
+  async deleteMemoryFile(name: string): Promise<void> { return ipcDeleteMemoryFile(name) }
+
+  async listSkills(): Promise<SkillMeta[]> {
+    const raw = await listHermesSkillsDir()
+    return raw.map(s => ({ name: s.name, description: s.description, has_skill_md: s.has_skill_md }))
+  }
+
+  async listCronJobs(): Promise<CronJobMeta[]> { return [] }
+
+  async getConnectionConfig(): Promise<ConnectionConfig> {
+    const raw = await ipcGetConnectionConfig()
+    return { mode: raw.mode, remoteUrl: raw.remoteUrl, hasApiKey: raw.hasApiKey, apiKeyLength: raw.apiKeyLength }
+  }
+
+  async setConnectionConfig(mode: 'local' | 'remote', remoteUrl: string, apiKey?: string): Promise<void> {
+    return ipcSetConnectionConfig(mode, remoteUrl, apiKey)
+  }
+
+  private _unsupported(cap: string): never { throw new UnsupportedCapabilityError(cap, 'cli') }
+  // Keep for future-proofing — no methods use this yet
+  _placeholder(): void { this._unsupported('placeholder') }
 }
