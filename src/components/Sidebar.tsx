@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
+import { useHermesContext } from '../lib/hermes';
 import { formatTimestamp } from '../utils/parser';
 import {
   MessageSquare, Radio, Clock, Zap, Settings, Plus,
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
 ] as const;
 
 export default function Sidebar() {
+  const { mode } = useHermesContext();
   const {
     activeSection, setActiveSection, gatewayStatus, agentState,
     activeModel, setModelSwitcherOpen, sessions, activeSessionId,
@@ -78,6 +80,11 @@ export default function Sidebar() {
           <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-primary)' }}>
             {gatewayStatus === 'connected' ? agentLabel : statusLabel}
           </span>
+          {mode !== 'local' && (
+            <span className={`badge ${mode === 'remote' ? 'badge-info' : 'badge-beta'}`} style={{ fontSize: 10, padding: '1px 5px', marginLeft: 'auto' }}>
+              {mode}
+            </span>
+          )}
         </div>
         <button
           onClick={() => setModelSwitcherOpen(true)}
