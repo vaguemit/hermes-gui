@@ -1,13 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { User, Brain, Plus, Trash2, Edit2, X, Eye, Copy } from 'lucide-react';
-import {
-  listMemoryFiles,
-  readMemoryFile,
-  deleteMemoryFile,
-} from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
-import type { ProfileMeta } from '../lib/hermes';
-import type { MemoryFileMeta } from '../api/desktop';
+import type { ProfileMeta, MemoryFileMeta } from '../lib/hermes';
 
 const DEFAULT_PROFILE_CONTENT = `# Profile
 
@@ -63,20 +57,20 @@ export default function ProfilesPanel() {
     } finally {
       setProfilesLoading(false);
     }
-  }, []);
+  }, [client]);
 
   // ── Load memory files ──
   const loadMemFiles = useCallback(async () => {
     setMemLoading(true);
     try {
-      const data = await listMemoryFiles();
+      const data = await client.listMemoryFiles();
       setMemFiles(data);
     } catch {
       setMemFiles([]);
     } finally {
       setMemLoading(false);
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     loadProfiles();
@@ -137,7 +131,7 @@ export default function ProfilesPanel() {
     setPreviewFile(name);
     setPreviewLoading(true);
     try {
-      const content = await readMemoryFile(name);
+      const content = await client.readMemoryFile(name);
       setPreviewContent(content);
     } catch {
       setPreviewContent('Failed to load file.');
@@ -149,7 +143,7 @@ export default function ProfilesPanel() {
   // ── Memory delete ──
   const handleMemDelete = async (name: string) => {
     if (memConfirmDelete !== name) { setMemConfirmDelete(name); return; }
-    await deleteMemoryFile(name);
+    await client.deleteMemoryFile(name);
     setMemConfirmDelete(null);
     await loadMemFiles();
   };

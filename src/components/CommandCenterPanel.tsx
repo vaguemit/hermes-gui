@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Copy, Play, Search, Terminal, XCircle } from 'lucide-react';
-import { CommandResult, runHermesCommand } from '../api/desktop';
+import type { CommandResult } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
 import { CLI_COMMANDS, CliCommand } from '../data/hermesCatalog';
 
 // Commands that start an interactive prompt_toolkit session.
@@ -59,6 +60,7 @@ function ResultBlock({ result }: { result: CommandResult | null }) {
 }
 
 export default function CommandCenterPanel() {
+  const client = useHermesClient();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>('All');
   const [selected, setSelected] = useState<CliCommand>(CLI_COMMANDS[0]);
@@ -104,7 +106,7 @@ export default function CommandCenterPanel() {
     setRunning(true);
     setResult(null);
     try {
-      setResult(await runHermesCommand(safeArgs, selected.safeToRun ? 90 : 30));
+      setResult(await client.runHermesCommand(safeArgs, selected.safeToRun ? 90 : 30));
     } catch (err) {
       setResult({
         success: false,
