@@ -25,6 +25,7 @@ import {
   deleteMemoryFile as ipcDeleteMemoryFile,
   listHermesSkillsDir,
   getConnectionConfig as ipcGetConnectionConfig, setConnectionConfig as ipcSetConnectionConfig,
+  getGatewayPort as ipcGetGatewayPort, setGatewayPort as ipcSetGatewayPort,
 } from '../../api/desktop'
 
 // CLI mode: delegates file/config ops to IPC like LocalHermesClient,
@@ -150,4 +151,6 @@ export class CliHermesClient implements HermesClient {
     return ipcSetConnectionConfig(mode, remoteUrl, apiKey)
   }
 
+  async getGatewayPort(): Promise<number> { return ipcGetGatewayPort() }
+  async setGatewayPort(port: number): Promise<void> { return ipcSetGatewayPort(port) }
 }

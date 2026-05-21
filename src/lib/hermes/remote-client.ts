@@ -176,6 +176,8 @@ export class RemoteHermesClient implements HermesClient {
   runHermesCommand(_a: string[], _t?: number): Promise<CommandResult> { return this.unsupported('runHermesCommand') }
   streamCommand(_a: string[], _cb: (l: string) => void, _t?: number): Promise<CommandResult> { return this.unsupported('streamCommand') }
   installHermes(_cb: (l: string) => void): Promise<CommandResult> { return this.unsupported('installHermes') }
+  getGatewayPort(): Promise<number> { return this.unsupported('getGatewayPort') }
+  setGatewayPort(_p: number): Promise<void> { return this.unsupported('setGatewayPort') }
   listMemoryFiles(): Promise<MemoryFileMeta[]> { return this.unsupported('listMemoryFiles') }
   readMemoryFile(_n: string): Promise<string> { return this.unsupported('readMemoryFile') }
   deleteMemoryFile(_n: string): Promise<void> { return this.unsupported('deleteMemoryFile') }
