@@ -2,6 +2,7 @@ import type {
   HealthStatus, HermesInstallStatus, CommandResult,
   ChatMessage, StreamEvent, SessionMeta, ProfileMeta,
   ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
+  SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
 } from './types'
 
 export interface HermesClient {
@@ -53,4 +54,26 @@ export interface HermesClient {
   detectApiKeys(): Promise<ApiKeyStatus>
   runDoctor(): Promise<DoctorResult>
   checkUpdate(): Promise<UpdateInfo>
+
+  // Gateway metrics
+  getGatewayLatency(): Promise<number | null>
+  fetchModels(): Promise<string[]>
+
+  // CLI command execution
+  runHermesCommand(args: string[], timeoutSecs?: number): Promise<CommandResult>
+
+  // Memory files
+  listMemoryFiles(): Promise<MemoryFileMeta[]>
+  readMemoryFile(name: string): Promise<string>
+  deleteMemoryFile(name: string): Promise<void>
+
+  // Skills
+  listSkills(): Promise<SkillMeta[]>
+
+  // Cron jobs
+  listCronJobs(): Promise<CronJobMeta[]>
+
+  // Connection config
+  getConnectionConfig(): Promise<ConnectionConfig>
+  setConnectionConfig(mode: 'local' | 'remote', remoteUrl: string, apiKey?: string): Promise<void>
 }
