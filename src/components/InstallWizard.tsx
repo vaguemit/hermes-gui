@@ -339,6 +339,7 @@ export default function InstallWizard({ onComplete }: Props) {
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState('');
   const [installElapsed, setInstallElapsed] = useState(0);
+  const [installTotalTime, setInstallTotalTime] = useState(0);
   const installLogRef = useRef<HTMLPreElement>(null);
   const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -439,7 +440,11 @@ export default function InstallWizard({ onComplete }: Props) {
       setInstallError(e instanceof Error ? e.message : String(e));
     } finally {
       setInstalling(false);
-      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
+      if (elapsedRef.current) {
+        clearInterval(elapsedRef.current);
+        elapsedRef.current = null;
+        setInstallTotalTime(installElapsed);
+      }
     }
   }
 
@@ -933,6 +938,12 @@ export default function InstallWizard({ onComplete }: Props) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                     <span style={{ color: 'var(--text-secondary)' }}>Model</span>
                     <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{modelName}</span>
+                  </div>
+                )}
+                {installTotalTime > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Install time</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{installTotalTime}s</span>
                   </div>
                 )}
               </div>
