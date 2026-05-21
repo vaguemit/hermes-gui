@@ -23,5 +23,7 @@ export function useHermes() {
     listMemoryFiles: useCallback(() => client.listMemoryFiles(), [client]),
     installHermes: useCallback((onLine: (line: string) => void) => client.installHermes(onLine), [client]),
     streamCommand: useCallback((args: string[], onLine: (line: string) => void, timeoutSecs?: number) => client.streamCommand(args, onLine, timeoutSecs), [client]),
+    getGatewayPort: useCallback(() => client.getGatewayPort(), [client]),
+    setGatewayPort: useCallback((port: number) => client.setGatewayPort(port), [client]),
   }
 }
