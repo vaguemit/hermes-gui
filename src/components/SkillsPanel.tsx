@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore, Skill } from '../store';
 import { Zap, Plus, Edit2, Trash2, Play, X, Save, Copy, Check, CopyPlus } from 'lucide-react';
 import { useHermesClient } from '../lib/hermes';
+import { listHermesSkillsDir, HermesSkillMeta } from '../api/desktop';
 
 const generateId = () => Math.random().toString(36).slice(2);
 
@@ -23,6 +24,7 @@ export default function SkillsPanel() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [hermesSkills, setHermesSkills] = useState<HermesSkillMeta[]>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load persisted skills from disk on mount (overrides defaults if file exists)
@@ -39,6 +41,7 @@ export default function SkillsPanel() {
       }
       setLoaded(true);
     }).catch(() => setLoaded(true));
+    listHermesSkillsDir().then(setHermesSkills).catch(() => {});
   }, []);
 
   // Debounced persist to disk whenever skills change (after initial load)
@@ -442,6 +445,24 @@ export default function SkillsPanel() {
             </div>
           )}
         </div>
+
+        {hermesSkills.length > 0 && (
+          <div style={{ marginTop: 28 }}>
+            <div className="section-label" style={{ marginBottom: 12 }}>Installed Skills</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {hermesSkills.map(s => (
+                <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--bg1)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                  <Zap size={14} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</div>
+                    {s.description && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.description}</div>}
+                  </div>
+                  <span className="badge badge-beta" style={{ fontSize: 10 }}>hermes</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
