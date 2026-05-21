@@ -2,7 +2,6 @@ import React, { useRef, useState } from 'react';
 import { Bot, CheckCircle2, Copy, GitBranch, Play, Radio, Send, XCircle } from 'lucide-react';
 import { useStore } from '../store';
 import type { CommandResult } from '../api/desktop';
-import { streamHermesCommand } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import { AGENT_MODES, AgentMode } from '../data/hermesCatalog';
 
@@ -153,7 +152,7 @@ export default function AgentsPanel() {
         cancelRef.current = () => { cancelled = true; };
 
         const args = [...mode.args, '--no-color', prompt];
-        const res = await streamHermesCommand(
+        const res = await client.streamCommand(
           args,
           (line) => {
             if (cancelled) return;
