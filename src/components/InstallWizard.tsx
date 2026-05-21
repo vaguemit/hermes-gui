@@ -917,6 +917,14 @@ export default function InstallWizard({ onComplete }: Props) {
             </button>
           </div>
         )}
+        {/* Keyboard hint */}
+        {step !== 'detect' && step !== 'done' && (
+          <div style={{ marginTop: 20, textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)' }}>
+            <span className="kbd" style={{ fontSize: 10 }}>Esc</span> go back
+            {' · '}
+            <span className="kbd" style={{ fontSize: 10 }}>Enter</span> continue
+          </div>
+        )}
       </div>
     </div>
   );
