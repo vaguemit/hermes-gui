@@ -365,7 +365,7 @@ export async function setConnectionConfig(mode: 'local' | 'remote', remoteUrl: s
 }
 
 export async function getConnectionApiKey(): Promise<string> {
-  if (!isTauriApp()) return localStorage.getItem('hermes_remote_api_key') || '';
+  if (!isTauriApp()) return '';
   try {
     return await invoke<string>('get_connection_api_key');
   } catch {
