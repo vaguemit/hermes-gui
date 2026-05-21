@@ -674,8 +674,6 @@ fn hermes_start_gateway(app_handle: tauri::AppHandle, _state: tauri::State<Gatew
     // Log stderr to a file for debugging.
     let log_file = home.join("logs").join("gateway-desktop.log");
     let _ = std::fs::create_dir_all(home.join("logs"));
-    let stderr_file = std::fs::File::create(&log_file)
-        .map_err(|e| format!("Cannot create gateway log: {}", e))?;
 
     let mut cmd = Command::new(command_program());
     // --accept-hooks: intentional for local desktop use — allows the gateway to execute
@@ -703,33 +701,52 @@ fn hermes_start_gateway(app_handle: tauri::AppHandle, _state: tauri::State<Gatew
         cmd.env(k, v);
     }
 
-    // ── Detached process flags ────────────────────────────────────────────────
-    // Windows: DETACHED_PROCESS (0x08) + CREATE_NO_WINDOW (0x08000000) +
-    //          CREATE_NEW_PROCESS_GROUP (0x200) + CREATE_BREAKAWAY_FROM_JOB (0x1000000)
-    // CREATE_BREAKAWAY_FROM_JOB ensures the gateway (and every child it spawns,
-    // including Chrome launched by a Telegram "open chrome" tool call) escapes
-    // any Windows Job Object inherited from Tauri. Without it, Chrome is killed
-    // whenever the job is torn down.
+    cmd.stdin(Stdio::null()).stdout(Stdio::null());
+
+    // ── Detached process flags + spawn ───────────────────────────────────────
+    // CREATE_BREAKAWAY_FROM_JOB ensures the gateway and its children (e.g. Chrome
+    // spawned by tool calls) escape the Tauri job object. The flag requires the
+    // parent job to have JOB_OBJECT_LIMIT_BREAKAWAY_OK; if not, Windows returns
+    // ERROR_ACCESS_DENIED (os error 5). We retry without the flag in that case —
+    // the gateway starts normally, only Chrome auto-escape is lost.
     #[cfg(windows)]
-    {
+    let child = {
         use std::os::windows::process::CommandExt;
         const DETACHED_PROCESS: u32          = 0x00000008;
         const CREATE_NEW_PROCESS_GROUP: u32  = 0x00000200;
         const CREATE_NO_WINDOW: u32          = 0x08000000;
         const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
-        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB);
-    }
 
-    let child = cmd
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::from(stderr_file))
-        .spawn()
-        .map_err(|err| format!("Failed to start gateway: {}", err))?;
+        let log1 = std::fs::File::create(&log_file)
+            .map_err(|e| format!("Cannot create gateway log: {}", e))?;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB)
+           .stderr(Stdio::from(log1));
+        match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) if e.raw_os_error() == Some(5) => {
+                // Retry without CREATE_BREAKAWAY_FROM_JOB.
+                let log2 = std::fs::File::create(&log_file)
+                    .map_err(|e| format!("Cannot reopen gateway log: {}", e))?;
+                cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
+                   .stderr(Stdio::from(log2))
+                   .spawn()
+                   .map_err(|err| format!("Failed to start gateway: {}", err))?
+            }
+            Err(e) => return Err(format!("Failed to start gateway: {}", e)),
+        }
+    };
+
+    #[cfg(not(windows))]
+    let child = {
+        let log1 = std::fs::File::create(&log_file)
+            .map_err(|e| format!("Cannot create gateway log: {}", e))?;
+        cmd.stderr(Stdio::from(log1))
+           .spawn()
+           .map_err(|err| format!("Failed to start gateway: {}", err))?
+    };
 
     // ── Drop the handle immediately — exactly like Node's .unref() ────────────
-    // We do NOT store the Child. The gateway is now fully detached and lives
-    // independently. We track it only through the PID file it writes itself.
+    // The gateway is fully detached and tracked only via the PID file it writes.
     std::mem::forget(child);
 
     // Poll port 8642 in the background and emit "gateway-ready" once it's up.
