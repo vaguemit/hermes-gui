@@ -253,7 +253,11 @@ export default function App() {
   const mainContent = () => {
     switch (activeSection) {
       case 'chat': return <ErrorBoundary><ConversationPanel /></ErrorBoundary>;
-      case 'install': return <ErrorBoundary><InstallPanel onOpenWizard={() => setShowWizard(true)} /></ErrorBoundary>;
+      case 'install': return <ErrorBoundary><InstallPanel onOpenWizard={() => {
+        // Force wizard to provider step so user re-configures rather than fast-pathing to done
+        localStorage.setItem('hermes-wizard-state', JSON.stringify({ step: 'provider', provider: 'openrouter' }));
+        setShowWizard(true);
+      }} /></ErrorBoundary>;
       case 'commands': return <ErrorBoundary><CommandCenterPanel /></ErrorBoundary>;
       case 'agents': return <ErrorBoundary><AgentsPanel /></ErrorBoundary>;
       case 'gateway': return <ErrorBoundary><GatewayPanel /></ErrorBoundary>;
