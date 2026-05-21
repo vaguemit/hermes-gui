@@ -18,6 +18,7 @@ import {
   getModelConfig as ipcGetModelConfig, setModelConfig as ipcSetModelConfig,
   detectApiKeys as ipcDetectApiKeys, runHermesDoctor, checkUpdate as ipcCheckUpdate,
   runHermesCommand as ipcRunHermesCommand,
+  streamHermesCommand as ipcStreamHermesCommand,
   listMemoryFiles as ipcListMemoryFiles, readMemoryFile as ipcReadMemoryFile,
   deleteMemoryFile as ipcDeleteMemoryFile,
   listHermesSkillsDir,
@@ -122,6 +123,10 @@ export class LocalHermesClient implements HermesClient {
 
   async runHermesCommand(args: string[], timeoutSecs = 45): Promise<CommandResult> {
     return ipcRunHermesCommand(args, timeoutSecs)
+  }
+
+  async streamCommand(args: string[], onLine: (line: string) => void, timeoutSecs = 1800): Promise<CommandResult> {
+    return ipcStreamHermesCommand(args, onLine, timeoutSecs)
   }
 
   async listMemoryFiles(): Promise<MemoryFileMeta[]> { return ipcListMemoryFiles() }
