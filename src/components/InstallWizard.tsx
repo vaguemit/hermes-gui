@@ -654,13 +654,15 @@ export default function InstallWizard({ onComplete }: Props) {
         {step === 'provider' && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 24 }}>
-              {PROVIDERS.map((p) => (
+              {PROVIDERS.map((p) => {
+                const hasKey = existingKeys?.providers.includes(p.id) ?? false;
+                return (
                 <button
                   key={p.id}
-                  onClick={() => { setSelectedProvider(p.id); saveState({ step: 'provider', provider: p.id }); }}
+                  onClick={() => { setSelectedProvider(p.id); saveState({ step: 'provider', provider: p.id, model: modelName }); }}
                   style={{
                     background: selectedProvider === p.id ? 'rgba(124,106,247,0.18)' : 'var(--bg2)',
-                    border: `1.5px solid ${selectedProvider === p.id ? '#7c6af7' : 'var(--border)'}`,
+                    border: `1.5px solid ${selectedProvider === p.id ? '#7c6af7' : hasKey ? 'rgba(34,197,94,0.4)' : 'var(--border)'}`,
                     borderRadius: 10, padding: '12px 14px', textAlign: 'left', cursor: 'pointer',
                     transition: 'all 0.15s',
                   }}
@@ -673,8 +675,14 @@ export default function InstallWizard({ onComplete }: Props) {
                       background: 'rgba(124,106,247,0.2)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px',
                     }}>{p.tag}</div>
                   )}
+                  {hasKey && (
+                    <div style={{ marginTop: 5, fontSize: 10, color: 'var(--accent-green)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <CheckCircle2 size={10} /> Key saved
+                    </div>
+                  )}
                 </button>
-              ))}
+                );
+              })}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
