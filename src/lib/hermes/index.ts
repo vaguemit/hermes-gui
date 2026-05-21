@@ -1,5 +1,3 @@
-import { createContext, useContext } from 'react'
-import type { HermesClient } from './client'
 import { LocalHermesClient } from './local-client'
 import { RemoteHermesClient } from './remote-client'
 import { getBaseUrl, getAuthHeaders } from '../../api/hermes'
@@ -10,24 +8,21 @@ function isTauri(): boolean {
 
 let _localClient: LocalHermesClient | null = null
 
-export function getHermesClient(): HermesClient {
+/** Imperative accessor — prefer useHermesClient() inside React components. */
+export function getHermesClient() {
   if (isTauri()) {
     if (!_localClient) _localClient = new LocalHermesClient()
     return _localClient
   }
-  // Browser mode: always read current in-memory config (populated by App.tsx at startup)
   const url = getBaseUrl()
   const authHeader = getAuthHeaders()['Authorization'] ?? ''
   const apiKey = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
   return new RemoteHermesClient(url, apiKey)
 }
 
-export const HermesClientContext = createContext<HermesClient>(getHermesClient())
-
-export function useHermesClient(): HermesClient {
-  return useContext(HermesClientContext)
-}
-
-// Re-export so components only need one import
+// Re-export primary surfaces so components only need one import path
+export { HermesProvider, HermesClientContext, useHermesClient, useHermesContext } from './provider'
+export type { HermesContextValue } from './provider'
 export type { HermesClient } from './client'
 export * from './types'
+export { UnsupportedCapabilityError } from './errors'
