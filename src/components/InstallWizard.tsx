@@ -796,6 +796,16 @@ export default function InstallWizard({ onComplete }: Props) {
                   style={{ width: '100%', marginBottom: 20 }}
                 />
               </>
+            ) : provider.id === 'nous' ? (
+              <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>Nous Portal login</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 10 }}>
+                  Nous Portal uses a browser-based login flow. Run the command below in a terminal, then return here and click Save & Continue.
+                </div>
+                <pre style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 12px', fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--accent-green)', marginBottom: 0 }}>
+                  hermes login
+                </pre>
+              </div>
             ) : (
               <>
                 {existingKeys?.providers.includes(provider.id) && (
