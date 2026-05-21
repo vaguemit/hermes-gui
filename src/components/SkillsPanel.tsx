@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore, Skill } from '../store';
 import { Zap, Plus, Edit2, Trash2, Play, X, Save, Copy, Check, CopyPlus } from 'lucide-react';
 import { useHermesClient } from '../lib/hermes';
-import { listHermesSkillsDir, HermesSkillMeta } from '../api/desktop';
+import type { SkillMeta } from '../lib/hermes';
 
 const generateId = () => Math.random().toString(36).slice(2);
 
@@ -24,7 +24,7 @@ export default function SkillsPanel() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [loaded, setLoaded] = useState(false);
-  const [hermesSkills, setHermesSkills] = useState<HermesSkillMeta[]>([]);
+  const [hermesSkills, setHermesSkills] = useState<SkillMeta[]>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load persisted skills from disk on mount (overrides defaults if file exists)
@@ -41,7 +41,7 @@ export default function SkillsPanel() {
       }
       setLoaded(true);
     }).catch(() => setLoaded(true));
-    listHermesSkillsDir().then(setHermesSkills).catch(() => {});
+    client.listSkills().then(setHermesSkills).catch(() => {});
   }, []);
 
   // Debounced persist to disk whenever skills change (after initial load)
