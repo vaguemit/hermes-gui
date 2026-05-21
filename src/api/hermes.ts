@@ -5,17 +5,25 @@ const DEFAULT_PORT = 8642;
 
 export const GATEWAY_TIMEOUT_MS = 3000;
 
+// In-memory connection config — populated by loadConnectionConfig() at startup.
+// Never stored in localStorage.
+let _remoteUrl = '';
+let _remoteApiKey = '';
+
+export function setInMemoryConnectionConfig(remoteUrl: string, apiKey: string): void {
+  _remoteUrl = remoteUrl;
+  _remoteApiKey = apiKey;
+}
+
 /** Returns the active gateway base URL — remote if configured, else 127.0.0.1:<port>. */
 export function getBaseUrl(): string {
-  const remote = localStorage.getItem('hermes_remote_url');
-  if (remote) return remote;
+  if (_remoteUrl) return _remoteUrl;
   const port = parseInt(localStorage.getItem('hermes_gateway_port') || '', 10) || DEFAULT_PORT;
   return `http://127.0.0.1:${port}`;
 }
 
 export function getAuthHeaders(): Record<string, string> {
-  const key = localStorage.getItem('hermes_remote_api_key');
-  return key ? { 'Authorization': `Bearer ${key}` } : {};
+  return _remoteApiKey ? { 'Authorization': `Bearer ${_remoteApiKey}` } : {};
 }
 
 /** HTTP health check — used only to verify the API is actually serving (e.g. before chat). */
