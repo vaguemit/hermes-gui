@@ -1983,6 +1983,7 @@ fn hermes_pty_stop(
 // ── Chrome launcher ──────────────────────────────────────────────────────────
 
 /// Poll http://127.0.0.1:9222/json/version via TCP until CDP is responding or timeout.
+#[allow(dead_code)]
 fn wait_for_cdp(timeout_ms: u64) -> bool {
     let addr: SocketAddr = match "127.0.0.1:9222".parse() {
         Ok(a) => a,
