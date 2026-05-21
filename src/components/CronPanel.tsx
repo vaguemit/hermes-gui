@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, CronJob } from '../store';
-import { isTauriApp, runHermesCommand } from '../api/desktop';
+import { isTauriApp } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import { getBaseUrl, getAuthHeaders } from '../api/hermes';
 import { Clock, Plus, Trash2, Play } from 'lucide-react';
@@ -145,7 +145,7 @@ export default function CronPanel() {
 
     if (usePty) {
       try {
-        const result = await runHermesCommand(['chat', '-q', cron.description, '-Q', '--source', 'cron'], 120);
+        const result = await client.runHermesCommand(['chat', '-q', cron.description, '-Q', '--source', 'cron'], 120);
         if (!result.success) {
           addToast(`Cron "${cron.description.slice(0, 40)}" PTY run failed: ${result.stderr.slice(0, 80)}`, 'error');
           console.error(`[cron] PTY task "${cron.description}" failed:`, result.stderr);
@@ -179,7 +179,7 @@ export default function CronPanel() {
       // Auto-retry via PTY when gateway drops mid-run
       if (effectiveMode === 'auto') {
         try {
-          await runHermesCommand(['chat', '-q', cron.description, '-Q', '--source', 'cron'], 120);
+          await client.runHermesCommand(['chat', '-q', cron.description, '-Q', '--source', 'cron'], 120);
         } catch (ptyErr) {
           console.error(`[cron] PTY fallback also failed:`, ptyErr);
         }
@@ -240,7 +240,7 @@ export default function CronPanel() {
 
     if (usePty) {
       try {
-        const result = await runHermesCommand(['chat', '-q', form.description, '-Q', '--source', 'cron'], 60);
+        const result = await client.runHermesCommand(['chat', '-q', form.description, '-Q', '--source', 'cron'], 60);
         if (result.success) {
           setTestResult(`✓ ${result.stdout || '(task completed)'}`);
           addToast('Task sent via PTY', 'success');
@@ -291,7 +291,7 @@ export default function CronPanel() {
           addToast(`Cron "${form.description.slice(0, 40)}" failed — gateway unreachable. Switching to PTY.`, 'error');
           setTestResult(`Gateway unreachable. Retrying via PTY…`);
           try {
-            const result = await runHermesCommand(['chat', '-q', form.description, '-Q', '--source', 'cron'], 60);
+            const result = await client.runHermesCommand(['chat', '-q', form.description, '-Q', '--source', 'cron'], 60);
             if (result.success) {
               setTestResult(`✓ (PTY fallback) ${result.stdout || '(task completed)'}`);
               addToast('Task completed via PTY fallback', 'success');
