@@ -2,7 +2,9 @@ import type { HermesClient } from './client'
 import type {
   HealthStatus, HermesInstallStatus, CommandResult, ChatMessage, StreamEvent,
   SessionMeta, ProfileMeta, ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
+  SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
 } from './types'
+import { UnsupportedCapabilityError } from './errors'
 
 export class RemoteHermesClient implements HermesClient {
   constructor(
@@ -125,28 +127,58 @@ export class RemoteHermesClient implements HermesClient {
     onEvent({ type: 'done' });
   }
 
+  async getGatewayLatency(): Promise<number | null> {
+    const t0 = Date.now()
+    try {
+      const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(3000), headers: this.authHeaders() })
+      return res.ok ? Date.now() - t0 : null
+    } catch {
+      return null
+    }
+  }
+
+  async fetchModels(): Promise<string[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/v1/models`, { headers: this.authHeaders() })
+      if (!res.ok) return []
+      const data = await res.json()
+      return (data.data || []).map((m: { id: string }) => m.id)
+    } catch {
+      return []
+    }
+  }
+
   // IPC-only methods — not available in remote mode
-  getInstallStatus(): Promise<HermesInstallStatus> { throw new Error('Not available in remote mode') }
-  startGateway(): Promise<CommandResult> { throw new Error('Not available in remote mode') }
-  stopGateway(): Promise<CommandResult> { throw new Error('Not available in remote mode') }
-  listSessions(): Promise<SessionMeta[]> { throw new Error('Not available in remote mode') }
-  readSession(_n: string): Promise<string> { throw new Error('Not available in remote mode') }
-  writeSession(_n: string, _c: string): Promise<void> { throw new Error('Not available in remote mode') }
-  deleteSession(_n: string): Promise<void> { throw new Error('Not available in remote mode') }
-  clearAllSessions(): Promise<number> { throw new Error('Not available in remote mode') }
-  listProfiles(): Promise<ProfileMeta[]> { throw new Error('Not available in remote mode') }
-  readProfile(_n: string): Promise<string> { throw new Error('Not available in remote mode') }
-  writeProfile(_n: string, _c: string): Promise<void> { throw new Error('Not available in remote mode') }
-  deleteProfile(_n: string): Promise<void> { throw new Error('Not available in remote mode') }
-  readFile(_p: string): Promise<string> { throw new Error('Not available in remote mode') }
-  writeFile(_p: string, _c: string): Promise<void> { throw new Error('Not available in remote mode') }
-  readConfig(): Promise<string> { throw new Error('Not available in remote mode') }
-  writeConfig(_c: string): Promise<void> { throw new Error('Not available in remote mode') }
-  readEnv(): Promise<Record<string, string>> { throw new Error('Not available in remote mode') }
-  writeEnv(_k: string, _v: string): Promise<void> { throw new Error('Not available in remote mode') }
-  getModelConfig(): Promise<ModelConfig> { throw new Error('Not available in remote mode') }
-  setModelConfig(_p: string, _m: string, _b: string): Promise<void> { throw new Error('Not available in remote mode') }
-  detectApiKeys(): Promise<ApiKeyStatus> { throw new Error('Not available in remote mode') }
-  runDoctor(): Promise<DoctorResult> { throw new Error('Not available in remote mode') }
-  checkUpdate(): Promise<UpdateInfo> { throw new Error('Not available in remote mode') }
+  private unsupported(cap: string): never { throw new UnsupportedCapabilityError(cap, 'remote') }
+  getInstallStatus(): Promise<HermesInstallStatus> { return this.unsupported('getInstallStatus') }
+  startGateway(): Promise<CommandResult> { return this.unsupported('startGateway') }
+  stopGateway(): Promise<CommandResult> { return this.unsupported('stopGateway') }
+  listSessions(): Promise<SessionMeta[]> { return this.unsupported('listSessions') }
+  readSession(_n: string): Promise<string> { return this.unsupported('readSession') }
+  writeSession(_n: string, _c: string): Promise<void> { return this.unsupported('writeSession') }
+  deleteSession(_n: string): Promise<void> { return this.unsupported('deleteSession') }
+  clearAllSessions(): Promise<number> { return this.unsupported('clearAllSessions') }
+  listProfiles(): Promise<ProfileMeta[]> { return this.unsupported('listProfiles') }
+  readProfile(_n: string): Promise<string> { return this.unsupported('readProfile') }
+  writeProfile(_n: string, _c: string): Promise<void> { return this.unsupported('writeProfile') }
+  deleteProfile(_n: string): Promise<void> { return this.unsupported('deleteProfile') }
+  readFile(_p: string): Promise<string> { return this.unsupported('readFile') }
+  writeFile(_p: string, _c: string): Promise<void> { return this.unsupported('writeFile') }
+  readConfig(): Promise<string> { return this.unsupported('readConfig') }
+  writeConfig(_c: string): Promise<void> { return this.unsupported('writeConfig') }
+  readEnv(): Promise<Record<string, string>> { return this.unsupported('readEnv') }
+  writeEnv(_k: string, _v: string): Promise<void> { return this.unsupported('writeEnv') }
+  getModelConfig(): Promise<ModelConfig> { return this.unsupported('getModelConfig') }
+  setModelConfig(_p: string, _m: string, _b: string): Promise<void> { return this.unsupported('setModelConfig') }
+  detectApiKeys(): Promise<ApiKeyStatus> { return this.unsupported('detectApiKeys') }
+  runDoctor(): Promise<DoctorResult> { return this.unsupported('runDoctor') }
+  checkUpdate(): Promise<UpdateInfo> { return this.unsupported('checkUpdate') }
+  runHermesCommand(_a: string[], _t?: number): Promise<CommandResult> { return this.unsupported('runHermesCommand') }
+  listMemoryFiles(): Promise<MemoryFileMeta[]> { return this.unsupported('listMemoryFiles') }
+  readMemoryFile(_n: string): Promise<string> { return this.unsupported('readMemoryFile') }
+  deleteMemoryFile(_n: string): Promise<void> { return this.unsupported('deleteMemoryFile') }
+  listSkills(): Promise<SkillMeta[]> { return this.unsupported('listSkills') }
+  listCronJobs(): Promise<CronJobMeta[]> { return this.unsupported('listCronJobs') }
+  getConnectionConfig(): Promise<ConnectionConfig> { return this.unsupported('getConnectionConfig') }
+  setConnectionConfig(_m: string, _u: string, _k?: string): Promise<void> { return this.unsupported('setConnectionConfig') }
 }
