@@ -5,21 +5,24 @@ const DEFAULT_PORT = 8642;
 
 export const GATEWAY_TIMEOUT_MS = 3000;
 
-// In-memory connection config — populated by loadConnectionConfig() at startup.
-// Never stored in localStorage.
+// In-memory connection config — populated at startup via IPC. Never stored in localStorage.
 let _remoteUrl = '';
 let _remoteApiKey = '';
+let _gatewayPort = DEFAULT_PORT;
 
 export function setInMemoryConnectionConfig(remoteUrl: string, apiKey: string): void {
   _remoteUrl = remoteUrl;
   _remoteApiKey = apiKey;
 }
 
+export function setInMemoryGatewayPort(port: number): void {
+  _gatewayPort = port > 0 ? port : DEFAULT_PORT;
+}
+
 /** Returns the active gateway base URL — remote if configured, else 127.0.0.1:<port>. */
 export function getBaseUrl(): string {
   if (_remoteUrl) return _remoteUrl;
-  const port = parseInt(localStorage.getItem('hermes_gateway_port') || '', 10) || DEFAULT_PORT;
-  return `http://127.0.0.1:${port}`;
+  return `http://127.0.0.1:${_gatewayPort}`;
 }
 
 export function getAuthHeaders(): Record<string, string> {

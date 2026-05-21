@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useStore } from './store';
-import { startHealthPolling } from './api/hermes';
-import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp, listSessionsDisk, readSessionDisk, writeSessionDisk } from './api/desktop';
+import { startHealthPolling, setInMemoryConnectionConfig, setInMemoryGatewayPort } from './api/hermes';
+import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp, listSessionsDisk, readSessionDisk, writeSessionDisk, getConnectionConfig, getConnectionApiKey, getGatewayPort } from './api/desktop';
 import { HermesClientContext, getHermesClient } from './lib/hermes';
 import type { UpdateInfo } from './api/desktop';
 import Sidebar from './components/Sidebar';
@@ -225,6 +225,14 @@ export default function App() {
       }
     }).catch(() => setGatewayStatus('disconnected'));
     startHealthPolling();
+    // Load connection config and gateway port from desktop.json into memory
+    getConnectionConfig().then(async (cfg) => {
+      if (cfg.mode === 'remote' && cfg.remoteUrl) {
+        const key = await getConnectionApiKey();
+        setInMemoryConnectionConfig(cfg.remoteUrl, key);
+      }
+    }).catch(() => {});
+    getGatewayPort().then(port => setInMemoryGatewayPort(port)).catch(() => {});
   }, []);
 
   // Mirror gateway status to system tray menu
@@ -254,8 +262,7 @@ export default function App() {
     switch (activeSection) {
       case 'chat': return <ErrorBoundary><ConversationPanel /></ErrorBoundary>;
       case 'install': return <ErrorBoundary><InstallPanel onOpenWizard={() => {
-        // Force wizard to provider step so user re-configures rather than fast-pathing to done
-        localStorage.setItem('hermes-wizard-state', JSON.stringify({ step: 'provider', provider: 'openrouter' }));
+        getHermesClient().writeFile('gui-setup-state.json', JSON.stringify({ step: 'provider', provider: 'openrouter' })).catch(() => {});
         setShowWizard(true);
       }} /></ErrorBoundary>;
       case 'commands': return <ErrorBoundary><CommandCenterPanel /></ErrorBoundary>;

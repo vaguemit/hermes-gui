@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe } from 'lucide-react';
-import { getAutostartEnabled, toggleAutostart } from '../api/desktop';
+import { getAutostartEnabled, toggleAutostart, getGatewayPort, setGatewayPort } from '../api/desktop';
+import { setInMemoryGatewayPort } from '../api/hermes';
 import { useHermesClient } from '../lib/hermes';
 
 const PROVIDERS_KEYS = [
@@ -99,11 +100,7 @@ export default function SettingsModal() {
   const [workspaceSaveMsg, setWorkspaceSaveMsg] = useState('');
   const [clearingSessions, setClearingSessions] = useState(false);
   const [clearMsg, setClearMsg] = useState('');
-  // Gateway port — persisted to localStorage; hermes.ts reads hermes_gateway_port from localStorage
-  const [gatewayPort, setGatewayPort] = useState<number>(() => {
-    const saved = localStorage.getItem('hermes_gateway_port');
-    return saved ? parseInt(saved, 10) : 8642;
-  });
+  const [gatewayPort, setGatewayPortState] = useState<number>(8642);
 
   // Browser automation tab state
   const [browserKeys, setBrowserKeys] = useState<Record<string, string>>({});
@@ -147,6 +144,13 @@ export default function SettingsModal() {
       }).catch(() => {
         setUserContent('# User Profile\n\nNo user profile recorded yet.');
       });
+    }
+  }, [settingsOpen, tab]);
+
+  // Gateway port: load from desktop.json on workspace tab open
+  useEffect(() => {
+    if (settingsOpen && tab === 'workspace') {
+      getGatewayPort().then(p => setGatewayPortState(p)).catch(() => {});
     }
   }, [settingsOpen, tab]);
 
@@ -256,6 +260,8 @@ export default function SettingsModal() {
         yaml = yaml ? `${yaml.trimEnd()}\nworking_dir: ${workingDir}\n` : `working_dir: ${workingDir}\n`;
       }
       await client.writeConfig(yaml);
+      await setGatewayPort(gatewayPort).catch(() => {});
+      setInMemoryGatewayPort(gatewayPort);
       setWorkspaceSaveMsg('Saved');
     } catch {
       setWorkspaceSaveMsg('Error');
@@ -470,15 +476,11 @@ export default function SettingsModal() {
                     value={gatewayPort}
                     onChange={e => {
                       const port = parseInt(e.target.value, 10);
-                      if (!isNaN(port)) {
-                        setGatewayPort(port);
-                        localStorage.setItem('hermes_gateway_port', String(port));
-                      }
+                      if (!isNaN(port)) setGatewayPortState(port);
                     }}
                     style={{ fontFamily: 'var(--font-mono)' }}
                   />
-                  {/* hermes.ts reads hermes_gateway_port from localStorage to build getBaseUrl() — another agent will wire this */}
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Hermes HTTP API port. Change if you run gateway on a custom port.</div>
+<div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Hermes HTTP API port. Change if you run gateway on a custom port.</div>
                 </div>
                 <button
                   className="btn btn-primary"

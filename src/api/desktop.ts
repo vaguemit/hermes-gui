@@ -373,6 +373,20 @@ export async function getConnectionApiKey(): Promise<string> {
   }
 }
 
+export async function getGatewayPort(): Promise<number> {
+  if (!isTauriApp()) return 8642;
+  try {
+    return await invoke<number>('get_gateway_port');
+  } catch {
+    return 8642;
+  }
+}
+
+export async function setGatewayPort(port: number): Promise<void> {
+  if (!isTauriApp()) return;
+  await invoke('set_gateway_port', { port });
+}
+
 export async function listProfiles(): Promise<ProfileMeta[]> {
   if (!isTauriApp()) return [];
   return invoke<ProfileMeta[]>('list_profiles');
