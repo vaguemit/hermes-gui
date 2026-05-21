@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, Clipboard, Download, Play, RefreshCw, Settings, Terminal, XCircle } from 'lucide-react';
 import type { CommandResult } from '../api/desktop';
-import { streamInstallHermes } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import type { HermesInstallStatus } from '../lib/hermes';
 import { CLI_COMMANDS } from '../data/hermesCatalog';
@@ -118,7 +117,7 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
     setInstallLines([]);
     try {
       // Use the official Nous Research install script (PS1 on Windows, bash on Unix)
-      const output = await streamInstallHermes(
+      const output = await client.installHermes(
         (line) => setInstallLines((prev) => [...prev, line]),
       );
       setResult(output);
