@@ -340,6 +340,39 @@ export async function streamOllamaPull(
   );
 }
 
+export interface PublicConnectionConfig {
+  mode: 'local' | 'remote';
+  remoteUrl: string;
+  hasApiKey: boolean;
+  apiKeyLength: number;
+}
+
+export async function getConnectionConfig(): Promise<PublicConnectionConfig> {
+  if (!isTauriApp()) {
+    return { mode: 'local', remoteUrl: '', hasApiKey: false, apiKeyLength: 0 };
+  }
+  try {
+    const raw = await invoke<{ mode: string; remote_url: string; has_api_key: boolean; api_key_length: number }>('get_connection_config');
+    return { mode: (raw.mode as 'local' | 'remote'), remoteUrl: raw.remote_url, hasApiKey: raw.has_api_key, apiKeyLength: raw.api_key_length };
+  } catch {
+    return { mode: 'local', remoteUrl: '', hasApiKey: false, apiKeyLength: 0 };
+  }
+}
+
+export async function setConnectionConfig(mode: 'local' | 'remote', remoteUrl: string, apiKey?: string): Promise<void> {
+  if (!isTauriApp()) return;
+  await invoke('set_connection_config', { mode, remoteUrl, apiKey });
+}
+
+export async function getConnectionApiKey(): Promise<string> {
+  if (!isTauriApp()) return localStorage.getItem('hermes_remote_api_key') || '';
+  try {
+    return await invoke<string>('get_connection_api_key');
+  } catch {
+    return '';
+  }
+}
+
 export async function listProfiles(): Promise<ProfileMeta[]> {
   if (!isTauriApp()) return [];
   return invoke<ProfileMeta[]>('list_profiles');
