@@ -2,7 +2,7 @@ import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useStore } from './store';
 import { startHealthPolling, setInMemoryConnectionConfig, setInMemoryGatewayPort } from './api/hermes';
 import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp, listSessionsDisk, readSessionDisk, writeSessionDisk, getConnectionConfig, getConnectionApiKey, getGatewayPort } from './api/desktop';
-import { HermesClientContext, getHermesClient } from './lib/hermes';
+import { HermesProvider, useHermesClient } from './lib/hermes';
 import type { UpdateInfo } from './api/desktop';
 import Sidebar from './components/Sidebar';
 import ConversationPanel from './components/ConversationPanel';
@@ -175,7 +175,8 @@ function useInstallCheck() {
   return { showWizard, setShowWizard, wizardDone, setWizardDone, checkingInstall };
 }
 
-export default function App() {
+function AppInner() {
+  const client = useHermesClient();
   const {
     activeSection,
     gatewayStatus, setGatewayStatus,
@@ -262,7 +263,7 @@ export default function App() {
     switch (activeSection) {
       case 'chat': return <ErrorBoundary><ConversationPanel /></ErrorBoundary>;
       case 'install': return <ErrorBoundary><InstallPanel onOpenWizard={() => {
-        getHermesClient().writeFile('gui-setup-state.json', JSON.stringify({ step: 'provider', provider: 'openrouter' })).catch(() => {});
+        client.writeFile('gui-setup-state.json', JSON.stringify({ step: 'provider', provider: 'openrouter' })).catch(() => {});
         setShowWizard(true);
       }} /></ErrorBoundary>;
       case 'commands': return <ErrorBoundary><CommandCenterPanel /></ErrorBoundary>;
@@ -296,7 +297,6 @@ export default function App() {
   }
 
   return (
-    <HermesClientContext.Provider value={getHermesClient()}>
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--bg0)' }}>
       {/* Sidebar */}
       <div style={{ width: 220, flexShrink: 0, height: '100%' }}>
@@ -396,6 +396,13 @@ export default function App() {
       {/* Toast notifications */}
       <Toast toasts={toasts} onDismiss={removeToast} />
     </div>
-    </HermesClientContext.Provider>
+  );
+}
+
+export default function App() {
+  return (
+    <HermesProvider>
+      <AppInner />
+    </HermesProvider>
   );
 }
