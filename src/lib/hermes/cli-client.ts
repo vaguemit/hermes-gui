@@ -19,6 +19,7 @@ import {
   getModelConfig as ipcGetModelConfig, setModelConfig as ipcSetModelConfig,
   detectApiKeys as ipcDetectApiKeys, runHermesDoctor, checkUpdate as ipcCheckUpdate,
   runHermesCommand as ipcRunHermesCommand,
+  streamHermesCommand as ipcStreamHermesCommand,
   listMemoryFiles as ipcListMemoryFiles, readMemoryFile as ipcReadMemoryFile,
   deleteMemoryFile as ipcDeleteMemoryFile,
   listHermesSkillsDir,
@@ -120,6 +121,10 @@ export class CliHermesClient implements HermesClient {
     return ipcRunHermesCommand(args, timeoutSecs)
   }
 
+  async streamCommand(args: string[], onLine: (line: string) => void, timeoutSecs = 1800): Promise<CommandResult> {
+    return ipcStreamHermesCommand(args, onLine, timeoutSecs)
+  }
+
   async listMemoryFiles(): Promise<MemoryFileMeta[]> { return ipcListMemoryFiles() }
   async readMemoryFile(name: string): Promise<string> { return ipcReadMemoryFile(name) }
   async deleteMemoryFile(name: string): Promise<void> { return ipcDeleteMemoryFile(name) }
@@ -140,7 +145,4 @@ export class CliHermesClient implements HermesClient {
     return ipcSetConnectionConfig(mode, remoteUrl, apiKey)
   }
 
-  private _unsupported(cap: string): never { throw new UnsupportedCapabilityError(cap, 'cli') }
-  // Keep for future-proofing — no methods use this yet
-  _placeholder(): void { this._unsupported('placeholder') }
 }
