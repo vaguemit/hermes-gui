@@ -495,6 +495,24 @@ export default function InstallWizard({ onComplete }: Props) {
   }
 
   // ── Step 5: pick model ────────────────────────────────────────────────────
+  const [localPing, setLocalPing] = useState<'idle' | 'ok' | 'fail'>('idle');
+
+  // Ping local server whenever baseUrl changes in local mode
+  useEffect(() => {
+    if (!isLocal) { setLocalPing('idle'); return; }
+    setLocalPing('idle');
+    const timer = setTimeout(async () => {
+      try {
+        const url = baseUrl.trim().replace(/\/$/, '');
+        const res = await fetch(`${url}/models`, { signal: AbortSignal.timeout(2500) });
+        setLocalPing(res.ok || res.status === 404 ? 'ok' : 'fail');
+      } catch {
+        setLocalPing('fail');
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [baseUrl, isLocal]);
+
   const [modelSaving, setModelSaving] = useState(false);
   const [modelSaveError, setModelSaveError] = useState('');
 
@@ -750,7 +768,11 @@ export default function InstallWizard({ onComplete }: Props) {
                     ))}
                   </div>
                 </div>
-                <label style={{ display: 'block', fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 6 }}>Server URL</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <label style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Server URL</label>
+                  {localPing === 'ok' && <span className="badge badge-success" style={{ fontSize: 10 }}>Reachable</span>}
+                  {localPing === 'fail' && <span className="badge badge-error" style={{ fontSize: 10 }}>Unreachable</span>}
+                </div>
                 <input
                   className="input"
                   value={baseUrl}
