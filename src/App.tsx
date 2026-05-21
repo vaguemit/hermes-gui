@@ -81,7 +81,7 @@ function useGatewayRestart(
   const gatewayPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastRestartTime = useRef(0);
   const RESTART_COOLDOWN_MS = 60_000;
-  const FAILURE_THRESHOLD = 5;
+  const FAILURE_THRESHOLD = 3;
 
   useEffect(() => {
     if (gatewayStatus !== 'connected') {
@@ -115,7 +115,7 @@ function useGatewayRestart(
       } catch {
         await tryRestart();
       }
-    }, 30000);
+    }, 15000);
 
     return () => {
       if (gatewayPollRef.current) {
