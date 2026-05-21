@@ -62,6 +62,7 @@ export interface HermesClient {
   // CLI command execution
   runHermesCommand(args: string[], timeoutSecs?: number): Promise<CommandResult>
   streamCommand(args: string[], onLine: (line: string) => void, timeoutSecs?: number): Promise<CommandResult>
+  installHermes(onLine: (line: string) => void): Promise<CommandResult>
 
   // Memory files
   listMemoryFiles(): Promise<MemoryFileMeta[]>
