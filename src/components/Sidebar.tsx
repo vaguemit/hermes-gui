@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
-import { useHermesContext } from '../lib/hermes';
+import { useHermesMode } from '../lib/hermes';
 import { formatTimestamp } from '../utils/parser';
 import {
   MessageSquare, Radio, Clock, Zap, Settings, Plus,
@@ -27,7 +27,7 @@ const NAV_ITEMS = [
 ] as const;
 
 export default function Sidebar() {
-  const { mode } = useHermesContext();
+  const mode = useHermesMode();
   const {
     activeSection, setActiveSection, gatewayStatus, agentState,
     activeModel, setModelSwitcherOpen, sessions, activeSessionId,
