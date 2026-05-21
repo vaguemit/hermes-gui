@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Globe, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
-import { useHermesClient } from '../lib/hermes';
+import { useHermesClient, useHermesContext } from '../lib/hermes';
 import { getChromeCdpStatus, getConnectionApiKey, getConnectionConfig, getGatewayStatus, launchChrome, onGatewayReady, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnvVar } from '../api/desktop';
-import { checkGatewayHealth, setInMemoryConnectionConfig } from '../api/hermes';
+import { checkGatewayHealth } from '../api/hermes';
 
 /** Isolates gateway IPC calls so they can be swapped to HermesClient in Phase 2. */
 function useGateway() {
@@ -103,6 +103,7 @@ const PLATFORM_FIELDS: Record<string, Array<{ label: string; key: string; type: 
 
 export default function GatewayPanel() {
   const client = useHermesClient();
+  const { setMode } = useHermesContext();
   const { platforms, gatewayStatus, setGatewayStatus, localBrowserUrl, setLocalBrowserUrl, browserConnected, setBrowserConnected, setPtySessionId, setPtyEventId, headedBrowserMode, setHeadedBrowserMode, agentState, setPlatformStatus, addToast } = useStore();
   const gateway = useGateway();
   const [configPlatform, setConfigPlatform] = useState<string | null>(null);
@@ -427,7 +428,8 @@ export default function GatewayPanel() {
         await client.writeEnv('HERMES_REMOTE_API_KEY', remoteApiKey.trim()).catch(() => {});
       }
       await client.setConnectionConfig('remote', remoteUrl.trim(), remoteApiKey.trim() || undefined);
-      setInMemoryConnectionConfig(remoteUrl.trim(), remoteApiKey.trim());
+      // Switch HermesProvider mode — this is the authoritative mode switch
+      setMode('remote', remoteUrl.trim(), remoteApiKey.trim());
       setRemoteConnected(true);
       setRemoteError(null);
       setGatewayStatus('connected');
@@ -442,7 +444,8 @@ export default function GatewayPanel() {
       await client.writeEnv('HERMES_REMOTE_API_KEY', '').catch(() => {});
     } catch { /* best-effort */ }
     await client.setConnectionConfig('local', '', '').catch(() => {});
-    setInMemoryConnectionConfig('', '');
+    // Switch back to local mode
+    setMode('local');
     setRemoteConnected(false);
     setRemoteUrl('');
     setRemoteApiKey('');
