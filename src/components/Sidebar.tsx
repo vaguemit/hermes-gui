@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '../store';
 import { useHermesMode } from '../lib/hermes';
 import { formatTimestamp } from '../utils/parser';
+import ProfileChip from './ProfileChip';
 import {
   MessageSquare, Radio, Clock, Zap, Settings, Plus,
   ChevronDown, ChevronRight, Cpu, Download, Terminal, Bot, LayoutDashboard, Users, History, SquareTerminal, Brain, KanbanSquare, Key, BookMarked
@@ -180,6 +181,9 @@ export default function Sidebar() {
 
       {/* Bottom actions */}
       <div style={{ borderTop: '1px solid var(--border)', padding: '8px 10px' }}>
+        <div style={{ marginBottom: 6 }}>
+          <ProfileChip />
+        </div>
         <button
           onClick={() => setSettingsOpen(true)}
           className="nav-item"
