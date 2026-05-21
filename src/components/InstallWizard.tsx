@@ -668,13 +668,22 @@ export default function InstallWizard({ onComplete }: Props) {
                 </button>
               ))}
             </div>
-            <button
-              className="btn btn-primary"
-              onClick={() => goTo('apikey')}
-              style={{ width: '100%', justifyContent: 'center', gap: 8, fontSize: 14 }}
-            >
-              Continue <ArrowRight size={14} />
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => goTo('apikey')}
+                style={{ flex: 1, justifyContent: 'center', gap: 8, fontSize: 14 }}
+              >
+                Continue <ArrowRight size={14} />
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => { localStorage.removeItem(STATE_KEY); onComplete(); }}
+                style={{ fontSize: 13, whiteSpace: 'nowrap' }}
+              >
+                Skip for now
+              </button>
+            </div>
           </>
         )}
 
