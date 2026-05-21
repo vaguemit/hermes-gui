@@ -11,9 +11,15 @@ export function useHermes() {
     startGateway: useCallback(() => client.startGateway(), [client]),
     stopGateway: useCallback(() => client.stopGateway(), [client]),
     getHealth: useCallback(() => client.getHealth(), [client]),
+    getGatewayLatency: useCallback(() => client.getGatewayLatency(), [client]),
+    fetchModels: useCallback(() => client.fetchModels(), [client]),
     getInstallStatus: useCallback(() => client.getInstallStatus(), [client]),
     detectApiKeys: useCallback(() => client.detectApiKeys(), [client]),
     checkUpdate: useCallback(() => client.checkUpdate(), [client]),
     runDoctor: useCallback(() => client.runDoctor(), [client]),
+    runHermesCommand: useCallback((args: string[], timeoutSecs?: number) => client.runHermesCommand(args, timeoutSecs), [client]),
+    getConnectionConfig: useCallback(() => client.getConnectionConfig(), [client]),
+    listSkills: useCallback(() => client.listSkills(), [client]),
+    listMemoryFiles: useCallback(() => client.listMemoryFiles(), [client]),
   }
 }
