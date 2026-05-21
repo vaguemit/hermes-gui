@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe } from 'lucide-react';
-import { getAutostartEnabled, toggleAutostart, getGatewayPort, setGatewayPort } from '../api/desktop';
+import { getAutostartEnabled, toggleAutostart } from '../api/desktop';
 import { setInMemoryGatewayPort } from '../api/hermes';
 import { useHermesClient } from '../lib/hermes';
 
@@ -150,7 +150,7 @@ export default function SettingsModal() {
   // Gateway port: load from desktop.json on workspace tab open
   useEffect(() => {
     if (settingsOpen && tab === 'workspace') {
-      getGatewayPort().then(p => setGatewayPortState(p)).catch(() => {});
+      client.getGatewayPort().then(p => setGatewayPortState(p)).catch(() => {});
     }
   }, [settingsOpen, tab]);
 
@@ -260,7 +260,7 @@ export default function SettingsModal() {
         yaml = yaml ? `${yaml.trimEnd()}\nworking_dir: ${workingDir}\n` : `working_dir: ${workingDir}\n`;
       }
       await client.writeConfig(yaml);
-      await setGatewayPort(gatewayPort).catch(() => {});
+      await client.setGatewayPort(gatewayPort).catch(() => {});
       setInMemoryGatewayPort(gatewayPort);
       setWorkspaceSaveMsg('Saved');
     } catch {
