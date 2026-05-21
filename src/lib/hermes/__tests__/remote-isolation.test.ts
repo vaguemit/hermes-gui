@@ -59,6 +59,8 @@ async function run() {
     { name: 'listCronJobs', call: () => client.listCronJobs() },
     { name: 'getConnectionConfig', call: () => client.getConnectionConfig() },
     { name: 'setConnectionConfig', call: () => client.setConnectionConfig('local', '') },
+    { name: 'streamCommand', call: () => client.streamCommand(['status'], () => {}) },
+    { name: 'installHermes', call: () => client.installHermes(() => {}) },
   ]
 
   for (const m of ipcOnlyMethods) {
