@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Key, Eye, EyeOff, Check, ChevronDown, Cpu, RefreshCw } from 'lucide-react';
+import {
+  Key, Eye, EyeOff, Check, ChevronDown, ChevronUp,
+  Cpu, RefreshCw, Plus, Trash2,
+} from 'lucide-react';
 import { listOllamaModels } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import type { ModelConfig } from '../lib/hermes';
@@ -19,94 +22,76 @@ const PROVIDERS = [
 
 const PROVIDER_OPTIONS = ['auto', 'openai', 'anthropic', 'gemini', 'groq', 'openrouter', 'ollama', 'custom'];
 
-// Per-key test state
-type TestState = 'idle' | 'ok' | 'fail';
+const POOL_FILE = 'credential-pool.json';
 
-function MaskedInput({
-  value,
-  hint,
-  onChange,
-  onBlur,
-}: {
-  value: string;
-  hint: string;
-  onChange: (v: string) => void;
-  onBlur: () => void;
-}) {
-  const [visible, setVisible] = useState(false);
+interface PoolEntry {
+  id: string;
+  provider: string;
+  key: string;
+  label: string;
+}
 
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
-      <input
-        className="input-field"
-        type={visible ? 'text' : 'password'}
-        value={value}
-        placeholder={hint}
-        onChange={e => onChange(e.target.value)}
-        onBlur={onBlur}
-        style={{ flex: 1, fontSize: 12.5, fontFamily: 'var(--font-mono)', padding: '6px 10px' }}
-      />
-      <button
-        type="button"
-        onClick={() => setVisible(v => !v)}
-        style={{
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'var(--text-secondary)',
-          display: 'flex',
-          alignItems: 'center',
-          padding: 4,
-          borderRadius: 4,
-          flexShrink: 0,
-        }}
-        title={visible ? 'Hide key' : 'Show key'}
-      >
-        {visible ? <EyeOff size={14} /> : <Eye size={14} />}
-      </button>
-    </div>
-  );
+function maskKey(key: string): string {
+  if (key.length <= 12) return '••••••••';
+  return key.slice(0, 8) + '...' + key.slice(-4);
 }
 
 function SavedFlash({ show }: { show: boolean }) {
   if (!show) return null;
   return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-green)', fontSize: 11.5, fontWeight: 500 }}>
-      <Check size={12} /> Saved
+    <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-green)', fontSize: 11, fontWeight: 500 }}>
+      <Check size={11} /> Saved
     </span>
   );
 }
 
 export default function ProvidersPanel() {
   const client = useHermesClient();
-  const [envValues, setEnvValues] = useState<Record<string, string>>({});
-  const [savedKeys, setSavedKeys] = useState<Record<string, boolean>>({});
-  const [testStates, setTestStates] = useState<Record<string, TestState>>({});
 
+  // --- Model config ---
   const [modelConfig, setModelConfigState] = useState<ModelConfig>({ provider: 'auto', model: '', base_url: '' });
   const [modelSaved, setModelSaved] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modelDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Ollama model list state
+  // Ollama model list
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [ollamaFetching, setOllamaFetching] = useState(false);
   const [ollamaFetchError, setOllamaFetchError] = useState<string | null>(null);
 
-  // Load env values and model config on mount
+  // --- API keys ---
+  const [localKeys, setLocalKeys] = useState<Record<string, string>>({});
+  const [savedIndicators, setSavedIndicators] = useState<Record<string, boolean>>({});
+  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // --- Credential pool ---
+  const [pool, setPool] = useState<PoolEntry[]>([]);
+  const [poolOpen, setPoolOpen] = useState(false);
+  const [newPoolProvider, setNewPoolProvider] = useState(PROVIDERS[0].id);
+  const [newPoolKey, setNewPoolKey] = useState('');
+  const [newPoolLabel, setNewPoolLabel] = useState('');
+  const [newPoolKeyVisible, setNewPoolKeyVisible] = useState(false);
+  const [poolSaving, setPoolSaving] = useState(false);
+
+  // Load env and model config on mount
   useEffect(() => {
     client.readEnv().then(env => {
-      const init: Record<string, string> = {};
-      PROVIDERS.forEach(p => { init[p.envKey] = env[p.envKey] ?? ''; });
-      setEnvValues(init);
+      const keys: Record<string, string> = {};
+      for (const p of PROVIDERS) keys[p.id] = env[p.envKey] ?? '';
+      setLocalKeys(keys);
     }).catch(() => {});
 
     client.getModelConfig().then(cfg => setModelConfigState(cfg)).catch(() => {});
-  }, []);
 
-  // Debounced model config save
+    client.readFile(POOL_FILE)
+      .then(raw => setPool(JSON.parse(raw)))
+      .catch(() => setPool([]));
+  }, [client]);
+
+  // --- Model config handlers ---
   const triggerModelSave = (cfg: ModelConfig) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
+    if (modelDebounceRef.current) clearTimeout(modelDebounceRef.current);
+    modelDebounceRef.current = setTimeout(async () => {
       try {
         await client.setModelConfig(cfg.provider, cfg.model, cfg.base_url);
         setModelSaved(true);
@@ -119,28 +104,6 @@ export default function ProvidersPanel() {
     const next = { ...modelConfig, [field]: value };
     setModelConfigState(next);
     triggerModelSave(next);
-  };
-
-  const handleKeyChange = (envKey: string, value: string) => {
-    setEnvValues(prev => ({ ...prev, [envKey]: value }));
-    // Reset test state when key changes
-    setTestStates(prev => ({ ...prev, [envKey]: 'idle' }));
-  };
-
-  const handleKeyBlur = async (envKey: string) => {
-    const value = envValues[envKey] ?? '';
-    try {
-      await client.writeEnv(envKey, value);
-      setSavedKeys(prev => ({ ...prev, [envKey]: true }));
-      setTimeout(() => setSavedKeys(prev => ({ ...prev, [envKey]: false })), 2000);
-    } catch { /* ignore */ }
-  };
-
-  const handleTest = (envKey: string) => {
-    const value = (envValues[envKey] ?? '').trim();
-    const result: TestState = value.length > 0 ? 'ok' : 'fail';
-    setTestStates(prev => ({ ...prev, [envKey]: result }));
-    setTimeout(() => setTestStates(prev => ({ ...prev, [envKey]: 'idle' })), 3000);
   };
 
   const handleFetchOllamaModels = async () => {
@@ -158,12 +121,73 @@ export default function ProvidersPanel() {
     }
   };
 
+  // --- API key handlers ---
+  const persistKey = (providerId: string, envKey: string, value: string) => {
+    client.writeEnv(envKey, value).then(() => {
+      setSavedIndicators(prev => ({ ...prev, [providerId]: true }));
+      setTimeout(() => setSavedIndicators(prev => ({ ...prev, [providerId]: false })), 2000);
+    }).catch(() => {});
+  };
+
+  const handleKeyChange = (providerId: string, envKey: string, value: string) => {
+    setLocalKeys(prev => ({ ...prev, [providerId]: value }));
+    if (saveTimers.current[providerId]) clearTimeout(saveTimers.current[providerId]);
+    saveTimers.current[providerId] = setTimeout(() => {
+      persistKey(providerId, envKey, value);
+    }, 400);
+  };
+
+  const handleKeyBlur = (providerId: string, envKey: string, value: string) => {
+    if (saveTimers.current[providerId]) {
+      clearTimeout(saveTimers.current[providerId]);
+      delete saveTimers.current[providerId];
+    }
+    persistKey(providerId, envKey, value);
+  };
+
+  const toggleShow = (providerId: string) => {
+    setShowKeys(prev => ({ ...prev, [providerId]: !prev[providerId] }));
+  };
+
+  // --- Pool handlers ---
+  const persistPool = async (next: PoolEntry[]) => {
+    setPoolSaving(true);
+    try {
+      await client.writeFile(POOL_FILE, JSON.stringify(next, null, 2));
+    } catch { /* ignore */ }
+    setPoolSaving(false);
+  };
+
+  const handleAddPoolEntry = async () => {
+    const trimmedKey = newPoolKey.trim();
+    if (!trimmedKey) return;
+    const entry: PoolEntry = {
+      id: Date.now().toString(),
+      provider: newPoolProvider,
+      key: trimmedKey,
+      label: newPoolLabel.trim(),
+    };
+    const next = [...pool, entry];
+    setPool(next);
+    await persistPool(next);
+    setNewPoolKey('');
+    setNewPoolLabel('');
+    setNewPoolKeyVisible(false);
+  };
+
+  const handleDeletePoolEntry = async (id: string) => {
+    const next = pool.filter(e => e.id !== id);
+    setPool(next);
+    await persistPool(next);
+  };
+
   const showBaseUrl = modelConfig.provider === 'ollama' || modelConfig.provider === 'custom';
   const showOllamaModels = modelConfig.provider === 'ollama';
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {/* Model Configuration */}
+
+      {/* ── Model Configuration ── */}
       <div className="card" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Cpu size={15} style={{ color: 'var(--accent-green)', flexShrink: 0 }} />
@@ -172,7 +196,6 @@ export default function ProvidersPanel() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          {/* Provider */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11.5, color: 'var(--text-secondary)', fontWeight: 500 }}>Provider</label>
             <div style={{ position: 'relative' }}>
@@ -202,7 +225,6 @@ export default function ProvidersPanel() {
             </div>
           </div>
 
-          {/* Model name */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11.5, color: 'var(--text-secondary)', fontWeight: 500 }}>Model</label>
             <input
@@ -222,7 +244,6 @@ export default function ProvidersPanel() {
           </div>
         </div>
 
-        {/* Ollama: fetch models helper */}
         {showOllamaModels && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: -4 }}>
             <button
@@ -246,7 +267,6 @@ export default function ProvidersPanel() {
           </div>
         )}
 
-        {/* Base URL — only when ollama or custom */}
         {showBaseUrl && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11.5, color: 'var(--text-secondary)', fontWeight: 500 }}>Base URL</label>
@@ -262,86 +282,276 @@ export default function ProvidersPanel() {
         )}
       </div>
 
-      {/* API Keys */}
-      <div className="card" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* ── API Keys ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Key size={15} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
           <span className="section-label" style={{ margin: 0 }}>API Keys</span>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {PROVIDERS.map((p, i) => {
-            const val = envValues[p.envKey] ?? '';
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          {PROVIDERS.map(p => {
+            const val = localKeys[p.id] ?? '';
             const configured = val.trim().length > 0;
-            const testState = testStates[p.envKey] ?? 'idle';
+            const visible = showKeys[p.id] ?? false;
+            const isSaved = savedIndicators[p.id] ?? false;
 
             return (
               <div
                 key={p.id}
                 style={{
+                  background: 'var(--bg1)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '14px 16px',
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '10px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: i % 2 === 0 ? 'var(--bg2)' : 'transparent',
+                  flexDirection: 'column',
+                  gap: 10,
                 }}
               >
-                {/* Provider label */}
-                <div style={{ width: 120, flexShrink: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.label}</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>{p.envKey}</div>
+                {/* Card header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.label}</span>
+                    {configured && !isSaved && (
+                      <span className="dot dot-green" />
+                    )}
+                  </div>
+                  <SavedFlash show={isSaved} />
                 </div>
 
-                {/* Input */}
-                <MaskedInput
-                  value={val}
-                  hint={p.hint}
-                  onChange={v => handleKeyChange(p.envKey, v)}
-                  onBlur={() => handleKeyBlur(p.envKey)}
-                />
+                {/* Input row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    className="input-field"
+                    type={visible ? 'text' : 'password'}
+                    value={val}
+                    placeholder={p.hint}
+                    onChange={e => handleKeyChange(p.id, p.envKey, e.target.value)}
+                    onBlur={() => handleKeyBlur(p.id, p.envKey, val)}
+                    style={{ flex: 1, fontSize: 12, fontFamily: 'var(--font-mono)', padding: '6px 10px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggleShow(p.id)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'var(--text-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: 5,
+                      borderRadius: 'var(--radius-sm)',
+                      flexShrink: 0,
+                    }}
+                    title={visible ? 'Hide key' : 'Show key'}
+                  >
+                    {visible ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
 
-                {/* Test button */}
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => handleTest(p.envKey)}
-                  style={{ fontSize: 11.5, padding: '3px 9px', flexShrink: 0 }}
-                  title="Check if key is set"
-                >
-                  {testState === 'idle' ? 'Test' : testState === 'ok' ? '✓ OK' : '✗ Not set'}
-                </button>
-
-                {/* Status */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: 90, flexShrink: 0, justifyContent: 'flex-end' }}>
-                  {savedKeys[p.envKey] ? (
-                    <SavedFlash show />
-                  ) : testState === 'ok' ? (
-                    <>
-                      <span className="dot dot-green" />
-                      <span className="badge badge-connected" style={{ fontSize: 10.5 }}>OK</span>
-                    </>
-                  ) : testState === 'fail' ? (
-                    <>
-                      <span className="dot dot-red" />
-                      <span className="badge badge-error" style={{ fontSize: 10.5 }}>Not set</span>
-                    </>
-                  ) : configured ? (
-                    <>
-                      <span className="dot dot-green" />
-                      <span className="badge badge-connected" style={{ fontSize: 10.5 }}>Configured</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="dot dot-dim" />
-                      <span className="badge badge-idle" style={{ fontSize: 10.5 }}>Not set</span>
-                    </>
-                  )}
+                {/* Footer hint */}
+                <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                  {p.envKey}
                 </div>
               </div>
             );
           })}
         </div>
+      </div>
+
+      {/* ── Backup Keys (Credential Pool) ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {/* Collapsible header */}
+        <button
+          type="button"
+          onClick={() => setPoolOpen(o => !o)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: 'none',
+            border: 'none',
+            borderBottom: poolOpen ? '1px solid var(--border)' : '1px solid transparent',
+            borderRadius: poolOpen ? '0' : '0',
+            padding: '10px 0',
+            cursor: 'pointer',
+            color: 'var(--text-secondary)',
+            width: '100%',
+            textAlign: 'left',
+          }}
+        >
+          {poolOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          <span className="section-label" style={{ margin: 0 }}>Backup Keys</span>
+          {pool.length > 0 && (
+            <span style={{
+              fontSize: 10.5,
+              background: 'var(--bg3)',
+              color: 'var(--text-secondary)',
+              borderRadius: 10,
+              padding: '1px 7px',
+              fontWeight: 500,
+            }}>
+              {pool.length}
+            </span>
+          )}
+          {poolSaving && (
+            <span style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>saving…</span>
+          )}
+        </button>
+
+        {poolOpen && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 16 }}>
+
+            {/* Existing pool entries */}
+            {pool.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {pool.map(entry => {
+                  const provLabel = PROVIDERS.find(p => p.id === entry.provider)?.label ?? entry.provider;
+                  return (
+                    <div
+                      key={entry.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '9px 12px',
+                        background: 'var(--bg1)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)',
+                      }}
+                    >
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', width: 96, flexShrink: 0 }}>{provLabel}</span>
+                      <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {maskKey(entry.key)}
+                      </span>
+                      {entry.label && (
+                        <span style={{ fontSize: 11, color: 'var(--text-tertiary)', flexShrink: 0 }}>{entry.label}</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePoolEntry(entry.id)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--accent-red)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: 4,
+                          borderRadius: 4,
+                          flexShrink: 0,
+                          opacity: 0.7,
+                        }}
+                        title="Remove backup key"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {pool.length === 0 && (
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: 0 }}>
+                No backup keys stored. Add one below.
+              </p>
+            )}
+
+            {/* Add new entry form */}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                padding: '14px 16px',
+                background: 'var(--bg1)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary)' }}>Add backup key</span>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 8 }}>
+                {/* Provider dropdown */}
+                <div style={{ position: 'relative' }}>
+                  <select
+                    value={newPoolProvider}
+                    onChange={e => setNewPoolProvider(e.target.value)}
+                    style={{
+                      width: '100%',
+                      appearance: 'none',
+                      background: 'var(--bg2)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-primary)',
+                      fontSize: 12,
+                      padding: '6px 26px 6px 9px',
+                      cursor: 'pointer',
+                      outline: 'none',
+                    }}
+                  >
+                    {PROVIDERS.map(p => (
+                      <option key={p.id} value={p.id} style={{ background: 'var(--bg2)' }}>{p.label}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={12} style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none' }} />
+                </div>
+
+                {/* Label input */}
+                <input
+                  className="input-field"
+                  type="text"
+                  value={newPoolLabel}
+                  placeholder="Label (optional)"
+                  onChange={e => setNewPoolLabel(e.target.value)}
+                  style={{ fontSize: 12, padding: '6px 10px' }}
+                />
+              </div>
+
+              {/* Key input row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  className="input-field"
+                  type={newPoolKeyVisible ? 'text' : 'password'}
+                  value={newPoolKey}
+                  placeholder="Paste API key…"
+                  onChange={e => setNewPoolKey(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddPoolEntry(); }}
+                  style={{ flex: 1, fontSize: 12, fontFamily: 'var(--font-mono)', padding: '6px 10px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setNewPoolKeyVisible(v => !v)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: 5,
+                    borderRadius: 'var(--radius-sm)',
+                    flexShrink: 0,
+                  }}
+                >
+                  {newPoolKeyVisible ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={handleAddPoolEntry}
+                  disabled={!newPoolKey.trim()}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, flexShrink: 0 }}
+                >
+                  <Plus size={13} /> Add
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
