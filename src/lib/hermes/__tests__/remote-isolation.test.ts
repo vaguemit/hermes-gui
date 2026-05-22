@@ -24,12 +24,16 @@ async function run() {
   console.log('remote-isolation.test.ts')
   const client = new RemoteHermesClient('http://localhost:8642', '')
 
-  // These should NOT throw (they go over HTTP)
-  // We don't actually call them to avoid network dependency, just verify they're defined
+  // These should NOT throw (they go over HTTP or are synchronous helpers)
+  // We don't actually call network methods to avoid network dependency
   assert(typeof client.getHealth === 'function', 'getHealth is defined')
   assert(typeof client.streamChat === 'function', 'streamChat is defined')
   assert(typeof client.fetchModels === 'function', 'fetchModels is defined')
   assert(typeof client.getGatewayLatency === 'function', 'getGatewayLatency is defined')
+  assert(typeof client.getGatewayUrl === 'function', 'getGatewayUrl is defined')
+  assert(typeof client.getGatewayHeaders === 'function', 'getGatewayHeaders is defined')
+  assert(client.getGatewayUrl() === 'http://localhost:8642', 'getGatewayUrl returns baseUrl')
+  assert(typeof client.getGatewayHeaders() === 'object', 'getGatewayHeaders returns object')
 
   // These are IPC-only — must throw UnsupportedCapabilityError
   const ipcOnlyMethods: Array<{ name: string; call: () => Promise<unknown> }> = [
