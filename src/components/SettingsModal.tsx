@@ -71,10 +71,14 @@ const TABS = [
 ] as const;
 
 const THEMES = [
-  { id: 'dark',     label: 'Dark',     swatch: ['#080808', '#0f0f0f', '#22c55e'] },
-  { id: 'oled',     label: 'OLED',     swatch: ['#000000', '#050505', '#22c55e'] },
-  { id: 'monokai',  label: 'Monokai',  swatch: ['#1a1a16', '#272822', '#a6e22e'] },
-  { id: 'light',    label: 'Light',    swatch: ['#f8f8f8', '#ffffff', '#16a34a'] },
+  { id: 'dark',       label: 'Dark',        swatch: ['#080808', '#0f0f0f', '#22c55e'] },
+  { id: 'oled',       label: 'OLED',        swatch: ['#000000', '#050505', '#22c55e'] },
+  { id: 'light',      label: 'Light',       swatch: ['#f8f8f8', '#ffffff', '#16a34a'] },
+  { id: 'monokai',    label: 'Monokai',     swatch: ['#1a1a16', '#272822', '#a6e22e'] },
+  { id: 'nord',       label: 'Nord',        swatch: ['#242933', '#2e3440', '#a3be8c'] },
+  { id: 'catppuccin', label: 'Catppuccin',  swatch: ['#1e1e2e', '#181825', '#a6e3a1'] },
+  { id: 'gruvbox',    label: 'Gruvbox',     swatch: ['#1d2021', '#282828', '#b8bb26'] },
+  { id: 'solarized',  label: 'Solarized',   swatch: ['#001e26', '#002b36', '#859900'] },
 ];
 
 type SettingsTab = typeof TABS[number]['id'];
