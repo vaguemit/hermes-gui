@@ -87,6 +87,10 @@ interface AppState {
   ptyEventId: string | null;
   setPtyEventId: (id: string | null) => void;
 
+  // Active profile
+  activeProfile: string;
+  setActiveProfile: (p: string) => void;
+
   // Navigation
   activeSection: NavSection;
   setActiveSection: (s: NavSection) => void;
@@ -184,6 +188,10 @@ export const useStore = create<AppState>((set, get) => ({
   setPtySessionId: (id) => set({ ptySessionId: id }),
   ptyEventId: null,
   setPtyEventId: (id) => set({ ptyEventId: id }),
+
+  // Active profile
+  activeProfile: 'default',
+  setActiveProfile: (p) => set({ activeProfile: p }),
 
   // Navigation
   activeSection: 'dashboard',

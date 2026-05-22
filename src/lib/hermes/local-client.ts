@@ -27,6 +27,7 @@ import {
   getGatewayPort as ipcGetGatewayPort, setGatewayPort as ipcSetGatewayPort,
 } from '../../api/desktop'
 import { checkHealth, checkGatewayHealth, fetchModels as gatewayFetchModels, streamChat as gatewayStreamChat, setInMemoryGatewayPort, getBaseUrl, getAuthHeaders } from '../../api/hermes'
+import { useStore } from '../../store'
 
 export class LocalHermesClient implements HermesClient {
   async getHealth(): Promise<HealthStatus> {
@@ -123,12 +124,17 @@ export class LocalHermesClient implements HermesClient {
     return gatewayFetchModels()
   }
 
+  private withProfile(args: string[]): string[] {
+    const profile = useStore.getState().activeProfile
+    return profile && profile !== 'default' ? ['--profile', profile, ...args] : args
+  }
+
   async runHermesCommand(args: string[], timeoutSecs = 45): Promise<CommandResult> {
-    return ipcRunHermesCommand(args, timeoutSecs)
+    return ipcRunHermesCommand(this.withProfile(args), timeoutSecs)
   }
 
   async streamCommand(args: string[], onLine: (line: string) => void, timeoutSecs = 1800): Promise<CommandResult> {
-    return ipcStreamHermesCommand(args, onLine, timeoutSecs)
+    return ipcStreamHermesCommand(this.withProfile(args), onLine, timeoutSecs)
   }
 
   async installHermes(onLine: (line: string) => void): Promise<CommandResult> {

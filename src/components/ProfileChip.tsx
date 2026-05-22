@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useHermesClient } from '../lib/hermes';
+import { useStore } from '../store';
 import type { ProfileMeta } from '../lib/hermes';
 
 export default function ProfileChip() {
   const client = useHermesClient();
+  const { activeProfile, setActiveProfile } = useStore();
   const [profiles, setProfiles] = useState<ProfileMeta[]>([]);
-  const [activeProfile, setActiveProfile] = useState('default');
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
