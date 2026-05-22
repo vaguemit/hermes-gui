@@ -108,6 +108,8 @@ interface AppState {
   activeSessionId: string | null;
   addSession: () => void;
   setActiveSession: (id: string) => void;
+  deleteSession: (id: string) => void;
+  renameSession: (id: string, title: string) => void;
   addMessage: (msg: Message) => void;
   updateLastMessage: (patch: Partial<Message>) => void;
   updateToolCall: (sessionId: string, toolId: string, patch: Partial<ToolCall>) => void;
@@ -226,6 +228,19 @@ export const useStore = create<AppState>((set, get) => ({
     get().clearToolCalls();
   },
   setActiveSession: (id) => set({ activeSessionId: id }),
+  deleteSession: (id) =>
+    set((state) => {
+      const remaining = state.sessions.filter((s) => s.id !== id);
+      const newActive =
+        state.activeSessionId === id
+          ? (remaining[0]?.id ?? null)
+          : state.activeSessionId;
+      return { sessions: remaining, activeSessionId: newActive };
+    }),
+  renameSession: (id, title) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) => (s.id === id ? { ...s, title } : s)),
+    })),
   addMessage: (msg) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
