@@ -4,7 +4,7 @@ import { chatStream, chatCli, launchChrome } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
-  Send, Square, Paperclip, Copy,
+  Send, Square, Paperclip, Copy, Check, MessageSquare,
   ChevronDown, ChevronRight, AlertTriangle,
   Brain, Terminal, CheckCircle2, XCircle, Loader2, Download, Zap
 } from 'lucide-react';
@@ -64,6 +64,29 @@ function ReasoningBlock({ content }: { content: string }) {
 function MessageBubble({ msg }: { msg: Message }) {
   const [copied, setCopied] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Inject copy buttons into code blocks after render / on content change
+  useEffect(() => {
+    if (!contentRef.current) return;
+    contentRef.current.querySelectorAll('pre').forEach((pre) => {
+      if (pre.querySelector('.code-copy-btn')) return;
+      const btn = document.createElement('button');
+      btn.className = 'code-copy-btn';
+      btn.textContent = 'Copy';
+      btn.style.cssText = 'position:absolute;top:6px;right:8px;font-size:11px;padding:2px 8px;background:var(--bg3);color:var(--text-secondary);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-family:var(--font-mono);transition:color 0.15s';
+      btn.onclick = () => {
+        const code = pre.querySelector('code')?.innerText ?? pre.innerText;
+        navigator.clipboard.writeText(code);
+        btn.textContent = 'Copied!';
+        btn.style.color = 'var(--accent-green)';
+        setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = 'var(--text-secondary)'; }, 1500);
+      };
+      pre.style.position = 'relative';
+      pre.appendChild(btn);
+    });
+  }, [msg.content]);
+
   if (msg.type === 'reasoning') return <ReasoningBlock content={msg.content} />;
   if (msg.type === 'error') return (
     <div className="animate-in" style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-start' }}>
@@ -82,13 +105,49 @@ function MessageBubble({ msg }: { msg: Message }) {
   );
 
   const isUser = msg.role === 'user';
+
+  const handleCopyMessage = () => {
+    navigator.clipboard.writeText(msg.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
   return (
     <div className="animate-in" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{ display: 'flex', gap: 12, marginBottom: 18, flexDirection: isUser ? 'row-reverse' : 'row', alignItems: 'flex-start' }}>
       <div style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, marginTop: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, background: isUser ? 'linear-gradient(135deg, #7c6af7, #3b9eff)' : 'linear-gradient(135deg, #1a1d26, #20242f)', border: isUser ? 'none' : '1px solid var(--border)', color: 'white' }}>
         {isUser ? 'U' : 'H'}
       </div>
-      <div style={{ flex: 1, maxWidth: isUser ? '75%' : '100%' }}>
-        <div style={{ background: isUser ? 'linear-gradient(135deg, rgba(124,106,247,0.2), rgba(59,158,255,0.12))' : 'transparent', border: isUser ? '1px solid rgba(124,106,247,0.3)' : 'none', borderRadius: isUser ? 12 : 0, padding: isUser ? '10px 14px' : 0 }}>
+      <div style={{ flex: 1, maxWidth: isUser ? '75%' : '100%', position: 'relative' }}>
+        {/* Top-right hover copy button */}
+        {!msg.isStreaming && hovered && (
+          <button
+            onClick={handleCopyMessage}
+            title="Copy message"
+            style={{
+              position: 'absolute',
+              top: isUser ? 6 : 0,
+              right: isUser ? 6 : 0,
+              zIndex: 10,
+              width: 24,
+              height: 24,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--bg2)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              cursor: 'pointer',
+              color: copied ? 'var(--accent-green)' : 'var(--text-tertiary)',
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = copied ? 'var(--accent-green)' : 'var(--text-primary)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = copied ? 'var(--accent-green)' : 'var(--text-tertiary)'; }}
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+          </button>
+        )}
+
+        <div ref={contentRef} style={{ background: isUser ? 'linear-gradient(135deg, rgba(124,106,247,0.2), rgba(59,158,255,0.12))' : 'transparent', border: isUser ? '1px solid rgba(124,106,247,0.3)' : 'none', borderRadius: isUser ? 12 : 0, padding: isUser ? '10px 14px' : 0 }}>
           {msg.isStreaming
             ? <div className="typing-cursor">{renderMarkdown(msg.content || '…')}</div>
             : renderMarkdown(msg.content)
@@ -97,9 +156,10 @@ function MessageBubble({ msg }: { msg: Message }) {
         {msg.toolCalls?.map((tc) => <ToolCallCard key={tc.id} tc={tc} />)}
         {!isUser && !msg.isStreaming && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-            <button onClick={() => { navigator.clipboard.writeText(msg.content); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-              style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: 11.5, cursor: 'pointer', padding: '3px 7px', borderRadius: 5 }}>
-              <Copy size={11} />{copied ? 'Copied!' : 'Copy'}
+            <button onClick={handleCopyMessage}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: copied ? 'var(--accent-green)' : 'var(--text-secondary)', fontSize: 11.5, cursor: 'pointer', padding: '3px 7px', borderRadius: 5, transition: 'color 0.15s' }}>
+              {copied ? <Check size={11} /> : <Copy size={11} />}
+              {copied ? 'Copied!' : 'Copy'}
             </button>
             {hovered && (
               <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{formatTimestamp(msg.timestamp)}</span>
@@ -552,11 +612,26 @@ export default function ConversationPanel() {
       )}
       <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
         {messages.length === 0 && (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, opacity: 0.5 }}>
-            <div style={{ fontSize: 48 }}>🪽</div>
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 72, height: 72, borderRadius: '50%', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+              <MessageSquare size={32} style={{ color: 'var(--text-tertiary)' }} />
+            </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>Start a conversation with Hermes</div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Type a message or press <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px', fontSize: 11 }}>/</kbd> for slash commands</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Start a conversation</div>
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Ask anything, run commands, or type <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px', fontSize: 11, color: 'var(--text-secondary)' }}>/</kbd> for slash commands</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 420 }}>
+              {['What can you do?', 'Show system status', 'Help me write code'].map((prompt) => (
+                <button
+                  key={prompt}
+                  onClick={() => { setInput(prompt); textareaRef.current?.focus(); }}
+                  style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 20, padding: '6px 14px', fontSize: 12.5, color: 'var(--text-secondary)', cursor: 'pointer', transition: 'border-color 0.15s, color 0.15s' }}
+                  onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = 'var(--border-hover)'; b.style.color = 'var(--text-primary)'; }}
+                  onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = 'var(--border)'; b.style.color = 'var(--text-secondary)'; }}
+                >
+                  {prompt}
+                </button>
+              ))}
             </div>
           </div>
         )}
