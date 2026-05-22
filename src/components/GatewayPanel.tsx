@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Globe, Play, Radio, Settings, Square } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, CheckCircle2, Eye, EyeOff, Globe, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
 import { useHermesClient, useHermesContext } from '../lib/hermes';
 import { getChromeCdpStatus, launchChrome, onGatewayReady, sendHermesPtyMessage, startHermesPtyChat } from '../api/desktop';
@@ -109,6 +109,10 @@ export default function GatewayPanel() {
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [savingPlatform, setSavingPlatform] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showFields, setShowFields] = useState<Record<string, boolean>>({});
+  const [savedFields, setSavedFields] = useState<Record<string, boolean>>({});
+  const [uptimeSeconds, setUptimeSeconds] = useState<number>(0);
+  const gatewayStartRef = useRef<number | null>(null);
   const [toolStates, setToolStates] = useState<Record<string, ToolToggleState>>(() =>
     Object.fromEntries(
       TOOL_PLATFORMS.map((t) => [t.id, { enabled: false, loading: false, feedback: null }])
@@ -227,6 +231,9 @@ export default function GatewayPanel() {
     '[ready] Health endpoint: http://127.0.0.1:8642/health',
   ]);
 
+  const isConnected = gatewayStatus === 'connected';
+  const isConnecting = gatewayStatus === 'connecting';
+
   useEffect(() => {
     let cancelled = false;
     gateway.checkStatus().then(() => {
@@ -238,7 +245,7 @@ export default function GatewayPanel() {
 
   // Pre-load saved env values when platform config modal opens
   useEffect(() => {
-    if (!configPlatform) { setFormValues({}); setSaveSuccess(false); return; }
+    if (!configPlatform) { setFormValues({}); setSaveSuccess(false); setShowFields({}); setSavedFields({}); return; }
     const fields = PLATFORM_FIELDS[configPlatform] || [];
     if (fields.length === 0) return;
     client.readEnv().then(env => {
@@ -247,6 +254,22 @@ export default function GatewayPanel() {
       setFormValues(existing);
     }).catch(() => {});
   }, [configPlatform, client]);
+
+  // Track gateway uptime — set start time when connected, tick every second
+  useEffect(() => {
+    if (isConnected) {
+      if (gatewayStartRef.current === null) {
+        gatewayStartRef.current = Date.now();
+      }
+      const timer = setInterval(() => {
+        setUptimeSeconds(Math.floor((Date.now() - (gatewayStartRef.current ?? Date.now())) / 1000));
+      }, 1000);
+      return () => clearInterval(timer);
+    } else {
+      gatewayStartRef.current = null;
+      setUptimeSeconds(0);
+    }
+  }, [isConnected]);
 
   // Poll CDP every 3s while browser is connected — disconnect if Chrome closes
   useEffect(() => {
@@ -448,8 +471,21 @@ export default function GatewayPanel() {
     setGatewayStatus('disconnected');
   };
 
-  const isConnected = gatewayStatus === 'connected';
-  const isConnecting = gatewayStatus === 'connecting';
+  function formatUptime(secs: number): string {
+    if (secs < 60) return `${secs}s`;
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    if (m < 60) return `${m}m ${s}s`;
+    const h = Math.floor(m / 60);
+    const rm = m % 60;
+    return `${h}h ${rm}m`;
+  }
+
+  function isSensitiveField(field: { key: string; type: string }): boolean {
+    if (field.type === 'password') return true;
+    const k = field.key.toUpperCase();
+    return k.includes('TOKEN') || k.includes('KEY') || k.includes('SECRET') || k.includes('PASSWORD');
+  }
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '20px 24px' }}>
@@ -498,6 +534,22 @@ export default function GatewayPanel() {
             </span>
           )}
         </div>
+
+        {isConnected && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+            <span style={{ fontSize: 11.5, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+              Port: 8642
+            </span>
+            <span style={{ fontSize: 11.5, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+              Uptime: {formatUptime(uptimeSeconds)}
+            </span>
+            {gateway.latencyMs !== null && (
+              <span style={{ fontSize: 11.5, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                Latency: {gateway.latencyMs}ms
+              </span>
+            )}
+          </div>
+        )}
 
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Tools</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
@@ -800,19 +852,49 @@ export default function GatewayPanel() {
                 <span style={{ fontWeight: 600, fontSize: 14.5, flex: 1 }}>Configure {configPlatform}</span>
               </div>
               <div style={{ padding: 18 }}>
-                {(PLATFORM_FIELDS[configPlatform] || []).map((f) => (
-                  <div key={f.key} style={{ marginBottom: 14 }}>
-                    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>{f.label}</label>
-                    <input
-                      type={f.type}
-                      placeholder={f.hint}
-                      value={formValues[f.key] || ''}
-                      onChange={(e) => setFormValues({ ...formValues, [f.key]: e.target.value })}
-                      className="input-field"
-                    />
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>{f.hint}</div>
-                  </div>
-                ))}
+                {(PLATFORM_FIELDS[configPlatform] || []).map((f) => {
+                  const sensitive = isSensitiveField(f);
+                  const revealed = showFields[f.key];
+                  const isSaved = savedFields[f.key];
+                  return (
+                    <div key={f.key} style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                        <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)' }}>{f.label}</label>
+                        {isSaved && (
+                          <span style={{ fontSize: 11, color: 'var(--accent-green)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <Check size={11} /> Saved
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <input
+                          type={sensitive && !revealed ? 'password' : 'text'}
+                          placeholder={f.hint}
+                          value={formValues[f.key] || ''}
+                          onChange={(e) => setFormValues({ ...formValues, [f.key]: e.target.value })}
+                          onBlur={async (e) => {
+                            const val = e.target.value.trim();
+                            if (!val) return;
+                            await client.writeEnv(f.key, val).catch(() => {});
+                            setSavedFields(prev => ({ ...prev, [f.key]: true }));
+                            setTimeout(() => setSavedFields(prev => ({ ...prev, [f.key]: false })), 2000);
+                          }}
+                          className="input-field"
+                          style={{ paddingRight: sensitive ? 34 : undefined }}
+                        />
+                        {sensitive && (
+                          <button
+                            type="button"
+                            onClick={() => setShowFields(prev => ({ ...prev, [f.key]: !prev[f.key] }))}
+                            style={{ position: 'absolute', right: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 2, display: 'flex', alignItems: 'center' }}
+                          >
+                            {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
                 {saveSuccess && (
                   <div style={{ fontSize: 12, color: 'var(--accent-green)', marginBottom: 8 }}>Credentials saved. Restart the gateway to connect.</div>
                 )}
