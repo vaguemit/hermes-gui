@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
-import { useHermesMode } from '../lib/hermes';
+import { useHermesMode, useHermesClient } from '../lib/hermes';
 import { formatTimestamp } from '../utils/parser';
 import ProfileChip from './ProfileChip';
 import {
@@ -30,6 +30,7 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const mode = useHermesMode();
+  const client = useHermesClient();
   const {
     activeSection, setActiveSection, gatewayStatus, agentState,
     activeModel, setModelSwitcherOpen, sessions, activeSessionId,
@@ -253,12 +254,13 @@ export default function Sidebar() {
                     {/* Delete button */}
                     {hoveredSessionId === s.id && editingId !== s.id && (
                       <button
-                        onClick={e => {
+                        onClick={async e => {
                           e.stopPropagation();
                           if (s.messages.length > 0) {
                             if (!window.confirm('Delete this session?')) return;
                           }
                           deleteSession(s.id);
+                          client.deleteSession(`${s.id}.json`).catch(() => {});
                         }}
                         style={{
                           position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',

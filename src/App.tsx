@@ -37,6 +37,7 @@ function useSessionPersistence() {
   const client = useHermesClient();
   const sessions = useStore(s => s.sessions);
   const sessionsRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevIdsRef = useRef<Set<string>>(new Set());
 
   // Load persisted sessions from disk on startup
   useEffect(() => {
@@ -57,8 +58,18 @@ function useSessionPersistence() {
     }).catch(() => {});
   }, [client]);
 
-  // Persist sessions to disk on change (debounced 2s)
+  // Persist sessions to disk on change (debounced 2s); delete orphaned files
   useEffect(() => {
+    const currentIds = new Set(sessions.map(s => s.id));
+
+    // Delete any sessions removed since last render
+    prevIdsRef.current.forEach(id => {
+      if (!currentIds.has(id)) {
+        client.deleteSession(`${id}.json`).catch(() => {});
+      }
+    });
+    prevIdsRef.current = currentIds;
+
     if (sessionsRef.current) clearTimeout(sessionsRef.current);
     sessionsRef.current = setTimeout(() => {
       sessions.forEach(s => {
