@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore, CronJob } from '../store';
 import { isTauriApp } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
-import { Clock, Plus, Trash2, Play } from 'lucide-react';
+import { Clock, Plus, Trash2, Play, Search, X } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).slice(2);
 
@@ -66,11 +66,38 @@ function shouldFire(cron: CronJob): boolean {
   return false;
 }
 
+/** Estimate the next run time label from a schedule string. */
+function estimateNextRun(schedule: string): string {
+  const s = schedule.toLowerCase();
+  if (s.includes('daily') || s.includes('every day')) return 'Tomorrow';
+  if (s.includes('hourly') || s.includes('every hour')) return 'In ~1 hour';
+  if (s.includes('monday') || s.includes('weekly')) return 'Next Monday';
+  if (s.includes('minute')) return 'In <1 min';
+  return 'Scheduled';
+}
+
+/** Format a lastRun string as a relative label. */
+function formatLastRun(lastRun: string | undefined): string {
+  if (!lastRun) return 'Never';
+  const d = new Date(lastRun);
+  if (isNaN(d.getTime())) return lastRun;
+  const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return `${diffDays}d ago`;
+}
+
+type SortMode = 'active-first' | 'a-z';
+
 export default function CronPanel() {
   const client = useHermesClient();
   const { crons, addCron, toggleCron, deleteCron, updateCronLastRun, platforms, gatewayStatus, addToast } = useStore();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ schedule: '', description: '', platform: 'Telegram', mode: 'auto' as 'auto' | 'gateway' | 'pty' });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortMode, setSortMode] = useState<SortMode>('active-first');
+  // Per-row run state: id -> 'running' | 'done' | 'error'
+  const [rowRunState, setRowRunState] = useState<Record<string, 'running' | 'done' | 'error'>>({});
 
   // Load crons from disk on mount
   useEffect(() => {
@@ -226,6 +253,32 @@ export default function CronPanel() {
     setShowForm(false);
   };
 
+  const handleRunNow = async (cron: CronJobWithMode) => {
+    if (rowRunState[cron.id] === 'running') return;
+    setRowRunState(prev => ({ ...prev, [cron.id]: 'running' }));
+    try {
+      const result = await client.runHermesCommand(['cron', 'run', cron.id]);
+      if (result.success) {
+        setRowRunState(prev => ({ ...prev, [cron.id]: 'done' }));
+        addToast(`Cron "${cron.description.slice(0, 40)}" triggered`, 'success');
+      } else {
+        setRowRunState(prev => ({ ...prev, [cron.id]: 'error' }));
+        addToast(`Cron run failed: ${result.stderr.slice(0, 80)}`, 'error');
+      }
+    } catch {
+      setRowRunState(prev => ({ ...prev, [cron.id]: 'error' }));
+      addToast(`Cron run error`, 'error');
+    }
+    // Clear indicator after 3 seconds
+    setTimeout(() => {
+      setRowRunState(prev => {
+        const next = { ...prev };
+        delete next[cron.id];
+        return next;
+      });
+    }, 3000);
+  };
+
   const [testRunning, setTestRunning] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
@@ -316,6 +369,19 @@ export default function CronPanel() {
     gateway: 'Gateway only — fails if gateway is not running',
     pty: 'PTY only — runs hermes CLI directly, no gateway required',
   };
+
+  // Filtered + sorted cron list
+  const filteredCrons = crons
+    .filter(c => !searchQuery || c.description.toLowerCase().includes(searchQuery.toLowerCase()))
+    .slice()
+    .sort((a, b) => {
+      if (sortMode === 'active-first') {
+        if (a.active === b.active) return 0;
+        return a.active ? -1 : 1;
+      }
+      // a-z
+      return a.description.localeCompare(b.description);
+    });
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '20px 24px' }}>
@@ -442,21 +508,82 @@ export default function CronPanel() {
           </div>
         )}
 
+        {/* Search + Sort bar — only shown when there are crons */}
+        {crons.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            {/* Search */}
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none' }} />
+              <input
+                className="input-field"
+                placeholder="Search jobs…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ paddingLeft: 32, paddingRight: searchQuery ? 32 : 10 }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+            {/* Sort toggle */}
+            <div style={{ display: 'flex', gap: 0, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', overflow: 'hidden', flexShrink: 0 }}>
+              {(['active-first', 'a-z'] as const).map((mode, i) => (
+                <button
+                  key={mode}
+                  onClick={() => setSortMode(mode)}
+                  aria-pressed={sortMode === mode}
+                  style={{
+                    padding: '5px 11px',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    border: 'none',
+                    borderRight: i === 0 ? '1px solid var(--border)' : 'none',
+                    cursor: 'pointer',
+                    background: sortMode === mode ? 'var(--bg4)' : 'var(--bg1)',
+                    color: sortMode === mode ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    transition: 'background 0.15s, color 0.15s',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {mode === 'active-first' ? 'Active first' : 'A–Z'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Cron List */}
         {crons.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
-            <Clock size={32} style={{ margin: '0 auto 12px', opacity: 0.2, display: 'block' }} />
-            <div style={{ fontSize: 14 }}>No scheduled tasks</div>
-            <div style={{ fontSize: 12, marginTop: 4 }}>Create one with "New Cron" above</div>
+          <div style={{ textAlign: 'center', padding: '64px 0' }}>
+            <Clock size={36} style={{ margin: '0 auto 14px', opacity: 0.15, display: 'block', color: 'var(--text-primary)' }} />
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>No scheduled jobs yet</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 18 }}>Automate recurring tasks and deliver them to any platform</div>
+            <button
+              className="btn btn-ghost"
+              onClick={() => setShowForm(true)}
+              style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 7 }}
+            >
+              <Plus size={14} /> Add your first cron job
+            </button>
+          </div>
+        ) : filteredCrons.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
+            No jobs match "{searchQuery}"
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {crons.map((c) => {
+            {filteredCrons.map((c) => {
               const cWm = c as CronJobWithMode;
+              const runState = rowRunState[c.id];
               return (
                 <div key={c.id} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{c.description}</span>
                       <span className={`badge ${c.active ? 'badge-connected' : 'badge-muted'}`}>{c.active ? 'Active' : 'Paused'}</span>
                       {c.source === 'hermes' && (
@@ -466,13 +593,30 @@ export default function CronPanel() {
                         <span className="badge badge-muted" style={{ fontSize: 10, letterSpacing: '0.04em' }}>{MODE_LABELS[cWm.mode]}</span>
                       )}
                     </div>
-                    <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-secondary)' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
                       <span>🕐 {c.schedule}</span>
                       <span style={{ color: c.source === 'hermes' ? 'var(--accent-amber)' : 'var(--text-secondary)' }}>📡 {c.platform}</span>
-                      {c.lastRun && <span>↩ Last: {c.lastRun}</span>}
+                      <span>↩ Last: {formatLastRun(c.lastRun)}</span>
+                      {c.active && (
+                        <span style={{ color: 'var(--accent-green)' }}>⏭ Next: {estimateNextRun(c.schedule)}</span>
+                      )}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                    {/* Run now button */}
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => handleRunNow(cWm)}
+                      disabled={runState === 'running'}
+                      style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5, minWidth: 68 }}
+                    >
+                      {runState === 'running' && (
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid var(--text-secondary)', borderTopColor: 'var(--text-primary)', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                      )}
+                      {runState === 'done' && '✓ Done'}
+                      {runState === 'error' && '✗ Error'}
+                      {!runState && <><Play size={11} /> Run</>}
+                    </button>
                     <label className="toggle">
                       <input type="checkbox" checked={c.active} onChange={() => handleToggle(c)} />
                       <span className="toggle-slider" />

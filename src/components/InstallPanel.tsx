@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, CheckCircle2, Clipboard, Download, Play, RefreshCw, Settings, Terminal, XCircle } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle2, Clipboard, Download, HeartPulse, Play, RefreshCw, Settings, Terminal, XCircle } from 'lucide-react';
 import type { CommandResult } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
-import type { HermesInstallStatus } from '../lib/hermes';
+import type { HermesInstallStatus, DoctorResult, UpdateInfo } from '../lib/hermes';
 import { CLI_COMMANDS } from '../data/hermesCatalog';
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
@@ -52,6 +52,32 @@ function ResultBlock({ result, streamLines }: { result: CommandResult | null; st
   );
 }
 
+function DoctorResultBlock({ result }: { result: DoctorResult }) {
+  return (
+    <div className="terminal" style={{ marginTop: 12 }}>
+      <div className="terminal-bar" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <HeartPulse size={13} style={{ color: result.ok ? 'var(--accent-green)' : 'var(--accent-red)' }} />
+        <span>hermes doctor</span>
+        <span className={`badge ${result.ok ? 'badge-connected' : 'badge-error'}`} style={{ marginLeft: 'auto' }}>
+          {result.ok ? 'All checks passed' : 'Issues found'}
+        </span>
+      </div>
+      <div className="terminal-body">
+        {result.checks.map((check, i) => (
+          <div key={i} className={`term-line ${check.passed ? 'term-ok' : 'term-err'}`}>
+            {check.passed ? '✓' : '✗'} {check.name}: {check.message}
+          </div>
+        ))}
+        {result.raw && (
+          <div className="term-line term-out" style={{ marginTop: 8, whiteSpace: 'pre-wrap', opacity: 0.7 }}>
+            {result.raw.trim()}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => void }) {
   const client = useHermesClient();
   const [status, setStatus] = useState<HermesInstallStatus | null>(null);
@@ -59,6 +85,15 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
   const [running, setRunning] = useState<string | null>(null);
   const [result, setResult] = useState<CommandResult | null>(null);
   const [installLines, setInstallLines] = useState<string[]>([]);
+
+  // Health check state
+  const [doctorRunning, setDoctorRunning] = useState(false);
+  const [doctorResult, setDoctorResult] = useState<DoctorResult | null>(null);
+
+  // Update check state
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null);
 
   const safeAdminCommands = useMemo(
     () => CLI_COMMANDS.filter((cmd) => ['status', 'doctor', 'dump', 'update-check'].includes(cmd.id)),
@@ -116,7 +151,6 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
     setResult(null);
     setInstallLines([]);
     try {
-      // Use the official Nous Research install script (PS1 on Windows, bash on Unix)
       const output = await client.installHermes(
         (line) => setInstallLines((prev) => [...prev, line]),
       );
@@ -135,14 +169,52 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
     }
   };
 
+  const runHealthCheck = async () => {
+    setDoctorRunning(true);
+    setDoctorResult(null);
+    try {
+      const res = await client.runDoctor();
+      setDoctorResult(res);
+    } catch (err) {
+      setDoctorResult({
+        ok: false,
+        checks: [{ name: 'Doctor', passed: false, message: err instanceof Error ? err.message : String(err) }],
+        raw: '',
+      });
+    } finally {
+      setDoctorRunning(false);
+    }
+  };
+
+  const runUpdateCheck = async () => {
+    setUpdateChecking(true);
+    setUpdateInfo(null);
+    setUpdateMsg(null);
+    try {
+      const info = await client.checkUpdate();
+      setUpdateInfo(info);
+      if (!info.update_available) {
+        setUpdateMsg('Up to date ✓');
+        setTimeout(() => setUpdateMsg(null), 3000);
+      }
+    } catch (err) {
+      setUpdateMsg(err instanceof Error ? err.message : String(err));
+      setTimeout(() => setUpdateMsg(null), 3000);
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
 
   const installCommand = /win/i.test(status?.platform || '')
     ? 'irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1 | iex'
     : 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash';
 
+  const isbusy = running !== null || doctorRunning || updateChecking;
+
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '22px 26px' }}>
       <div style={{ maxWidth: 980 }}>
+        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
           <Download size={20} style={{ color: 'var(--accent-green)' }} />
           <div>
@@ -155,6 +227,76 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
           </button>
         </div>
 
+        {/* Version + env info block (shown when installed) */}
+        {status?.installed && (
+          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 24 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 120 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Hermes Agent</span>
+              {status.version ? (
+                <span style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--accent-green)', lineHeight: 1.1 }}>
+                  {status.version.startsWith('v') ? status.version : `v${status.version}`}
+                </span>
+              ) : (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 18, fontWeight: 700, color: 'var(--accent-green)' }}>
+                  <CheckCircle2 size={18} />
+                  Installed
+                </span>
+              )}
+            </div>
+            <div className="divider" style={{ width: 1, height: 48, background: 'var(--border)', flexShrink: 0 }} />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', minWidth: 80 }}>install path</span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', overflowWrap: 'anywhere' }}>
+                  {status.binary_path || status.repo_path || status.hermes_home}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', minWidth: 80 }}>platform</span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>{status.platform}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', minWidth: 80 }}>hermes home</span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', overflowWrap: 'anywhere' }}>{status.hermes_home}</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
+              {/* Health check button */}
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={runHealthCheck}
+                disabled={isbusy}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, opacity: isbusy ? 0.6 : 1 }}
+              >
+                <HeartPulse size={13} style={{ color: 'var(--accent-green)' }} />
+                {doctorRunning ? 'Checking...' : 'Run Health Check'}
+              </button>
+              {/* Update check button + result */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {updateInfo?.update_available && (
+                  <span className="badge badge-connected" style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5 }}>
+                    <CheckCircle2 size={11} />
+                    Update available: {updateInfo.latest_version ?? ''}
+                  </span>
+                )}
+                {updateMsg && !updateInfo?.update_available && (
+                  <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{updateMsg}</span>
+                )}
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={runUpdateCheck}
+                  disabled={isbusy}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, opacity: isbusy ? 0.6 : 1 }}
+                >
+                  <RefreshCw size={12} style={{ animation: updateChecking ? 'spin 1s linear infinite' : undefined }} />
+                  {updateChecking ? 'Checking...' : 'Check for Updates'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Status cards row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12, marginBottom: 16 }}>
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -196,31 +338,42 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
           </div>
         )}
 
-        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        {/* Doctor result */}
+        {doctorResult && <DoctorResultBlock result={doctorResult} />}
+
+        {/* Official installer block */}
+        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16, marginTop: doctorResult ? 16 : 0 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 5 }}>Official Installer</div>
               <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 10 }}>Runs the Nous Research installer with setup skipped, then lets you launch setup from this app.</div>
               <pre style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 7, padding: '9px 11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{installCommand}</pre>
             </div>
-            <button className="btn btn-primary" onClick={runInstall} disabled={running !== null} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, opacity: running ? 0.75 : 1 }}>
+            <button className="btn btn-primary" onClick={runInstall} disabled={isbusy} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, opacity: isbusy ? 0.75 : 1 }}>
               <Download size={14} />
               {running === 'installer' ? 'Installing...' : 'Install Hermes'}
             </button>
           </div>
         </div>
 
+        {/* Quick action buttons */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
           <button
             className="btn btn-primary"
             onClick={() => onOpenWizard?.()}
-            disabled={running !== null}
+            disabled={isbusy}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontSize: 12.5 }}
           >
             <Play size={13} /> Configure Provider
           </button>
           {safeAdminCommands.map((cmd) => (
-            <button key={cmd.id} className="btn btn-ghost" onClick={() => runAction(cmd.id, () => client.runHermesCommand(cmd.args, cmd.id === 'doctor' ? 120 : 45))} disabled={running !== null} style={{ fontSize: 12.5 }}>
+            <button
+              key={cmd.id}
+              className="btn btn-ghost"
+              onClick={() => runAction(cmd.id, () => client.runHermesCommand(cmd.args, cmd.id === 'doctor' ? 120 : 45))}
+              disabled={isbusy}
+              style={{ fontSize: 12.5 }}
+            >
               {running === cmd.id ? 'Running...' : cmd.title}
             </button>
           ))}
