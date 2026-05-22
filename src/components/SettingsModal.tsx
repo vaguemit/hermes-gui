@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe } from 'lucide-react';
 import { getAutostartEnabled, toggleAutostart } from '../api/desktop';
-import { setInMemoryGatewayPort } from '../api/hermes';
 import { useHermesClient } from '../lib/hermes';
 
 const PROVIDERS_KEYS = [
@@ -261,7 +260,6 @@ export default function SettingsModal() {
       }
       await client.writeConfig(yaml);
       await client.setGatewayPort(gatewayPort).catch(() => {});
-      setInMemoryGatewayPort(gatewayPort);
       setWorkspaceSaveMsg('Saved');
     } catch {
       setWorkspaceSaveMsg('Error');

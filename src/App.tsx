@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useStore } from './store';
-import { startHealthPolling, setInMemoryGatewayPort } from './api/hermes';
+import { startHealthPolling } from './api/hermes';
 import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp, listSessionsDisk, readSessionDisk, writeSessionDisk } from './api/desktop';
 import { HermesProvider, useHermesClient } from './lib/hermes';
 import type { UpdateInfo } from './api/desktop';
@@ -226,8 +226,8 @@ function AppInner() {
       }
     }).catch(() => setGatewayStatus('disconnected'));
     startHealthPolling();
-    // Load gateway port from desktop.json into memory for health-polling URL
-    client.getGatewayPort().then(port => setInMemoryGatewayPort(port)).catch(() => {});
+    // Sync persisted gateway port into memory for health-polling URL
+    client.getGatewayPort().catch(() => {});
     // Connection config is loaded by HermesProvider at startup
   }, []);
 
