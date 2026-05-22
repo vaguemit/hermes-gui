@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Copy, Play, Search, Terminal, XCircle } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Check, CheckCircle2, Copy, Play, Search, Terminal, X, XCircle } from 'lucide-react';
 import type { CommandResult } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import { CLI_COMMANDS, CliCommand } from '../data/hermesCatalog';
@@ -15,6 +15,26 @@ const INTERACTIVE_CLI_IDS = new Set([
 ]);
 
 const CATEGORIES = ['All', 'Setup', 'Chat', 'Gateway', 'Automation', 'Memory', 'Tools', 'Admin', 'Developer'] as const;
+
+const RECENTS_KEY = 'hermes-recent-commands';
+const MAX_RECENTS = 5;
+
+function loadRecents(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENTS_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecents(ids: string[]) {
+  try {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(ids));
+  } catch {
+    // ignore
+  }
+}
 
 function splitArgs(text: string): string[] {
   const out: string[] = [];
@@ -42,7 +62,7 @@ function splitArgs(text: string): string[] {
   return out;
 }
 
-function ResultBlock({ result }: { result: CommandResult | null }) {
+function ResultBlock({ result, onClear }: { result: CommandResult | null; onClear: () => void }) {
   if (!result) return null;
   const body = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n\n');
   return (
@@ -52,10 +72,83 @@ function ResultBlock({ result }: { result: CommandResult | null }) {
         <span style={{ fontSize: 12.5, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{result.command}</span>
         {result.code !== null && <span className="badge badge-muted">exit {result.code}</span>}
       </div>
-      <pre style={{ margin: 0, background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-secondary)', fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.55, maxHeight: 420, overflow: 'auto', padding: 12, whiteSpace: 'pre-wrap' }}>
+      <pre style={{ margin: 0, background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.55, maxHeight: 420, overflow: 'auto', padding: 12, whiteSpace: 'pre-wrap' }}>
         {body || '(no output)'}
       </pre>
+      <button
+        onClick={onClear}
+        style={{ marginTop: 8, background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12, padding: 0, display: 'flex', alignItems: 'center', gap: 5 }}
+      >
+        <X size={12} /> Clear output
+      </button>
     </div>
+  );
+}
+
+function CommandRow({
+  cmd,
+  isSelected,
+  onSelect,
+  onRemoveRecent,
+  isRecent,
+}: {
+  cmd: CliCommand;
+  isSelected: boolean;
+  onSelect: (cmd: CliCommand) => void;
+  onRemoveRecent?: () => void;
+  isRecent?: boolean;
+}) {
+  const [rowCopied, setRowCopied] = useState(false);
+
+  const copyRow = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(cmd.command).then(() => {
+      setRowCopied(true);
+      setTimeout(() => setRowCopied(false), 1500);
+    }).catch(() => {});
+  };
+
+  return (
+    <button
+      onClick={() => onSelect(cmd)}
+      style={{
+        width: '100%',
+        background: isSelected ? 'var(--accent-green-dim)' : 'transparent',
+        border: `1px solid ${isSelected ? 'var(--accent-green)' : 'transparent'}`,
+        borderRadius: 8,
+        color: 'var(--text-primary)',
+        display: 'block',
+        marginBottom: 6,
+        padding: '10px 11px',
+        textAlign: 'left',
+        position: 'relative',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+        <span style={{ fontWeight: 700, fontSize: 13, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cmd.title}</span>
+        <span className="badge badge-muted" style={{ flexShrink: 0 }}>{cmd.category}</span>
+        {/* Copy row button */}
+        <button
+          onClick={copyRow}
+          title="Copy command"
+          style={{ flexShrink: 0, background: 'none', border: 'none', color: rowCopied ? 'var(--accent-green)' : 'var(--text-secondary)', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center', borderRadius: 4 }}
+        >
+          {rowCopied ? <Check size={12} /> : <Copy size={12} />}
+        </button>
+        {/* Remove from recents */}
+        {isRecent && onRemoveRecent && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onRemoveRecent(); }}
+            title="Remove from recents"
+            style={{ flexShrink: 0, background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center', borderRadius: 4 }}
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+      <div style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11.5, marginBottom: 4 }}>{cmd.command}</div>
+      <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{cmd.description}</div>
+    </button>
   );
 }
 
@@ -68,6 +161,18 @@ export default function CommandCenterPanel() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<CommandResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [runHovered, setRunHovered] = useState(false);
+  const [recentIds, setRecentIds] = useState<string[]>(loadRecents);
+
+  // Persist recents whenever they change
+  useEffect(() => {
+    saveRecents(recentIds);
+  }, [recentIds]);
+
+  const recentCommands = useMemo(
+    () => recentIds.map((id) => CLI_COMMANDS.find((c) => c.id === id)).filter((c): c is CliCommand => c !== undefined),
+    [recentIds]
+  );
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -85,9 +190,18 @@ export default function CommandCenterPanel() {
     setResult(null);
   };
 
+  const pushRecent = useCallback((id: string) => {
+    setRecentIds((prev) => {
+      const next = [id, ...prev.filter((x) => x !== id)].slice(0, MAX_RECENTS);
+      return next;
+    });
+  }, []);
+
+  const removeRecent = useCallback((id: string) => {
+    setRecentIds((prev) => prev.filter((x) => x !== id));
+  }, []);
+
   const runSelected = async () => {
-    // Block interactive CLI commands — they require a real console and will crash
-    // with NoConsoleScreenBufferError when spawned from Tauri's windowless process.
     if (INTERACTIVE_CLI_IDS.has(selected.id)) {
       setResult({
         success: false,
@@ -101,12 +215,13 @@ export default function CommandCenterPanel() {
 
     const args = splitArgs(customArgs);
     if (args.length === 0) return;
-    // Append --no-color so hermes does not attempt Win32 console color probing.
     const safeArgs = [...args, '--no-color'];
     setRunning(true);
     setResult(null);
     try {
-      setResult(await client.runHermesCommand(safeArgs, selected.safeToRun ? 90 : 30));
+      const res = await client.runHermesCommand(safeArgs, selected.safeToRun ? 90 : 30);
+      setResult(res);
+      pushRecent(selected.id);
     } catch (err) {
       setResult({
         success: false,
@@ -126,8 +241,11 @@ export default function CommandCenterPanel() {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const showRecents = !query.trim() && recentCommands.length > 0;
+
   return (
     <div style={{ height: '100%', overflow: 'hidden', display: 'grid', gridTemplateColumns: 'minmax(340px, 420px) minmax(0, 1fr)' }}>
+      {/* Left column: search + list */}
       <div style={{ borderRight: '1px solid var(--border)', background: 'var(--bg1)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div style={{ padding: '18px 18px 12px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 13 }}>
@@ -139,7 +257,12 @@ export default function CommandCenterPanel() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
             <Search size={14} style={{ color: 'var(--text-secondary)' }} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search commands" style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: 13 }} />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search commands"
+              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: 13 }}
+            />
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
             {CATEGORIES.map((name) => (
@@ -151,33 +274,37 @@ export default function CommandCenterPanel() {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 10 }}>
+          {/* Recent commands section */}
+          {showRecents && (
+            <div style={{ marginBottom: 10 }}>
+              <div className="section-label" style={{ marginBottom: 8, paddingLeft: 2 }}>Recent</div>
+              {recentCommands.map((cmd) => (
+                <CommandRow
+                  key={`recent-${cmd.id}`}
+                  cmd={cmd}
+                  isSelected={selected.id === cmd.id}
+                  onSelect={stageCommand}
+                  isRecent
+                  onRemoveRecent={() => removeRecent(cmd.id)}
+                />
+              ))}
+              <div className="divider" style={{ marginBottom: 10 }} />
+            </div>
+          )}
+
+          {/* All / filtered commands */}
           {filtered.map((cmd) => (
-            <button
+            <CommandRow
               key={cmd.id}
-              onClick={() => stageCommand(cmd)}
-              style={{
-                width: '100%',
-                background: selected.id === cmd.id ? 'var(--accent-green-dim)' : 'transparent',
-                border: `1px solid ${selected.id === cmd.id ? 'var(--accent-green)' : 'transparent'}`,
-                borderRadius: 8,
-                color: 'var(--text-primary)',
-                display: 'block',
-                marginBottom: 6,
-                padding: '10px 11px',
-                textAlign: 'left',
-              }}
-            >
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-                <span style={{ fontWeight: 700, fontSize: 13 }}>{cmd.title}</span>
-                <span className="badge badge-muted" style={{ marginLeft: 'auto' }}>{cmd.category}</span>
-              </div>
-              <div style={{ color: 'var(--text-secondary)', fontFamily: "var(--font-mono)", fontSize: 11.5, marginBottom: 4 }}>{cmd.command}</div>
-              <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{cmd.description}</div>
-            </button>
+              cmd={cmd}
+              isSelected={selected.id === cmd.id}
+              onSelect={stageCommand}
+            />
           ))}
         </div>
       </div>
 
+      {/* Right column: detail + run */}
       <div style={{ padding: '22px 26px', overflowY: 'auto', minWidth: 0 }}>
         <div style={{ maxWidth: 820 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
@@ -213,12 +340,22 @@ export default function CommandCenterPanel() {
               value={customArgs}
               onChange={(e) => setCustomArgs(e.target.value)}
               rows={3}
-              style={{ fontFamily: "var(--font-mono)", fontSize: 12.5, resize: 'vertical' }}
+              style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, resize: 'vertical' }}
             />
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button className="btn btn-primary" onClick={runSelected} disabled={running || INTERACTIVE_CLI_IDS.has(selected.id)} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, opacity: (running || INTERACTIVE_CLI_IDS.has(selected.id)) ? 0.45 : 1 }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
+              <button
+                className="btn btn-primary"
+                onClick={runSelected}
+                disabled={running || INTERACTIVE_CLI_IDS.has(selected.id)}
+                onMouseEnter={() => setRunHovered(true)}
+                onMouseLeave={() => setRunHovered(false)}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, opacity: (running || INTERACTIVE_CLI_IDS.has(selected.id)) ? 0.45 : 1 }}
+              >
                 <Play size={13} />
                 {running ? 'Running...' : 'Run'}
+                {runHovered && !running && !INTERACTIVE_CLI_IDS.has(selected.id) && (
+                  <span className="kbd" style={{ fontSize: 10.5, marginLeft: 2 }}>Enter</span>
+                )}
               </button>
               <button className="btn btn-ghost" onClick={copyCommand} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
                 <Copy size={13} />
@@ -227,7 +364,7 @@ export default function CommandCenterPanel() {
             </div>
           </div>
 
-          <ResultBlock result={result} />
+          <ResultBlock result={result} onClear={() => setResult(null)} />
         </div>
       </div>
     </div>
