@@ -82,4 +82,8 @@ export interface HermesClient {
   // Gateway port
   getGatewayPort(): Promise<number>
   setGatewayPort(port: number): Promise<void>
+
+  // Raw HTTP access helpers (for panels making direct fetch calls)
+  getGatewayUrl(): string
+  getGatewayHeaders(): Record<string, string>
 }

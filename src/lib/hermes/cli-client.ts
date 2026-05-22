@@ -153,4 +153,7 @@ export class CliHermesClient implements HermesClient {
 
   async getGatewayPort(): Promise<number> { return ipcGetGatewayPort() }
   async setGatewayPort(port: number): Promise<void> { return ipcSetGatewayPort(port) }
+
+  getGatewayUrl(): string { return 'http://127.0.0.1:8642' }
+  getGatewayHeaders(): Record<string, string> { return {} }
 }

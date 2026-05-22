@@ -26,7 +26,7 @@ import {
   getConnectionConfig as ipcGetConnectionConfig, setConnectionConfig as ipcSetConnectionConfig,
   getGatewayPort as ipcGetGatewayPort, setGatewayPort as ipcSetGatewayPort,
 } from '../../api/desktop'
-import { checkHealth, checkGatewayHealth, fetchModels as gatewayFetchModels, streamChat as gatewayStreamChat, setInMemoryGatewayPort } from '../../api/hermes'
+import { checkHealth, checkGatewayHealth, fetchModels as gatewayFetchModels, streamChat as gatewayStreamChat, setInMemoryGatewayPort, getBaseUrl, getAuthHeaders } from '../../api/hermes'
 
 export class LocalHermesClient implements HermesClient {
   async getHealth(): Promise<HealthStatus> {
@@ -167,4 +167,7 @@ export class LocalHermesClient implements HermesClient {
     await ipcSetGatewayPort(port)
     setInMemoryGatewayPort(port)
   }
+
+  getGatewayUrl(): string { return getBaseUrl() }
+  getGatewayHeaders(): Record<string, string> { return getAuthHeaders() }
 }

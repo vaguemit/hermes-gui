@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Play, Square, Cpu, MessageSquare, Zap, ChevronRight, RefreshCw, Hash, Clock, BookOpen, Radio, PlusSquare, CalendarClock, Layers, Server, Plug } from 'lucide-react';
 import { useStore } from '../store';
 import { getSystemInfo } from '../api/desktop';
-import { getBaseUrl, getAuthHeaders } from '../api/hermes';
 import { useHermesClient } from '../lib/hermes';
 import type { ModelConfig } from '../lib/hermes';
 
@@ -87,9 +86,9 @@ export default function DashboardPanel() {
     // Prefer HTTP API (same as chat panel) — faster and streaming-capable
     if (isRunning) {
       try {
-        const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
+        const res = await fetch(`${client.getGatewayUrl()}/v1/chat/completions`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          headers: { 'Content-Type': 'application/json', ...client.getGatewayHeaders() },
           body: JSON.stringify({
             model: modelConfig?.model || 'auto',
             messages: [{ role: 'user', content: trimmed }],

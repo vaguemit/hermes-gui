@@ -62,5 +62,9 @@ export function useHermes() {
 
     // Cron
     listCronJobs: useCallback(() => client.listCronJobs(), [client]),
+
+    // Raw HTTP helpers
+    getGatewayUrl: useCallback(() => client.getGatewayUrl(), [client]),
+    getGatewayHeaders: useCallback(() => client.getGatewayHeaders(), [client]),
   }
 }

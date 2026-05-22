@@ -185,4 +185,7 @@ export class RemoteHermesClient implements HermesClient {
   listCronJobs(): Promise<CronJobMeta[]> { return this.unsupported('listCronJobs') }
   getConnectionConfig(): Promise<ConnectionConfig> { return this.unsupported('getConnectionConfig') }
   setConnectionConfig(_m: string, _u: string, _k?: string): Promise<void> { return this.unsupported('setConnectionConfig') }
+
+  getGatewayUrl(): string { return this.baseUrl }
+  getGatewayHeaders(): Record<string, string> { return this.authHeaders() }
 }

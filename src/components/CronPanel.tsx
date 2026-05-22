@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore, CronJob } from '../store';
 import { isTauriApp } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
-import { getBaseUrl, getAuthHeaders } from '../api/hermes';
 import { Clock, Plus, Trash2, Play } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).slice(2);
@@ -159,9 +158,9 @@ export default function CronPanel() {
 
     // Gateway path
     try {
-      const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
+      const res = await fetch(`${client.getGatewayUrl()}/v1/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        headers: { 'Content-Type': 'application/json', ...client.getGatewayHeaders() },
         body: JSON.stringify({
           model: 'auto',
           messages: [{ role: 'user', content: cron.description }],
@@ -257,11 +256,11 @@ export default function CronPanel() {
       return;
     }
 
-    const url = `${getBaseUrl()}/v1/chat/completions`;
+    const url = `${client.getGatewayUrl()}/v1/chat/completions`;
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        headers: { 'Content-Type': 'application/json', ...client.getGatewayHeaders() },
         body: JSON.stringify({
           model: 'auto',
           messages: [{ role: 'user', content: form.description }],
