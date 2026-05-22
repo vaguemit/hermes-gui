@@ -1,6 +1,4 @@
-// Verifies that RemoteHermesClient throws UnsupportedCapabilityError (not generic Error)
-// for all IPC-only methods.
-// Run via: npx tsx src/lib/hermes/__tests__/remote-isolation.test.ts
+import { test } from 'vitest'
 import { RemoteHermesClient } from '../remote-client'
 import { UnsupportedCapabilityError } from '../errors'
 
@@ -76,4 +74,4 @@ async function run() {
   console.log('  All remote-isolation tests passed.')
 }
 
-run().catch(e => { console.error(e.message) })
+test('RemoteHermesClient IPC isolation', async () => { await run() })

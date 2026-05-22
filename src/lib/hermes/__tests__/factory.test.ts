@@ -1,5 +1,4 @@
-// Verifies factory behavior: LocalHermesClient vs RemoteHermesClient selection.
-// This is a compile-time type test — import resolution proves the shape is correct.
+import { test } from 'vitest'
 import type { HermesClient } from '../client'
 import { LocalHermesClient } from '../local-client'
 import { RemoteHermesClient } from '../remote-client'
@@ -23,8 +22,10 @@ const _r2Type: RemoteHermesClient = r2
 const _r1Client: HermesClient = r1
 const _r2Client: HermesClient = r2
 
-console.log('factory.test.ts: all type assertions passed (compile-time verification)')
-console.log('  LocalHermesClient satisfies HermesClient: PASS')
-console.log('  RemoteHermesClient satisfies HermesClient: PASS')
-console.log('  CliHermesClient satisfies HermesClient: PASS')
-console.log('  Multiple RemoteHermesClient instances are independent: PASS')
+test('client shape conformance', () => {
+  console.log('factory.test.ts: all type assertions passed (compile-time verification)')
+  console.log('  LocalHermesClient satisfies HermesClient: PASS')
+  console.log('  RemoteHermesClient satisfies HermesClient: PASS')
+  console.log('  CliHermesClient satisfies HermesClient: PASS')
+  console.log('  Multiple RemoteHermesClient instances are independent: PASS')
+})

@@ -1,5 +1,5 @@
-// Verifies that HermesClient method signatures match expected call shapes.
 // Compile-time test — if this file compiles cleanly, all shapes are correct.
+import { test } from 'vitest'
 import type { HermesClient } from '../client'
 import type { ChatMessage } from '../types'
 
@@ -54,4 +54,6 @@ type _urlAssert = _urlIsString extends true ? 'pass' : never
 type _headersIsRecord = _getGatewayHeaders extends Record<string, string> ? true : false
 type _headersAssert = _headersIsRecord extends true ? 'pass' : never
 
-console.log('invoke-shapes.test.ts: all signature shape assertions passed (compile-time verification)')
+test('method signature shapes', () => {
+  console.log('invoke-shapes.test.ts: all signature shape assertions passed (compile-time verification)')
+})

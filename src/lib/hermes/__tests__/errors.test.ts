@@ -1,5 +1,4 @@
-// Type-level and logic tests for UnsupportedCapabilityError.
-// Run via: npx tsx src/lib/hermes/__tests__/errors.test.ts
+import { test } from 'vitest'
 import { UnsupportedCapabilityError } from '../errors'
 
 function assert(cond: boolean, msg: string) {
@@ -30,4 +29,4 @@ function run() {
   console.log('  All errors tests passed.')
 }
 
-run()
+test('UnsupportedCapabilityError', () => { run() })
