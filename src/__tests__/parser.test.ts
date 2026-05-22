@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'vitest'
-import { detectMessageType, formatTimestamp } from '../../utils/parser'
+import { detectMessageType, formatTimestamp } from '../utils/parser'
 
 describe('detectMessageType', () => {
   test('returns prose for plain text', () => {

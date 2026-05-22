@@ -1,6 +1,6 @@
 import { test, expect, describe, beforeEach } from 'vitest'
-import { useStore } from '../../store'
-import type { Message, CronJob } from '../../store'
+import { useStore } from '../store'
+import type { Message, CronJob } from '../store'
 
 // Helper to build a minimal Message
 function makeMsg(overrides: Partial<Message> = {}): Message {
