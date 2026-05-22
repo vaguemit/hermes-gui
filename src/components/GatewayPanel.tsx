@@ -2,28 +2,27 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Globe, Play, Radio, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
 import { useHermesClient, useHermesContext } from '../lib/hermes';
-import { getChromeCdpStatus, getConnectionApiKey, getConnectionConfig, getGatewayStatus, launchChrome, onGatewayReady, sendHermesPtyMessage, startGateway as startGatewayNative, startHermesPtyChat, stopGateway as stopGatewayNative, writeEnvVar } from '../api/desktop';
-import { checkGatewayHealth } from '../api/hermes';
+import { getChromeCdpStatus, launchChrome, onGatewayReady, sendHermesPtyMessage, startHermesPtyChat } from '../api/desktop';
 
-/** Isolates gateway IPC calls so they can be swapped to HermesClient in Phase 2. */
 function useGateway() {
+  const client = useHermesClient();
   const { setGatewayStatus } = useStore();
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   const checkStatus = useCallback(async () => {
-    const healthy = await getGatewayStatus();
+    const healthy = await client.getGatewayStatus();
     setGatewayStatus(healthy ? 'connected' : 'disconnected');
     return healthy;
-  }, [setGatewayStatus]);
+  }, [client, setGatewayStatus]);
 
   const measureLatency = useCallback(async () => {
-    const { healthy, latencyMs: ms } = await checkGatewayHealth();
-    setLatencyMs(healthy ? ms : null);
-    return healthy;
-  }, []);
+    const ms = await client.getGatewayLatency();
+    setLatencyMs(ms);
+    return ms !== null;
+  }, [client]);
 
-  const start = useCallback(() => startGatewayNative(), []);
-  const stop = useCallback(() => stopGatewayNative(), []);
+  const start = useCallback(() => client.startGateway(), [client]);
+  const stop = useCallback(() => client.stopGateway(), [client]);
 
   return { checkStatus, measureLatency, latencyMs, start, stop };
 }
@@ -192,14 +191,10 @@ export default function GatewayPanel() {
         setRemoteApiKey(env['HERMES_REMOTE_API_KEY']);
       }
     }).catch(() => {
-      // Fallback: load from desktop.json via IPC
-      getConnectionConfig().then(async (cfg) => {
+      // Fallback: load URL and mode from desktop.json (API key is not exposed here)
+      client.getConnectionConfig().then(cfg => {
         if (cfg.remoteUrl) {
           setRemoteUrl(cfg.remoteUrl);
-          if (cfg.hasApiKey) {
-            const key = await getConnectionApiKey();
-            setRemoteApiKey(key);
-          }
           setRemoteConnected(cfg.mode === 'remote');
           if (cfg.mode === 'remote') setRemoteExpanded(true);
         }
@@ -214,8 +209,7 @@ export default function GatewayPanel() {
     setBhInstalling(true);
     setBhInstallLog([]);
     try {
-      const { streamHermesCommand } = await import('../api/desktop');
-      await streamHermesCommand(
+      await client.streamCommand(
         ['run', 'pip', 'install', 'browser-harness', '--upgrade'],
         line => setBhInstallLog(prev => [...prev, line]),
         120,
@@ -340,9 +334,9 @@ export default function GatewayPanel() {
         setCdpUrl(resolvedUrl);
         setLocalBrowserUrl(resolvedUrl);
         setBrowserConnected(true);
-        await writeEnvVar('BROWSER_CDP_URL', resolvedUrl);
-        await writeEnvVar('PLAYWRIGHT_HEADLESS', headedBrowserMode ? 'false' : 'true');
-        await writeEnvVar('HEADLESS', headedBrowserMode ? 'false' : 'true');
+        await client.writeEnv('BROWSER_CDP_URL', resolvedUrl);
+        await client.writeEnv('PLAYWRIGHT_HEADLESS', headedBrowserMode ? 'false' : 'true');
+        await client.writeEnv('HEADLESS', headedBrowserMode ? 'false' : 'true');
       } else {
         setBrowserError(result.error || 'Failed to launch Chrome');
       }
@@ -362,9 +356,9 @@ export default function GatewayPanel() {
       if (result.success) {
         setBrowserConnected(true);
         setLocalBrowserUrl(cdpUrl);
-        await writeEnvVar('BROWSER_CDP_URL', cdpUrl);
-        await writeEnvVar('PLAYWRIGHT_HEADLESS', headedBrowserMode ? 'false' : 'true');
-        await writeEnvVar('HEADLESS', headedBrowserMode ? 'false' : 'true');
+        await client.writeEnv('BROWSER_CDP_URL', cdpUrl);
+        await client.writeEnv('PLAYWRIGHT_HEADLESS', headedBrowserMode ? 'false' : 'true');
+        await client.writeEnv('HEADLESS', headedBrowserMode ? 'false' : 'true');
         const newEventId = Math.random().toString(36).slice(2);
         const newPtyId = await startHermesPtyChat(newEventId);
         setPtySessionId(newPtyId);
@@ -395,7 +389,7 @@ export default function GatewayPanel() {
     setLocalBrowserUrl(null);
     setPtySessionId(null);
     setPtyEventId(null);
-    await writeEnvVar('BROWSER_CDP_URL', '').catch(() => {});
+    await client.writeEnv('BROWSER_CDP_URL', '').catch(() => {});
   }
 
   const handleRemoteTest = async () => {
@@ -670,7 +664,7 @@ export default function GatewayPanel() {
                   checked={headedBrowserMode}
                   onChange={async e => {
                     setHeadedBrowserMode(e.target.checked);
-                    await writeEnvVar('PLAYWRIGHT_HEADLESS', e.target.checked ? 'false' : 'true').catch(() => {});
+                    await client.writeEnv('PLAYWRIGHT_HEADLESS', e.target.checked ? 'false' : 'true').catch(() => {});
                   }}
                 />
                 <span className="toggle-slider" />
@@ -789,7 +783,7 @@ export default function GatewayPanel() {
                 <label className="toggle">
                   <input type="checkbox" checked={bhDomainSkills} onChange={async e => {
                     setBhDomainSkills(e.target.checked);
-                    await writeEnvVar('BH_DOMAIN_SKILLS', e.target.checked ? '1' : '').catch(() => {});
+                    await client.writeEnv('BH_DOMAIN_SKILLS', e.target.checked ? '1' : '').catch(() => {});
                   }} />
                   <span className="toggle-slider" />
                 </label>
