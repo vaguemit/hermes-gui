@@ -462,6 +462,11 @@ export async function clearAllSessionsDisk(): Promise<number> {
   return invoke<number>('clear_all_sessions_disk');
 }
 
+export async function searchSessionsDisk(query: string): Promise<SessionMeta[]> {
+  if (!isTauriApp()) return [];
+  return invoke<SessionMeta[]>('search_sessions_disk', { query });
+}
+
 export async function ptySpawn(
   program: string,
   args: string[],

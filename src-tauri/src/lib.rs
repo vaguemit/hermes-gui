@@ -1831,6 +1831,28 @@ fn clear_all_sessions_disk() -> Result<usize, String> {
 }
 
 #[tauri::command]
+fn search_sessions_disk(query: String) -> Vec<SessionMeta> {
+    if query.trim().is_empty() {
+        return list_sessions_disk();
+    }
+    let q = query.to_lowercase();
+    list_sessions_disk()
+        .into_iter()
+        .filter(|s| {
+            // Match on filename (session name) or file content
+            if s.name.to_lowercase().contains(&q) {
+                return true;
+            }
+            // Also search message content in the JSON file
+            let path = hermes_home().join("sessions").join(&s.name);
+            std::fs::read_to_string(&path)
+                .map(|raw| raw.to_lowercase().contains(&q))
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+#[tauri::command]
 fn pty_spawn(
     app_handle: tauri::AppHandle,
     program: String,
@@ -2603,6 +2625,7 @@ pub fn run() {
             write_session_disk,
             delete_session_disk,
             clear_all_sessions_disk,
+            search_sessions_disk,
             pty_spawn,
             pty_write,
             pty_resize,
