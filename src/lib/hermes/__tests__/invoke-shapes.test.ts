@@ -19,6 +19,10 @@ type _listSkills = ReturnType<HermesClient['listSkills']>
 type _listCronJobs = ReturnType<HermesClient['listCronJobs']>
 type _getConnectionConfig = ReturnType<HermesClient['getConnectionConfig']>
 type _setConnectionConfig = ReturnType<HermesClient['setConnectionConfig']>
+type _getGatewayUrl = ReturnType<HermesClient['getGatewayUrl']>
+type _getGatewayHeaders = ReturnType<HermesClient['getGatewayHeaders']>
+type _getGatewayPort = ReturnType<HermesClient['getGatewayPort']>
+type _setGatewayPort = ReturnType<HermesClient['setGatewayPort']>
 
 // Verify streamChat accepts AbortSignal as optional 4th arg
 type _streamChatSig = HermesClient['streamChat']
@@ -43,5 +47,11 @@ type _setConnSig = HermesClient['setConnectionConfig']
 const _setConn1: Parameters<_setConnSig> = ['local', ''] // no key
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _setConn2: Parameters<_setConnSig> = ['remote', 'https://x.com', 'sk-abc'] // with key
+
+// Verify getGatewayUrl returns string and getGatewayHeaders returns Record<string,string>
+type _urlIsString = _getGatewayUrl extends string ? true : false
+type _urlAssert = _urlIsString extends true ? 'pass' : never
+type _headersIsRecord = _getGatewayHeaders extends Record<string, string> ? true : false
+type _headersAssert = _headersIsRecord extends true ? 'pass' : never
 
 console.log('invoke-shapes.test.ts: all signature shape assertions passed (compile-time verification)')
