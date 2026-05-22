@@ -28,6 +28,7 @@ import ProvidersPanel from './components/ProvidersPanel';
 import MemoryPanel from './components/MemoryPanel';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
+import SplashScreen from './components/SplashScreen';
 import { PanelRightClose, PanelRight } from 'lucide-react';
 
 // ─── Local hooks ─────────────────────────────────────────────────────────────
@@ -418,9 +419,13 @@ function AppInner() {
 }
 
 export default function App() {
+  const [splashDone, setSplashDone] = useState(false);
   return (
-    <HermesProvider>
-      <AppInner />
-    </HermesProvider>
+    <>
+      {!splashDone && <SplashScreen onDone={() => setSplashDone(true)} />}
+      <HermesProvider>
+        <AppInner />
+      </HermesProvider>
+    </>
   );
 }
