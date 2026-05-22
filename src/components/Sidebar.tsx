@@ -5,7 +5,8 @@ import { formatTimestamp } from '../utils/parser';
 import ProfileChip from './ProfileChip';
 import {
   MessageSquare, Radio, Clock, Zap, Settings, Plus,
-  ChevronDown, ChevronRight, Cpu, Download, Terminal, Bot, LayoutDashboard, Users, History, SquareTerminal, Brain, KanbanSquare, Key, BookMarked
+  ChevronDown, ChevronRight, Cpu, Download, Terminal, Bot, LayoutDashboard, Users, History, SquareTerminal, Brain, KanbanSquare, Key, BookMarked,
+  Search, X, Trash2
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -33,10 +34,14 @@ export default function Sidebar() {
     activeSection, setActiveSection, gatewayStatus, agentState,
     activeModel, setModelSwitcherOpen, sessions, activeSessionId,
     setActiveSession, addSession, tokensUsed, contextWindow, setSettingsOpen,
-    browserConnected, localBrowserUrl,
+    browserConnected, localBrowserUrl, deleteSession, renameSession,
   } = useStore();
 
   const [historyExpanded, setHistoryExpanded] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
 
   const statusLabel = {
     unchecked: 'Checking...',
@@ -157,25 +162,121 @@ export default function Sidebar() {
           Recent Sessions
         </button>
         {historyExpanded && (
-          <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px' }}>
-            {[...sessions].sort((a, b) => b.timestamp - a.timestamp).map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setActiveSession(s.id)}
-                style={{
-                  width: '100%', border: 'none', borderRadius: 8, textAlign: 'left', padding: '8px 10px', cursor: 'pointer', marginBottom: 2,
-                  background: s.id === activeSessionId ? 'var(--accent-green-dim)' : 'transparent',
-                  color: s.id === activeSessionId ? 'var(--accent-green)' : 'var(--text-secondary)',
-                  transition: 'background 0.15s, color 0.15s',
-                }}
-                onMouseEnter={e => { if (s.id !== activeSessionId) (e.currentTarget as HTMLElement).style.background = 'var(--bg2)'; }}
-                onMouseLeave={e => { if (s.id !== activeSessionId) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-              >
-                <div style={{ fontSize: 12.5, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</div>
-                <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 1 }}>{formatTimestamp(s.timestamp)}</div>
-              </button>
-            ))}
-          </div>
+          <>
+            {/* Search input */}
+            <div style={{ padding: '0 8px 6px', flexShrink: 0 }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Search size={11} style={{ position: 'absolute', left: 8, color: 'var(--text-tertiary)', pointerEvents: 'none', flexShrink: 0 }} />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search sessions..."
+                  style={{
+                    width: '100%', boxSizing: 'border-box',
+                    background: 'var(--bg2)', color: 'var(--text-primary)',
+                    border: '1px solid var(--border)', borderRadius: 6,
+                    fontSize: 12, padding: '5px 28px 5px 26px',
+                    outline: 'none', fontFamily: 'var(--font-sans)',
+                  }}
+                  onFocus={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-hover)'; }}
+                  onBlur={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 0, display: 'flex', alignItems: 'center' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-tertiary)'; }}
+                  >
+                    <X size={11} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Session list */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px' }}>
+              {[...sessions]
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map((s) => (
+                  <div
+                    key={s.id}
+                    style={{ position: 'relative', marginBottom: 2 }}
+                    onMouseEnter={() => setHoveredSessionId(s.id)}
+                    onMouseLeave={() => setHoveredSessionId(null)}
+                  >
+                    <button
+                      onClick={() => { if (editingId !== s.id) setActiveSession(s.id); }}
+                      onDoubleClick={() => { setEditingId(s.id); setEditingTitle(s.title); }}
+                      style={{
+                        width: '100%', border: 'none', borderRadius: 8, textAlign: 'left',
+                        padding: '8px 30px 8px 10px', cursor: 'pointer',
+                        background: s.id === activeSessionId ? 'var(--accent-green-dim)' : hoveredSessionId === s.id ? 'var(--bg2)' : 'transparent',
+                        color: s.id === activeSessionId ? 'var(--accent-green)' : 'var(--text-secondary)',
+                        transition: 'background 0.15s, color 0.15s',
+                      }}
+                    >
+                      {editingId === s.id ? (
+                        <input
+                          autoFocus
+                          value={editingTitle}
+                          onChange={e => setEditingTitle(e.target.value)}
+                          onBlur={() => {
+                            renameSession(s.id, editingTitle.trim() || s.title);
+                            setEditingId(null);
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              renameSession(s.id, editingTitle.trim() || s.title);
+                              setEditingId(null);
+                            } else if (e.key === 'Escape') {
+                              setEditingId(null);
+                            }
+                            e.stopPropagation();
+                          }}
+                          onClick={e => e.stopPropagation()}
+                          style={{
+                            width: '100%', boxSizing: 'border-box',
+                            background: 'transparent', border: 'none', outline: 'none',
+                            color: 'inherit', fontSize: 12.5, fontWeight: 500,
+                            fontFamily: 'var(--font-sans)', padding: 0,
+                          }}
+                        />
+                      ) : (
+                        <div style={{ fontSize: 12.5, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</div>
+                      )}
+                      <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 1 }}>{formatTimestamp(s.timestamp)}</div>
+                    </button>
+
+                    {/* Delete button */}
+                    {hoveredSessionId === s.id && editingId !== s.id && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (s.messages.length > 0) {
+                            if (!window.confirm('Delete this session?')) return;
+                          }
+                          deleteSession(s.id);
+                        }}
+                        style={{
+                          position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                          width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          color: 'var(--text-secondary)', borderRadius: 4, padding: 0,
+                          transition: 'color 0.15s',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--accent-red)'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </>
         )}
       </div>
 
