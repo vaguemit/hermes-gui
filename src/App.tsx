@@ -264,11 +264,21 @@ function AppInner() {
   useGatewayRestart(gatewayStatus, setGatewayStatus);
 
   // Global keyboard shortcuts
+  const { addSession, setSettingsOpen, setActiveSection } = useStore();
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const meta = e.metaKey || e.ctrlKey;
     if (meta && e.key === 'k') { e.preventDefault(); setPaletteOpen(true); }
+    if (meta && e.key === 'n') { e.preventDefault(); addSession(); setActiveSection('chat'); }
+    if (meta && e.key === ',') { e.preventDefault(); setSettingsOpen(true); }
     if (e.key === 'Escape' && paletteOpen) setPaletteOpen(false);
-  }, [paletteOpen, setPaletteOpen]);
+    // Section nav: Ctrl+1..5
+    if (meta && !e.shiftKey && !e.altKey) {
+      const navMap: Record<string, typeof activeSection> = {
+        '1': 'dashboard', '2': 'chat', '3': 'gateway', '4': 'terminal', '5': 'skills',
+      };
+      if (navMap[e.key]) { e.preventDefault(); setActiveSection(navMap[e.key]); }
+    }
+  }, [paletteOpen, setPaletteOpen, addSession, setSettingsOpen, setActiveSection, activeSection]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
