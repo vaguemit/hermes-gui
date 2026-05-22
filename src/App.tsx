@@ -186,7 +186,7 @@ function AppInner() {
     rightPanelOpen, setRightPanelOpen,
     paletteOpen, setPaletteOpen,
     toasts, removeToast,
-    theme,
+    theme, activeProfile,
   } = useStore();
 
   // Load persisted theme on startup
@@ -366,10 +366,18 @@ function AppInner() {
             {activeSection === 'memory' && 'Memory'}
           </span>
 
+          {/* Active profile badge */}
+          {activeProfile !== 'default' && (
+            <span className="badge badge-info" style={{ fontSize: 11, padding: '2px 7px', fontFamily: 'var(--font-mono)' }}>
+              {activeProfile}
+            </span>
+          )}
+
           {/* Palette shortcut */}
           <button
             onClick={() => setPaletteOpen(true)}
             id="palette-trigger-btn"
+            title="Commands  Ctrl+K · New chat  Ctrl+N · Settings  Ctrl+,"
             style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 12px', color: 'var(--text-secondary)', fontSize: 12.5, cursor: 'pointer', transition: 'border-color 0.15s, color 0.15s' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-green)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}
