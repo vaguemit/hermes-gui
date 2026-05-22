@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore, Message, ToolCall } from '../store';
-import { getGatewayStatus, chatStream, chatCli, launchChrome } from '../api/desktop';
+import { chatStream, chatCli, launchChrome } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
 import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy,
@@ -189,6 +190,7 @@ function extractSiteUrl(instruction: string): string {
 }
 
 export default function ConversationPanel() {
+  const client = useHermesClient();
   const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId, localBrowserUrl, setLocalBrowserUrl, setPtySessionId, setPtyEventId } = useStore();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
@@ -523,7 +525,7 @@ export default function ConversationPanel() {
         const errMsg = (err as Error)?.message || 'Connection failed. Is the Hermes gateway running?';
         updateLastMessage({ content: accumulated || errMsg, type: accumulated ? 'prose' : 'error', isStreaming: false });
         setAgentState('error');
-        getGatewayStatus().then(ok => setGatewayStatus(ok ? 'connected' : 'disconnected')).catch(() => {});
+        client.getGatewayStatus().then(ok => setGatewayStatus(ok ? 'connected' : 'disconnected')).catch(() => {});
       } else if (aborted) {
         updateLastMessage({ isStreaming: false });
         setAgentState('idle');
