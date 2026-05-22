@@ -91,6 +91,10 @@ interface AppState {
   activeProfile: string;
   setActiveProfile: (p: string) => void;
 
+  // Theme
+  theme: string;
+  setTheme: (t: string) => void;
+
   // Navigation
   activeSection: NavSection;
   setActiveSection: (s: NavSection) => void;
@@ -192,6 +196,10 @@ export const useStore = create<AppState>((set, get) => ({
   // Active profile
   activeProfile: 'default',
   setActiveProfile: (p) => set({ activeProfile: p }),
+
+  // Theme
+  theme: 'dark',
+  setTheme: (t) => set({ theme: t }),
 
   // Navigation
   activeSection: 'dashboard',

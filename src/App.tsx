@@ -185,7 +185,17 @@ function AppInner() {
     rightPanelOpen, setRightPanelOpen,
     paletteOpen, setPaletteOpen,
     toasts, removeToast,
+    theme,
   } = useStore();
+
+  // Apply theme to document root
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.removeAttribute('data-theme');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+  }, [theme]);
 
   // Install check (wizard)
   const { showWizard, setShowWizard, wizardDone, setWizardDone, checkingInstall } = useInstallCheck();

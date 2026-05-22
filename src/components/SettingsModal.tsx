@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
-import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe } from 'lucide-react';
+import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe, Palette } from 'lucide-react';
 import { getAutostartEnabled, toggleAutostart } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 
@@ -67,12 +67,20 @@ const TABS = [
   { id: 'memory', label: 'Memory', icon: Brain },
   { id: 'workspace', label: 'Workspace', icon: Folder },
   { id: 'browser', label: 'Browser', icon: Globe },
+  { id: 'appearance', label: 'Appearance', icon: Palette },
 ] as const;
+
+const THEMES = [
+  { id: 'dark',     label: 'Dark',     swatch: ['#080808', '#0f0f0f', '#22c55e'] },
+  { id: 'oled',     label: 'OLED',     swatch: ['#000000', '#050505', '#22c55e'] },
+  { id: 'monokai',  label: 'Monokai',  swatch: ['#1a1a16', '#272822', '#a6e22e'] },
+  { id: 'light',    label: 'Light',    swatch: ['#f8f8f8', '#ffffff', '#16a34a'] },
+];
 
 type SettingsTab = typeof TABS[number]['id'];
 
 export default function SettingsModal() {
-  const { settingsOpen, setSettingsOpen, cronDefaultMode, setCronDefaultMode } = useStore();
+  const { settingsOpen, setSettingsOpen, cronDefaultMode, setCronDefaultMode, theme, setTheme } = useStore();
   const client = useHermesClient();
   const [tab, setTab] = useState<SettingsTab>('api-keys');
 
@@ -513,6 +521,35 @@ export default function SettingsModal() {
                     </button>
                     {clearMsg && <span style={{ fontSize: 12, color: 'var(--accent-green)' }}>{clearMsg}</span>}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {tab === 'appearance' && (
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Appearance</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Choose a colour theme for the interface</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {THEMES.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setTheme(t.id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                        background: theme === t.id ? 'var(--accent-green-dim)' : 'var(--bg1)',
+                        border: `1px solid ${theme === t.id ? 'var(--accent-green)' : 'var(--border)'}`,
+                        borderRadius: 8, cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.15s',
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                        {t.swatch.map((c, i) => (
+                          <div key={i} style={{ width: 12, height: 12, borderRadius: 3, background: c, border: '1px solid rgba(255,255,255,0.1)' }} />
+                        ))}
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: theme === t.id ? 'var(--accent-green)' : 'var(--text-primary)' }}>{t.label}</span>
+                      {theme === t.id && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent-green)' }}>✓</span>}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
