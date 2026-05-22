@@ -188,14 +188,25 @@ function AppInner() {
     theme,
   } = useStore();
 
-  // Apply theme to document root
+  // Load persisted theme on startup
+  useEffect(() => {
+    client.readFile('gui-prefs.json').then(raw => {
+      try {
+        const prefs = JSON.parse(raw);
+        if (prefs.theme) useStore.setState({ theme: prefs.theme });
+      } catch { /* ignore */ }
+    }).catch(() => {});
+  }, [client]);
+
+  // Apply + persist theme when it changes
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.removeAttribute('data-theme');
     } else {
       document.documentElement.setAttribute('data-theme', theme);
     }
-  }, [theme]);
+    client.writeFile('gui-prefs.json', JSON.stringify({ theme })).catch(() => {});
+  }, [theme, client]);
 
   // Install check (wizard)
   const { showWizard, setShowWizard, wizardDone, setWizardDone, checkingInstall } = useInstallCheck();
