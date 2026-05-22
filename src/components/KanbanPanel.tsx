@@ -1,376 +1,698 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { isTauriApp } from '../api/desktop';
-import { useHermesClient } from '../lib/hermes';
+import { Plus, X, Tag, User, Flag } from 'lucide-react';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type Priority = 'low' | 'medium' | 'high' | 'urgent';
+type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'done';
 
 interface KanbanTask {
   id: string;
   title: string;
-  description: string;
-  status: 'todo' | 'in_progress' | 'blocked' | 'done';
-  priority: 'low' | 'medium' | 'high';
+  body: string;
+  priority: Priority;
+  status: TaskStatus;
+  assignee?: string;
   createdAt: number;
+  completedAt?: number;
+  tags: string[];
 }
 
-type ColumnId = KanbanTask['status'];
-
-interface Column {
-  id: ColumnId;
-  label: string;
+interface KanbanBoard {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  tasks: KanbanTask[];
 }
 
-const COLUMNS: Column[] = [
-  { id: 'todo', label: 'To Do' },
-  { id: 'in_progress', label: 'In Progress' },
-  { id: 'blocked', label: 'Blocked' },
-  { id: 'done', label: 'Done' },
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const PERSIST_KEY = 'hermes-kanban-boards';
+
+const BOARD_ICONS = ['📋', '🚀', '💡', '🔧', '📊', '🎯'];
+
+const DEFAULT_BOARDS: KanbanBoard[] = [
+  {
+    id: 'main',
+    name: 'Main',
+    description: 'Main task board',
+    icon: '📋',
+    color: 'var(--accent-green)',
+    tasks: [],
+  },
 ];
 
-// Move target for left arrow: where does this column go when moving left?
-const MOVE_LEFT: Partial<Record<ColumnId, ColumnId>> = {
-  in_progress: 'todo',
-  blocked: 'in_progress',
-  done: 'blocked',
-};
-
-// Move target for right arrow
-const MOVE_RIGHT: Partial<Record<ColumnId, ColumnId>> = {
-  todo: 'in_progress',
-  in_progress: 'done',
-  blocked: 'in_progress',
-  done: undefined,
-};
-
-const generateId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
-
-const PERSIST_KEY = 'gui-kanban.json';
-
-interface AddFormState {
-  columnId: ColumnId;
-  title: string;
-  priority: KanbanTask['priority'];
+interface ColumnDef {
+  id: TaskStatus;
+  label: string;
+  accentColor?: string;
 }
 
-export default function KanbanPanel() {
-  const client = useHermesClient();
-  const [tasks, setTasks] = useState<KanbanTask[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [addForm, setAddForm] = useState<AddFormState | null>(null);
-  // Map of taskId -> 'confirm' for delete confirmation state
-  const [deleteConfirm, setDeleteConfirm] = useState<Record<string, boolean>>({});
-  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const addInputRef = useRef<HTMLInputElement>(null);
+const COLUMNS: ColumnDef[] = [
+  { id: 'backlog', label: 'Backlog' },
+  { id: 'todo', label: 'Todo' },
+  { id: 'in_progress', label: 'In Progress', accentColor: 'var(--accent-amber)' },
+  { id: 'done', label: 'Done', accentColor: 'var(--accent-green)' },
+];
 
-  // Load from disk on mount
-  useEffect(() => {
-    if (!isTauriApp()) {
-      setLoaded(true);
-      return;
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const genId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+function loadBoards(): KanbanBoard[] {
+  try {
+    const raw = localStorage.getItem(PERSIST_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-    client.readFile(PERSIST_KEY)
-      .then((raw) => {
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) setTasks(parsed);
-          } catch {
-            // ignore parse error, start fresh
-          }
-        }
-      })
-      .catch(() => {
-        // file doesn't exist yet — start fresh
-      })
-      .finally(() => setLoaded(true));
-  }, []);
+  } catch {
+    // ignore
+  }
+  return DEFAULT_BOARDS;
+}
 
-  // Debounced persist on tasks change (skip first render before load)
-  useEffect(() => {
-    if (!loaded) return;
-    if (!isTauriApp()) return;
-    if (persistTimer.current) clearTimeout(persistTimer.current);
-    persistTimer.current = setTimeout(() => {
-      client.writeFile(PERSIST_KEY, JSON.stringify(tasks)).catch(() => {});
-    }, 800);
-    return () => {
-      if (persistTimer.current) clearTimeout(persistTimer.current);
-    };
-  }, [tasks, loaded]);
+function saveBoards(boards: KanbanBoard[]) {
+  try {
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(boards));
+  } catch {
+    // ignore quota errors
+  }
+}
 
-  // Focus add input when form opens
-  useEffect(() => {
-    if (addForm) {
-      setTimeout(() => addInputRef.current?.focus(), 30);
-    }
-  }, [addForm?.columnId]);
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
 
-  const handleAddTask = (columnId: ColumnId) => {
-    if (addForm?.columnId === columnId) {
-      setAddForm(null);
-    } else {
-      setAddForm({ columnId, title: '', priority: 'medium' });
-    }
-  };
+interface PriorityBadgeProps {
+  priority: Priority;
+}
 
-  const commitAdd = () => {
-    if (!addForm || !addForm.title.trim()) {
-      setAddForm(null);
-      return;
-    }
-    const task: KanbanTask = {
-      id: generateId(),
-      title: addForm.title.trim(),
-      description: '',
-      status: addForm.columnId,
-      priority: addForm.priority,
-      createdAt: Date.now(),
-    };
-    setTasks((prev) => [task, ...prev]);
-    setAddForm(null);
-  };
-
-  const moveTask = (taskId: string, direction: 'left' | 'right') => {
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id !== taskId) return t;
-        const next = direction === 'left' ? MOVE_LEFT[t.status] : MOVE_RIGHT[t.status];
-        if (!next) return t;
-        return { ...t, status: next };
-      })
-    );
-  };
-
-  const deleteTask = (taskId: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== taskId));
-    setDeleteConfirm((prev) => {
-      const next = { ...prev };
-      delete next[taskId];
-      return next;
-    });
-  };
-
-  const handleTrashClick = (taskId: string) => {
-    if (deleteConfirm[taskId]) {
-      deleteTask(taskId);
-    } else {
-      setDeleteConfirm((prev) => ({ ...prev, [taskId]: true }));
-      // Auto-reset confirm after 3s if user doesn't click again
-      setTimeout(() => {
-        setDeleteConfirm((prev) => {
-          if (!prev[taskId]) return prev;
-          const next = { ...prev };
-          delete next[taskId];
-          return next;
-        });
-      }, 3000);
-    }
-  };
-
-  const priorityBadgeClass = (priority: KanbanTask['priority']) => {
-    if (priority === 'high') return 'badge badge-error';
-    if (priority === 'medium') return 'badge badge-connected';
-    return 'badge badge-muted';
-  };
-
-  const priorityLabel = (priority: KanbanTask['priority']) => {
-    if (priority === 'high') return 'High';
-    if (priority === 'medium') return 'Med';
-    return 'Low';
-  };
-
-  if (!loaded) {
+function PriorityBadge({ priority }: PriorityBadgeProps) {
+  if (priority === 'urgent') {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)', fontSize: 13 }}>
-        Loading…
-      </div>
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 3,
+        fontSize: 10.5, fontWeight: 700,
+        color: 'var(--accent-red)',
+        whiteSpace: 'nowrap',
+      }}>
+        🔥 Urgent
+      </span>
     );
   }
 
-  return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden', background: 'var(--bg0)', padding: 16, gap: 12 }}>
-      {COLUMNS.map((col) => {
-        const colTasks = tasks.filter((t) => t.status === col.id);
-        const isAdding = addForm?.columnId === col.id;
+  const dotColor =
+    priority === 'high' ? 'var(--accent-red)' :
+    priority === 'medium' ? 'var(--accent-amber)' :
+    'var(--text-tertiary)';
 
-        return (
+  const textColor =
+    priority === 'high' ? 'var(--accent-red)' :
+    priority === 'medium' ? 'var(--accent-amber)' :
+    'var(--text-tertiary)';
+
+  const label =
+    priority === 'high' ? 'High' :
+    priority === 'medium' ? 'Medium' :
+    'Low';
+
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 10.5,
+      color: textColor,
+      whiteSpace: 'nowrap',
+    }}>
+      <span style={{
+        width: 6, height: 6,
+        borderRadius: '50%',
+        background: dotColor,
+        flexShrink: 0,
+        display: 'inline-block',
+      }} />
+      {label}
+    </span>
+  );
+}
+
+interface AddTaskFormProps {
+  columnId: TaskStatus;
+  onSave: (task: Omit<KanbanTask, 'id' | 'createdAt'>) => void;
+  onCancel: () => void;
+}
+
+function AddTaskForm({ columnId, onSave, onCancel }: AddTaskFormProps) {
+  const [title, setTitle] = useState('');
+  const [priority, setPriority] = useState<Priority>('medium');
+  const [assignee, setAssignee] = useState('');
+  const [tagsRaw, setTagsRaw] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 30);
+  }, []);
+
+  const handleSave = () => {
+    if (!title.trim()) return;
+    const tags = tagsRaw.split(',').map((t) => t.trim()).filter(Boolean);
+    onSave({
+      title: title.trim(),
+      body: '',
+      priority,
+      status: columnId,
+      assignee: assignee.trim() || undefined,
+      tags,
+    });
+  };
+
+  return (
+    <div
+      className="animate-in"
+      style={{
+        margin: '0 10px 8px',
+        padding: 10,
+        background: 'var(--bg2)',
+        border: '1px solid var(--border-active)',
+        borderRadius: 8,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        flexShrink: 0,
+      }}
+    >
+      <input
+        ref={inputRef}
+        className="input-field"
+        placeholder="Task title…"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') handleSave();
+          if (e.key === 'Escape') onCancel();
+        }}
+        style={{ fontSize: 12.5, padding: '6px 9px' }}
+      />
+
+      <select
+        value={priority}
+        onChange={(e) => setPriority(e.target.value as Priority)}
+        style={{
+          background: 'var(--bg3)',
+          border: '1px solid var(--border)',
+          borderRadius: 6,
+          color: 'var(--text-primary)',
+          fontSize: 12,
+          padding: '4px 7px',
+          cursor: 'pointer',
+          width: '100%',
+        }}
+      >
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+        <option value="urgent">Urgent</option>
+      </select>
+
+      <input
+        className="input-field"
+        placeholder="Assignee (optional)"
+        value={assignee}
+        onChange={(e) => setAssignee(e.target.value)}
+        style={{ fontSize: 12, padding: '5px 9px' }}
+      />
+
+      <input
+        className="input-field"
+        placeholder="Tags, comma-separated (optional)"
+        value={tagsRaw}
+        onChange={(e) => setTagsRaw(e.target.value)}
+        style={{ fontSize: 12, padding: '5px 9px' }}
+      />
+
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={handleSave}
+          disabled={!title.trim()}
+          style={{ flex: 1, fontSize: 12 }}
+        >
+          Save
+        </button>
+        <button
+          className="btn btn-ghost btn-icon btn-sm"
+          onClick={onCancel}
+          style={{ padding: '4px 8px' }}
+        >
+          <X size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Task card
+// ---------------------------------------------------------------------------
+
+interface TaskCardProps {
+  task: KanbanTask;
+  onMove: (taskId: string, status: TaskStatus) => void;
+  onDelete: (taskId: string) => void;
+}
+
+function TaskCard({ task, onMove, onDelete }: TaskCardProps) {
+  const [hovered, setHovered] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isDone = task.status === 'done';
+
+  const handleDeleteClick = () => {
+    if (confirmDelete) {
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+      onDelete(task.id);
+    } else {
+      setConfirmDelete(true);
+      confirmTimer.current = setTimeout(() => setConfirmDelete(false), 3000);
+    }
+  };
+
+  // cleanup
+  useEffect(() => () => {
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+  }, []);
+
+  return (
+    <div
+      className="animate-in"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: hovered ? 'var(--bg2)' : 'var(--bg1)',
+        border: `1px solid ${hovered ? 'var(--border-hover)' : 'var(--border)'}`,
+        borderRadius: 8,
+        padding: '10px 12px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 7,
+        transition: 'border-color 0.15s, background 0.15s',
+        position: 'relative',
+      }}
+    >
+      {/* Top row: title + priority badge */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+        <span style={{
+          flex: 1,
+          fontSize: 13,
+          fontWeight: 600,
+          color: isDone ? 'var(--text-secondary)' : 'var(--text-primary)',
+          textDecoration: isDone ? 'line-through' : 'none',
+          opacity: isDone ? 0.6 : 1,
+          lineHeight: 1.4,
+          wordBreak: 'break-word',
+        }}>
+          {task.title}
+        </span>
+        <PriorityBadge priority={task.priority} />
+      </div>
+
+      {/* Tags */}
+      {task.tags.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          <Tag size={11} style={{ color: 'var(--text-tertiary)', marginTop: 2, flexShrink: 0 }} />
+          {task.tags.map((tag) => (
+            <span
+              key={tag}
+              style={{
+                background: 'var(--bg4)',
+                border: '1px solid var(--border)',
+                borderRadius: 4,
+                padding: '1px 6px',
+                fontSize: 10.5,
+                color: 'var(--text-secondary)',
+              }}
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Assignee */}
+      {task.assignee && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{
+            width: 18, height: 18, borderRadius: '50%',
+            background: 'var(--bg4)',
+            border: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 9, fontWeight: 700,
+            color: 'var(--text-secondary)',
+            flexShrink: 0,
+            textTransform: 'uppercase',
+          }}>
+            {task.assignee[0]}
+          </div>
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{task.assignee}</span>
+        </div>
+      )}
+
+      {/* Bottom row: move selector + delete + timestamp */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+        <select
+          value={task.status}
+          onChange={(e) => onMove(task.id, e.target.value as TaskStatus)}
+          style={{
+            flex: 1,
+            background: 'var(--bg3)',
+            border: '1px solid var(--border)',
+            borderRadius: 5,
+            color: 'var(--text-secondary)',
+            fontSize: 11,
+            padding: '3px 6px',
+            cursor: 'pointer',
+          }}
+          title="Move to column"
+        >
+          {COLUMNS.map((col) => (
+            <option key={col.id} value={col.id}>{col.label}</option>
+          ))}
+        </select>
+
+        <span style={{ fontSize: 10, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+          {relativeTime(task.createdAt)}
+        </span>
+
+        <button
+          className={confirmDelete ? 'btn btn-danger btn-icon btn-sm' : 'btn btn-ghost btn-icon btn-sm'}
+          onClick={handleDeleteClick}
+          title={confirmDelete ? 'Click again to confirm' : 'Delete task'}
+          style={{ padding: 4, flexShrink: 0 }}
+        >
+          <X size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export default function KanbanPanel() {
+  const [boards, setBoards] = useState<KanbanBoard[]>(() => loadBoards());
+  const [activeBoardId, setActiveBoardId] = useState<string>(() => loadBoards()[0]?.id ?? 'main');
+  const [addingColumn, setAddingColumn] = useState<TaskStatus | null>(null);
+
+  // New board form state
+  const [newBoardOpen, setNewBoardOpen] = useState(false);
+  const [newBoardName, setNewBoardName] = useState('');
+  const [newBoardIcon, setNewBoardIcon] = useState(BOARD_ICONS[0]);
+  const newBoardInputRef = useRef<HTMLInputElement>(null);
+
+  // Persist on every boards change
+  useEffect(() => {
+    saveBoards(boards);
+  }, [boards]);
+
+  // Focus new board input
+  useEffect(() => {
+    if (newBoardOpen) {
+      setTimeout(() => newBoardInputRef.current?.focus(), 30);
+    }
+  }, [newBoardOpen]);
+
+  const activeBoard = boards.find((b) => b.id === activeBoardId) ?? boards[0];
+
+  const updateActiveBoard = (updater: (b: KanbanBoard) => KanbanBoard) => {
+    setBoards((prev) => prev.map((b) => b.id === activeBoardId ? updater(b) : b));
+  };
+
+  const handleAddTask = (task: Omit<KanbanTask, 'id' | 'createdAt'>) => {
+    const newTask: KanbanTask = { ...task, id: genId(), createdAt: Date.now() };
+    updateActiveBoard((b) => ({ ...b, tasks: [newTask, ...b.tasks] }));
+    setAddingColumn(null);
+  };
+
+  const handleMoveTask = (taskId: string, status: TaskStatus) => {
+    updateActiveBoard((b) => ({
+      ...b,
+      tasks: b.tasks.map((t) => {
+        if (t.id !== taskId) return t;
+        return {
+          ...t,
+          status,
+          completedAt: status === 'done' ? Date.now() : undefined,
+        };
+      }),
+    }));
+  };
+
+  const handleDeleteTask = (taskId: string) => {
+    updateActiveBoard((b) => ({ ...b, tasks: b.tasks.filter((t) => t.id !== taskId) }));
+  };
+
+  const handleCreateBoard = () => {
+    if (!newBoardName.trim()) return;
+    const board: KanbanBoard = {
+      id: genId(),
+      name: newBoardName.trim(),
+      description: '',
+      icon: newBoardIcon,
+      color: 'var(--accent-green)',
+      tasks: [],
+    };
+    setBoards((prev) => [...prev, board]);
+    setActiveBoardId(board.id);
+    setNewBoardName('');
+    setNewBoardIcon(BOARD_ICONS[0]);
+    setNewBoardOpen(false);
+  };
+
+  if (!activeBoard) return null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--bg0)' }}>
+
+      {/* Board selector bar */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '8px 16px',
+        borderBottom: '1px solid var(--border)',
+        flexShrink: 0,
+        overflowX: 'auto',
+      }}>
+        {boards.map((board) => (
+          <button
+            key={board.id}
+            onClick={() => setActiveBoardId(board.id)}
+            className={board.id === activeBoardId ? 'tab-btn active' : 'tab-btn'}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, whiteSpace: 'nowrap' }}
+          >
+            <span>{board.icon}</span>
+            <span>{board.name}</span>
+          </button>
+        ))}
+
+        {/* New board button / form */}
+        {newBoardOpen ? (
           <div
-            key={col.id}
+            className="animate-in"
             style={{
-              width: 260,
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'var(--bg2)',
+              border: '1px solid var(--border-active)',
+              borderRadius: 8,
+              padding: '4px 8px',
               flexShrink: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              background: 'var(--bg1)',
-              border: '1px solid var(--border)',
-              borderRadius: 12,
-              overflow: 'hidden',
             }}
           >
-            {/* Column header */}
-            <div style={{
-              padding: '12px 14px 10px',
-              borderBottom: '1px solid var(--border)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexShrink: 0,
-            }}>
-              <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', flex: 1 }}>
-                {col.label}
-              </span>
-              <span className="badge badge-idle" style={{ fontSize: 10.5, minWidth: 20, textAlign: 'center' }}>
-                {colTasks.length}
-              </span>
-            </div>
-
-            {/* Add button */}
-            <div style={{ padding: '8px 10px 6px', flexShrink: 0 }}>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => handleAddTask(col.id)}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12 }}
-              >
-                <Plus size={13} />
-                {isAdding ? 'Cancel' : 'Add Task'}
-              </button>
-            </div>
-
-            {/* Inline add form */}
-            {isAdding && (
-              <div
-                className="animate-in"
-                style={{
-                  margin: '0 10px 8px',
-                  padding: 10,
-                  background: 'var(--bg2)',
-                  border: '1px solid var(--border-active)',
-                  borderRadius: 8,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 8,
-                  flexShrink: 0,
-                }}
-              >
-                <input
-                  ref={addInputRef}
-                  className="input-field"
-                  placeholder="Task title…"
-                  value={addForm.title}
-                  onChange={(e) => setAddForm((f) => f ? { ...f, title: e.target.value } : f)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitAdd();
-                    if (e.key === 'Escape') setAddForm(null);
+            {/* Icon picker */}
+            <div style={{ display: 'flex', gap: 2 }}>
+              {BOARD_ICONS.map((icon) => (
+                <button
+                  key={icon}
+                  onClick={() => setNewBoardIcon(icon)}
+                  style={{
+                    background: newBoardIcon === icon ? 'var(--bg4)' : 'transparent',
+                    border: newBoardIcon === icon ? '1px solid var(--border-active)' : '1px solid transparent',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    padding: '2px 4px',
+                    fontSize: 13,
                   }}
-                  style={{ fontSize: 12.5, padding: '6px 9px' }}
+                >
+                  {icon}
+                </button>
+              ))}
+            </div>
+            <input
+              ref={newBoardInputRef}
+              className="input-field"
+              placeholder="Board name…"
+              value={newBoardName}
+              onChange={(e) => setNewBoardName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateBoard();
+                if (e.key === 'Escape') { setNewBoardOpen(false); setNewBoardName(''); }
+              }}
+              style={{ width: 120, fontSize: 12, padding: '4px 8px' }}
+            />
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleCreateBoard}
+              disabled={!newBoardName.trim()}
+              style={{ fontSize: 11 }}
+            >
+              Create
+            </button>
+            <button
+              className="btn btn-ghost btn-icon btn-sm"
+              onClick={() => { setNewBoardOpen(false); setNewBoardName(''); }}
+              style={{ padding: '3px 5px' }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ) : (
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setNewBoardOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, flexShrink: 0 }}
+          >
+            <Plus size={12} />
+            New Board
+          </button>
+        )}
+      </div>
+
+      {/* Board description */}
+      {activeBoard.description && (
+        <div style={{
+          padding: '6px 16px',
+          fontSize: 11.5,
+          color: 'var(--text-tertiary)',
+          borderBottom: '1px solid var(--border)',
+          flexShrink: 0,
+        }}>
+          {activeBoard.description}
+        </div>
+      )}
+
+      {/* Columns */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', padding: 16, gap: 12 }}>
+        {COLUMNS.map((col) => {
+          const colTasks = activeBoard.tasks.filter((t) => t.status === col.id);
+          const isAdding = addingColumn === col.id;
+
+          return (
+            <div
+              key={col.id}
+              style={{
+                width: 260,
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                background: 'var(--bg1)',
+                border: '1px solid var(--border)',
+                borderRadius: 12,
+                overflow: 'hidden',
+              }}
+            >
+              {/* Column header */}
+              <div style={{
+                padding: '12px 14px 10px',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexShrink: 0,
+              }}>
+                <span style={{
+                  fontWeight: 600, fontSize: 13,
+                  color: col.accentColor ?? 'var(--text-primary)',
+                  flex: 1,
+                }}>
+                  {col.label}
+                </span>
+                <span style={{
+                  background: 'var(--bg3)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  padding: '1px 7px',
+                  fontSize: 10.5,
+                  color: 'var(--text-secondary)',
+                  fontFamily: 'var(--font-mono)',
+                  minWidth: 20,
+                  textAlign: 'center',
+                }}>
+                  {colTasks.length}
+                </span>
+              </div>
+
+              {/* Task list (scrollable) */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {colTasks.length === 0 && !isAdding && (
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: 11.5, textAlign: 'center', marginTop: 20, userSelect: 'none' }}>
+                    No tasks
+                  </div>
+                )}
+                {colTasks.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onMove={handleMoveTask}
+                    onDelete={handleDeleteTask}
+                  />
+                ))}
+              </div>
+
+              {/* Inline add form or add button */}
+              {isAdding ? (
+                <AddTaskForm
+                  columnId={col.id}
+                  onSave={handleAddTask}
+                  onCancel={() => setAddingColumn(null)}
                 />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <select
-                    value={addForm.priority}
-                    onChange={(e) => setAddForm((f) => f ? { ...f, priority: e.target.value as KanbanTask['priority'] } : f)}
-                    style={{
-                      flex: 1,
-                      background: 'var(--bg3)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 6,
-                      color: 'var(--text-primary)',
-                      fontSize: 12,
-                      padding: '4px 7px',
-                      cursor: 'pointer',
-                    }}
+              ) : (
+                <div style={{ padding: '6px 10px 10px', flexShrink: 0 }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setAddingColumn(col.id)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12 }}
                   >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                  <button className="btn btn-primary btn-sm" onClick={commitAdd} style={{ fontSize: 12 }}>
-                    Add
+                    <Plus size={13} />
+                    Add Task
                   </button>
                 </div>
-              </div>
-            )}
-
-            {/* Task list */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {colTasks.length === 0 && (
-                <div style={{ color: 'var(--text-tertiary)', fontSize: 12, textAlign: 'center', marginTop: 20 }}>
-                  No tasks
-                </div>
               )}
-              {colTasks.map((task) => {
-                const isDone = task.status === 'done';
-                const confirmingDelete = !!deleteConfirm[task.id];
-                const canMoveLeft = !!MOVE_LEFT[task.status];
-                const canMoveRight = !!MOVE_RIGHT[task.status];
-
-                return (
-                  <div
-                    key={task.id}
-                    className="animate-in"
-                    style={{
-                      background: 'var(--bg2)',
-                      border: `1px solid var(--border)`,
-                      borderRadius: 8,
-                      padding: 12,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 8,
-                    }}
-                  >
-                    {/* Title */}
-                    <span style={{
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: isDone ? 'var(--text-secondary)' : 'var(--text-primary)',
-                      textDecoration: isDone ? 'line-through' : 'none',
-                      opacity: isDone ? 0.6 : 1,
-                      lineHeight: 1.4,
-                      wordBreak: 'break-word',
-                    }}>
-                      {task.title}
-                    </span>
-
-                    {/* Priority badge */}
-                    <span className={priorityBadgeClass(task.priority)} style={{ alignSelf: 'flex-start', fontSize: 10.5 }}>
-                      {priorityLabel(task.priority)}
-                    </span>
-
-                    {/* Action row */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                      <button
-                        className="btn btn-ghost btn-icon btn-sm"
-                        onClick={() => moveTask(task.id, 'left')}
-                        disabled={!canMoveLeft}
-                        title="Move left"
-                        style={{ opacity: canMoveLeft ? 1 : 0.25, padding: 4 }}
-                      >
-                        <ChevronLeft size={13} />
-                      </button>
-                      <button
-                        className="btn btn-ghost btn-icon btn-sm"
-                        onClick={() => moveTask(task.id, 'right')}
-                        disabled={!canMoveRight}
-                        title="Move right"
-                        style={{ opacity: canMoveRight ? 1 : 0.25, padding: 4 }}
-                      >
-                        <ChevronRight size={13} />
-                      </button>
-                      <div style={{ flex: 1 }} />
-                      <button
-                        className={confirmingDelete ? 'btn btn-danger btn-icon btn-sm' : 'btn btn-ghost btn-icon btn-sm'}
-                        onClick={() => handleTrashClick(task.id)}
-                        title={confirmingDelete ? 'Click again to confirm delete' : 'Delete task'}
-                        style={{ padding: 4 }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
