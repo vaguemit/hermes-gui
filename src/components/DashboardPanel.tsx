@@ -1,5 +1,8 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Play, Square, Cpu, MessageSquare, Zap, ChevronRight, RefreshCw, Hash, Clock, BookOpen, Radio, PlusSquare, CalendarClock, Layers, Server, Plug } from 'lucide-react';
+import {
+  Play, Square, Cpu, MessageSquare, Zap, ChevronRight, RefreshCw,
+  Clock, Radio, History, Brain, Key,
+} from 'lucide-react';
 import { useStore } from '../store';
 import { getSystemInfo } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
@@ -13,14 +16,29 @@ function formatUptime(seconds: number): string {
   return `${h}h ${m}m`;
 }
 
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 export default function DashboardPanel() {
   const client = useHermesClient();
-  const { gatewayStatus, setGatewayStatus, setSettingsOpen, setActiveSection, sessions, crons, skills, platforms, addSession, setActiveSession } = useStore();
+  const {
+    gatewayStatus, setGatewayStatus, setSettingsOpen, setActiveSection,
+    sessions, crons, skills, activeModel, platforms,
+    addSession, setActiveSession,
+  } = useStore();
 
   const [isRunning, setIsRunning] = useState(false);
   const [gatewayLoading, setGatewayLoading] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [uptime, setUptime] = useState(0);
+  const [gatewayPort, setGatewayPort] = useState<number>(8642);
 
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [sysInfo, setSysInfo] = useState<{ ram_gb: number; cpu_count: number } | null>(null);
@@ -55,10 +73,11 @@ export default function DashboardPanel() {
     return () => clearInterval(id);
   }, [isRunning, startedAt]);
 
-  // Load model config and system info on mount
+  // Load model config, system info, and gateway port on mount
   useEffect(() => {
     client.getModelConfig().then(setModelConfig).catch(() => null);
     getSystemInfo().then(setSysInfo).catch(() => null);
+    client.getGatewayPort().then(setGatewayPort).catch(() => null);
   }, []);
 
   const handleStart = async () => {
@@ -83,7 +102,6 @@ export default function DashboardPanel() {
     setChatResponse(null);
     setChatError(null);
 
-    // Prefer HTTP API (same as chat panel) — faster and streaming-capable
     if (isRunning) {
       try {
         const res = await fetch(`${client.getGatewayUrl()}/v1/chat/completions`, {
@@ -105,7 +123,7 @@ export default function DashboardPanel() {
           return;
         }
       } catch {
-        // fall through to CLI fallback
+        // fall through
       }
     }
 
@@ -120,6 +138,29 @@ export default function DashboardPanel() {
       handleSendMessage();
     }
   };
+
+  // ── Derived values ────────────────────────────────────────────────────────
+  const activeCrons = crons.filter(c => c.active);
+  const recentSessions = [...sessions]
+    .filter(s => (s.messages?.length ?? 0) > 0)
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 5);
+
+  const stats = [
+    { label: 'Sessions', value: sessions.length, icon: History, color: 'var(--accent-green)' },
+    { label: 'Active Model', value: activeModel || 'None', icon: Cpu, color: 'var(--accent-blue)' },
+    { label: 'Skills', value: skills.length, icon: Zap, color: 'var(--accent-amber)' },
+    { label: 'Crons', value: `${activeCrons.length} active`, icon: Clock, color: 'var(--accent-green)' },
+  ];
+
+  const QUICK_ACTIONS: { label: string; icon: React.ElementType; section: string }[] = [
+    { label: 'New Chat', icon: MessageSquare, section: 'chat' },
+    { label: 'Gateway', icon: Radio, section: 'gateway' },
+    { label: 'Skills', icon: Zap, section: 'skills' },
+    { label: 'Memory', icon: Brain, section: 'memory' },
+    { label: 'Schedules', icon: Clock, section: 'crons' },
+    { label: 'Providers', icon: Key, section: 'providers' },
+  ];
 
   const dotClass = isRunning ? 'dot dot-green' : 'dot dot-red';
 
@@ -144,143 +185,46 @@ export default function DashboardPanel() {
           </p>
         </div>
 
-        {/* Stats Grid */}
-        {(() => {
-          const activeSessions = sessions.filter(s => (s.messages?.length ?? 0) > 0).length;
-          const activeCrons = crons.filter(c => c.active).length;
-          const connectedPlatforms = platforms.filter(p => p.status === 'connected').length;
-          const stats = [
-            { label: 'Active Sessions', value: activeSessions, icon: <Hash size={14} />, accent: 'var(--text-secondary)' },
-            { label: 'Scheduled Crons', value: activeCrons, icon: <Clock size={14} />, accent: 'var(--accent-amber)' },
-            { label: 'Skills', value: skills.length, icon: <BookOpen size={14} />, accent: '#3b82f6' },
-            { label: 'Platforms On', value: connectedPlatforms, icon: <Radio size={14} />, accent: 'var(--accent-green)' },
-          ];
-          return (
-            <>
-              <div className="section-label">Overview</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
-                {stats.map(stat => (
-                  <div key={stat.label} className="card" style={{ padding: '14px 16px', position: 'relative', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--text-secondary)' }}>
-                      {stat.icon}
-                      <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>
-                        {stat.label}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>
-                      {stat.value}
-                    </div>
-                    <div style={{
-                      position: 'absolute',
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      height: 2,
-                      background: stat.accent,
-                      opacity: 0.6,
-                    }} />
-                  </div>
-                ))}
+        {/* ── Stats Row ──────────────────────────────────────────────────── */}
+        <div className="section-label">Overview</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
+          {stats.map(stat => {
+            const Icon = stat.icon;
+            return (
+              <div key={stat.label} style={{
+                background: 'var(--bg1)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)',
+                padding: 16,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}>
+                <Icon size={18} style={{ color: stat.color }} />
+                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {stat.value}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {stat.label}
+                </div>
               </div>
-            </>
-          );
-        })()}
-
-        {/* Quick Actions */}
-        <div className="section-label">Quick Actions</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
-          {[
-            { label: 'New Chat', icon: <PlusSquare size={13} />, action: () => { addSession(); setActiveSection('chat'); } },
-            { label: 'Cron Scheduler', icon: <CalendarClock size={13} />, action: () => setActiveSection('crons') },
-            { label: 'Skills', icon: <Layers size={13} />, action: () => setActiveSection('skills') },
-            { label: 'Gateway', icon: <Server size={13} />, action: () => setActiveSection('gateway') },
-            { label: 'Providers', icon: <Plug size={13} />, action: () => setActiveSection('providers' as any) },
-          ].map(item => (
-            <button
-              key={item.label}
-              className="btn btn-ghost btn-sm"
-              onClick={item.action}
-              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-            >
-              {item.icon}
-              {item.label}
-            </button>
-          ))}
+            );
+          })}
         </div>
 
-        {/* Recent Sessions */}
-        {(() => {
-          const recentSessions = [...sessions]
-            .filter(s => (s.messages?.length ?? 0) > 0)
-            .sort((a, b) => b.timestamp - a.timestamp)
-            .slice(0, 3);
-          if (recentSessions.length === 0) return null;
-          return (
-            <>
-              <div className="section-label">Recent Sessions</div>
-              <div className="card" style={{ marginBottom: 20, padding: 0, overflow: 'hidden' }}>
-                {recentSessions.map((s, i) => {
-                  const ago = (() => {
-                    const diff = Date.now() - s.timestamp;
-                    const m = Math.floor(diff / 60000);
-                    if (m < 1) return 'just now';
-                    if (m < 60) return `${m}m ago`;
-                    const h = Math.floor(m / 60);
-                    if (h < 24) return `${h}h ago`;
-                    return `${Math.floor(h / 24)}d ago`;
-                  })();
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => { setActiveSession(s.id); setActiveSection('chat'); }}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        padding: '12px 16px',
-                        background: 'none',
-                        border: 'none',
-                        borderTop: i > 0 ? '1px solid var(--border)' : 'none',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'background 0.15s',
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg2)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                    >
-                      <MessageSquare size={14} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
-                      <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {s.title}
-                      </span>
-                      <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-                        {s.messages?.length ?? 0} msg{(s.messages?.length ?? 0) !== 1 ? 's' : ''}
-                      </span>
-                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', marginLeft: 8 }}>
-                        {ago}
-                      </span>
-                      <ChevronRight size={12} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          );
-        })()}
-
-        {/* Agent Status Card */}
-        <div className="section-label">Agent Status</div>
+        {/* ── Gateway Status Widget ──────────────────────────────────────── */}
+        <div className="section-label">Gateway</div>
         <div className="card" style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <span className={dotClass} />
               <div>
                 <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
-                  Gateway {isRunning ? 'Running' : 'Stopped'}
+                  {isRunning ? 'Gateway running' : 'Gateway stopped'}
                 </div>
                 {isRunning && (
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    Uptime: {formatUptime(uptime)}
+                    Port {gatewayPort} · Uptime {formatUptime(uptime)}
                   </div>
                 )}
                 {!isRunning && (
@@ -291,34 +235,206 @@ export default function DashboardPanel() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              {!isRunning ? (
+              {isRunning ? (
+                <>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setActiveSection('chat')}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <MessageSquare size={13} />
+                    Open Chat
+                  </button>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={handleStop}
+                    disabled={gatewayLoading}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    {gatewayLoading
+                      ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                      : <Square size={13} />}
+                    Stop
+                  </button>
+                </>
+              ) : (
                 <button
                   className="btn btn-success btn-sm"
                   onClick={handleStart}
                   disabled={gatewayLoading}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4 }}
                 >
                   {gatewayLoading
                     ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
                     : <Play size={13} />}
-                  Start
-                </button>
-              ) : (
-                <button
-                  className="btn btn-danger btn-sm"
-                  onClick={handleStop}
-                  disabled={gatewayLoading}
-                >
-                  {gatewayLoading
-                    ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
-                    : <Square size={13} />}
-                  Stop
+                  Start Gateway
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* Quick Message */}
+        {/* ── Quick Actions 2×3 Grid ─────────────────────────────────────── */}
+        <div className="section-label">Quick Actions</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
+          {QUICK_ACTIONS.map(action => {
+            const Icon = action.icon;
+            return (
+              <button
+                key={action.label}
+                onClick={() => {
+                  if (action.section === 'chat') { addSession(); }
+                  setActiveSection(action.section as any);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '12px 14px',
+                  background: 'var(--bg1)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-md)',
+                  color: 'var(--text-primary)',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-sans)',
+                  transition: 'background 0.15s',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg2)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'var(--bg1)')}
+              >
+                <Icon size={20} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+                {action.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ── Recent Sessions ────────────────────────────────────────────── */}
+        {recentSessions.length > 0 && (
+          <>
+            <div className="section-label">Recent Sessions</div>
+            <div className="card" style={{ marginBottom: 20, padding: 0, overflow: 'hidden' }}>
+              {recentSessions.map((s, i) => (
+                <button
+                  key={s.id}
+                  onClick={() => { setActiveSession(s.id); setActiveSection('chat'); }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '12px 16px',
+                    background: 'none',
+                    border: 'none',
+                    borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg2)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                >
+                  <MessageSquare size={14} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {s.title}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                    {s.messages?.length ?? 0} msg{(s.messages?.length ?? 0) !== 1 ? 's' : ''}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', marginLeft: 8 }}>
+                    {relativeTime(s.timestamp)}
+                  </span>
+                  <ChevronRight size={12} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ── Active Crons Widget ───────────────────────────────────────── */}
+        {activeCrons.length > 0 && (
+          <>
+            <div className="section-label">Active Schedules</div>
+            <div className="card" style={{ marginBottom: 20, padding: 0, overflow: 'hidden' }}>
+              {activeCrons.slice(0, 3).map((cron, i) => (
+                <div
+                  key={cron.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '11px 16px',
+                    borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                  }}
+                >
+                  <span className="dot dot-green" style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {cron.description}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>
+                      {cron.schedule}
+                      {cron.platform ? ` · ${cron.platform}` : ''}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {activeCrons.length > 3 && (
+                <div style={{ borderTop: '1px solid var(--border)' }}>
+                  <button
+                    onClick={() => setActiveSection('crons')}
+                    style={{
+                      width: '100%',
+                      padding: '10px 16px',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-blue)',
+                      fontSize: 12,
+                      fontFamily: 'var(--font-mono)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    View all {activeCrons.length} active schedules
+                    <ChevronRight size={12} />
+                  </button>
+                </div>
+              )}
+              {activeCrons.length <= 3 && (
+                <div style={{ borderTop: '1px solid var(--border)' }}>
+                  <button
+                    onClick={() => setActiveSection('crons')}
+                    style={{
+                      width: '100%',
+                      padding: '10px 16px',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-blue)',
+                      fontSize: 12,
+                      fontFamily: 'var(--font-mono)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    View all schedules
+                    <ChevronRight size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── Quick Message ─────────────────────────────────────────────── */}
         <div className="section-label">Quick Message</div>
         <div className="card" style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -339,6 +455,7 @@ export default function DashboardPanel() {
                   className="btn btn-primary btn-sm"
                   onClick={handleSendMessage}
                   disabled={chatLoading || !message.trim()}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4 }}
                 >
                   {chatLoading
                     ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
@@ -349,7 +466,6 @@ export default function DashboardPanel() {
             </div>
           </div>
 
-          {/* Response area */}
           {chatResponse !== null && (
             <div style={{
               marginTop: 14,
@@ -387,7 +503,7 @@ export default function DashboardPanel() {
           )}
         </div>
 
-        {/* Active Model Card */}
+        {/* ── Active Model Card ─────────────────────────────────────────── */}
         <div className="section-label">Active Model</div>
         <div className="card" style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -430,7 +546,7 @@ export default function DashboardPanel() {
           </div>
         </div>
 
-        {/* System Info Row */}
+        {/* ── System Info ───────────────────────────────────────────────── */}
         <div className="section-label">System</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 32 }}>
           <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
