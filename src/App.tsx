@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useStore } from './store';
 import { startHealthPolling } from './api/hermes';
-import { getHermesInstallStatus, getGatewayStatus, startGateway, checkUpdate, runHermesCommand, updateTrayStatus, isTauriApp, listSessionsDisk, readSessionDisk, writeSessionDisk } from './api/desktop';
+import { updateTrayStatus, isTauriApp } from './api/desktop';
 import { HermesProvider, useHermesClient } from './lib/hermes';
 import type { UpdateInfo } from './api/desktop';
 import Sidebar from './components/Sidebar';
@@ -33,15 +33,15 @@ import { PanelRightClose, PanelRight } from 'lucide-react';
 // ─── Local hooks ─────────────────────────────────────────────────────────────
 
 function useSessionPersistence() {
+  const client = useHermesClient();
   const sessions = useStore(s => s.sessions);
   const sessionsRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load persisted sessions from disk on startup
   useEffect(() => {
-    if (!isTauriApp()) return;
-    listSessionsDisk().then(metas => {
+    client.listSessions().then(metas => {
       if (metas.length === 0) return;
-      Promise.all(metas.map(m => readSessionDisk(m.name).catch(() => null))).then(raws => {
+      Promise.all(metas.map(m => client.readSession(m.name).catch(() => null))).then(raws => {
         const loaded = raws
           .filter((r): r is string => r !== null)
           .map(r => { try { return JSON.parse(r); } catch { return null; } })
@@ -54,20 +54,19 @@ function useSessionPersistence() {
         }
       });
     }).catch(() => {});
-  }, []);
+  }, [client]);
 
   // Persist sessions to disk on change (debounced 2s)
   useEffect(() => {
-    if (!isTauriApp()) return;
     if (sessionsRef.current) clearTimeout(sessionsRef.current);
     sessionsRef.current = setTimeout(() => {
       sessions.forEach(s => {
         if (s.messages.length > 0) {
-          writeSessionDisk(`${s.id}.json`, JSON.stringify(s)).catch(() => {});
+          client.writeSession(`${s.id}.json`, JSON.stringify(s)).catch(() => {});
         }
       });
     }, 2000);
-  }, [sessions]);
+  }, [sessions, client]);
 }
 
 type GatewayStatus = 'unchecked' | 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -76,6 +75,7 @@ function useGatewayRestart(
   gatewayStatus: GatewayStatus,
   setGatewayStatus: (s: GatewayStatus) => void,
 ) {
+  const client = useHermesClient();
   const { addToast } = useStore();
   const failureCount = useRef(0);
   const gatewayPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -99,14 +99,14 @@ function useGatewayRestart(
       if (failureCount.current >= FAILURE_THRESHOLD && (now - lastRestartTime.current) > RESTART_COOLDOWN_MS) {
         failureCount.current = 0;
         lastRestartTime.current = now;
-        await startGateway().catch(() => {});
+        await client.startGateway().catch(() => {});
         addToast('Gateway restarted automatically', 'info');
       }
     };
 
     gatewayPollRef.current = setInterval(async () => {
       try {
-        const alive = await getGatewayStatus();
+        const alive = await client.getGatewayStatus();
         if (alive) {
           failureCount.current = 0;
         } else {
@@ -123,10 +123,11 @@ function useGatewayRestart(
         gatewayPollRef.current = null;
       }
     };
-  }, [gatewayStatus, addToast]);
+  }, [gatewayStatus, addToast, client]);
 }
 
 function useUpdateCheck() {
+  const client = useHermesClient();
   const [updateBanner, setUpdateBanner] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo>({
     current_version: null,
@@ -137,7 +138,7 @@ function useUpdateCheck() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      checkUpdate().then(info => {
+      client.checkUpdate().then(info => {
         if (info.update_available) {
           setUpdateInfo(info);
           setUpdateBanner(true);
@@ -145,7 +146,7 @@ function useUpdateCheck() {
       }).catch(() => {});
     }, 3000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [client]);
 
   const dismissBanner = () => setUpdateBanner(false);
 
@@ -153,6 +154,7 @@ function useUpdateCheck() {
 }
 
 function useInstallCheck() {
+  const client = useHermesClient();
   const [showWizard, setShowWizard] = useState(false);
   const [wizardDone, setWizardDone] = useState(false);
   const [checkingInstall, setCheckingInstall] = useState(true);
@@ -162,7 +164,7 @@ function useInstallCheck() {
       setCheckingInstall(false);
       return;
     }
-    getHermesInstallStatus().then(s => {
+    client.getInstallStatus().then(s => {
       if (!s.installed || !s.model_configured) {
         setShowWizard(true);
       }
@@ -170,7 +172,7 @@ function useInstallCheck() {
     }).catch(() => {
       setCheckingInstall(false);
     });
-  }, []);
+  }, [client]);
 
   return { showWizard, setShowWizard, wizardDone, setWizardDone, checkingInstall };
 }
@@ -199,21 +201,21 @@ function AppInner() {
       return;
     }
     setGatewayStatus('connecting');
-    getGatewayStatus().then(async (running) => {
+    client.getGatewayStatus().then(async (running) => {
       if (running) {
         setGatewayStatus('connected');
       } else {
         setGatewayStatus('disconnected');
         // Auto-start gateway if Hermes is installed
         try {
-          const status = await getHermesInstallStatus();
+          const status = await client.getInstallStatus();
           if (status.installed) {
-            await startGateway();
+            await client.startGateway();
             // Poll via IPC until the gateway PID is alive (max 15s)
             let attempts = 0;
             const poll = setInterval(async () => {
               attempts++;
-              const alive = await getGatewayStatus().catch(() => false);
+              const alive = await client.getGatewayStatus().catch(() => false);
               if (alive) {
                 clearInterval(poll);
                 setGatewayStatus('connected');
@@ -363,7 +365,7 @@ function AppInner() {
           <div style={{ background: 'var(--accent-amber-dim)', borderBottom: '1px solid var(--accent-amber)', padding: '6px 16px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, flexShrink: 0 }}>
             <span style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>Update available</span>
             <span style={{ color: 'var(--text-secondary)' }}>{updateInfo.current_version} → {updateInfo.latest_version}</span>
-            <button className="btn btn-ghost" style={{ fontSize: 11.5, marginLeft: 'auto' }} onClick={() => runHermesCommand(['update'])}>Update</button>
+            <button className="btn btn-ghost" style={{ fontSize: 11.5, marginLeft: 'auto' }} onClick={() => client.runHermesCommand(['update'])}>Update</button>
             <button onClick={dismissBanner} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>×</button>
           </div>
         )}
