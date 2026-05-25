@@ -22,6 +22,8 @@ use tauri::{
 // The gateway itself is detached — we track it only via the PID file.
 struct GatewayState;
 
+struct SshState(Mutex<Option<std::process::Child>>);
+
 struct PtyEntry {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn std::io::Write + Send>,
@@ -2515,6 +2517,82 @@ fn set_gateway_port(port: u16) -> Result<(), String> {
     std::fs::write(desktop_config_path(), content).map_err(|e| e.to_string())
 }
 
+// ── SSH tunnel commands ───────────────────────────────────────────────────────
+
+#[tauri::command]
+fn hermes_start_ssh_tunnel(
+    ssh_host: String,
+    ssh_port: u16,
+    ssh_user: String,
+    ssh_key_path: String,
+    ssh_remote_port: u16,
+    ssh_local_port: u16,
+    state: tauri::State<SshState>,
+) -> Result<CommandResult, String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(mut child) = guard.take() {
+        let _ = child.kill();
+    }
+
+    let mut args = vec![
+        "-N".to_string(),
+        "-L".to_string(),
+        format!("{}:127.0.0.1:{}", ssh_local_port, ssh_remote_port),
+        "-p".to_string(),
+        ssh_port.to_string(),
+        "-o".to_string(), "StrictHostKeyChecking=accept-new".to_string(),
+        "-o".to_string(), "BatchMode=yes".to_string(),
+        "-o".to_string(), "ExitOnForwardFailure=yes".to_string(),
+        "-o".to_string(), "ServerAliveInterval=30".to_string(),
+        "-o".to_string(), "ServerAliveCountMax=3".to_string(),
+    ];
+    if !ssh_key_path.is_empty() {
+        args.push("-i".to_string());
+        args.push(ssh_key_path);
+    }
+    args.push(format!("{}@{}", ssh_user, ssh_host));
+
+    let child = Command::new("ssh")
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn SSH: {}", e))?;
+
+    *guard = Some(child);
+    Ok(CommandResult {
+        success: true,
+        code: Some(0),
+        command: "ssh tunnel".to_string(),
+        stdout: format!("SSH tunnel started: local port {} → {}:{}", ssh_local_port, ssh_host, ssh_remote_port),
+        stderr: String::new(),
+    })
+}
+
+#[tauri::command]
+fn hermes_stop_ssh_tunnel(state: tauri::State<SshState>) -> Result<CommandResult, String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(mut child) = guard.take() {
+        let _ = child.kill();
+        Ok(CommandResult {
+            success: true,
+            code: Some(0),
+            command: "ssh stop".to_string(),
+            stdout: "SSH tunnel stopped".to_string(),
+            stderr: String::new(),
+        })
+    } else {
+        Ok(CommandResult {
+            success: true,
+            code: Some(0),
+            command: "ssh stop".to_string(),
+            stdout: "No tunnel running".to_string(),
+            stderr: String::new(),
+        })
+    }
+}
+
 // ── App entry point ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2527,6 +2605,7 @@ pub fn run() {
             None,
         ))
         .manage(GatewayState)
+        .manage(SshState(Mutex::new(None)))
         .manage(PtyState(Mutex::new(HashMap::new())))
         .manage(HermesChatState(Mutex::new(HashMap::new())))
         .setup(|app| {
@@ -2650,6 +2729,8 @@ pub fn run() {
             get_connection_api_key,
             get_gateway_port,
             set_gateway_port,
+            hermes_start_ssh_tunnel,
+            hermes_stop_ssh_tunnel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

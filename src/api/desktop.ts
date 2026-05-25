@@ -537,6 +537,22 @@ export async function sendHermesPtyMessage(ptyId: string, message: string): Prom
   return invoke<void>('send_hermes_pty_message', { ptyId, message });
 }
 
+export async function startSshTunnel(config: {
+  host: string; port: number; user: string; keyPath: string;
+  remotePort: number; localPort: number;
+}): Promise<CommandResult> {
+  if (!isTauriApp()) return { success: false, code: -1, command: 'ssh', stdout: '', stderr: 'No Tauri bridge' };
+  return invoke<CommandResult>('hermes_start_ssh_tunnel', {
+    sshHost: config.host, sshPort: config.port, sshUser: config.user,
+    sshKeyPath: config.keyPath, sshRemotePort: config.remotePort, sshLocalPort: config.localPort,
+  });
+}
+
+export async function stopSshTunnel(): Promise<CommandResult> {
+  if (!isTauriApp()) return { success: false, code: -1, command: 'ssh', stdout: '', stderr: 'No Tauri bridge' };
+  return invoke<CommandResult>('hermes_stop_ssh_tunnel');
+}
+
 /** Set all Playwright/browser headed-mode env vars in one call. */
 export async function setBrowserHeadedMode(headed: boolean): Promise<void> {
   const val = headed ? 'false' : 'true'; // PLAYWRIGHT_HEADLESS=false means headed
