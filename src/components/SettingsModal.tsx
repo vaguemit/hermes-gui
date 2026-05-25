@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
-import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe, Palette } from 'lucide-react';
+import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe, Palette, Network } from 'lucide-react';
 import { getAutostartEnabled, toggleAutostart } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 
@@ -68,6 +68,7 @@ const TABS = [
   { id: 'workspace', label: 'Workspace', icon: Folder },
   { id: 'browser', label: 'Browser', icon: Globe },
   { id: 'appearance', label: 'Appearance', icon: Palette },
+  { id: 'connection', label: 'Connection', icon: Network },
 ] as const;
 
 const THEMES = [
@@ -112,6 +113,20 @@ export default function SettingsModal() {
   const [clearingSessions, setClearingSessions] = useState(false);
   const [clearMsg, setClearMsg] = useState('');
   const [gatewayPort, setGatewayPortState] = useState<number>(8642);
+
+  // Connection tab state
+  const [connMode, setConnMode] = useState<'local' | 'remote' | 'ssh'>('local');
+  const [connRemoteUrl, setConnRemoteUrl] = useState('');
+  const [connApiKey, setConnApiKey] = useState('');
+  const [sshHost, setSshHost] = useState('');
+  const [sshPort, setSshPort] = useState('22');
+  const [sshUser, setSshUser] = useState('');
+  const [sshKeyPath, setSshKeyPath] = useState('');
+  const [sshRemotePort, setSshRemotePort] = useState('8642');
+  const [sshLocalPort, setSshLocalPort] = useState('18642');
+  const [connSaved, setConnSaved] = useState(false);
+  const [connTesting, setConnTesting] = useState(false);
+  const [connTestResult, setConnTestResult] = useState<'ok' | 'error' | null>(null);
 
   // Browser automation tab state
   const [browserKeys, setBrowserKeys] = useState<Record<string, string>>({});
@@ -227,6 +242,24 @@ export default function SettingsModal() {
     }
   };
 
+  // Connection: load from gui-prefs.json on tab open
+  useEffect(() => {
+    if (settingsOpen && tab === 'connection') {
+      client.readFile('gui-prefs.json').then(raw => {
+        if (!raw) return;
+        const prefs = JSON.parse(raw);
+        if (prefs.connMode) setConnMode(prefs.connMode);
+        if (prefs.connRemoteUrl) setConnRemoteUrl(prefs.connRemoteUrl);
+        if (prefs.sshHost) setSshHost(prefs.sshHost);
+        if (prefs.sshPort) setSshPort(String(prefs.sshPort));
+        if (prefs.sshUser) setSshUser(prefs.sshUser);
+        if (prefs.sshKeyPath) setSshKeyPath(prefs.sshKeyPath);
+        if (prefs.sshRemotePort) setSshRemotePort(String(prefs.sshRemotePort));
+        if (prefs.sshLocalPort) setSshLocalPort(String(prefs.sshLocalPort));
+      }).catch(() => {});
+    }
+  }, [settingsOpen, tab]);
+
   // Browser automation: load on tab open
   useEffect(() => {
     if (settingsOpen && tab === 'browser') {
@@ -258,6 +291,24 @@ export default function SettingsModal() {
       setBrowserSaving(false);
       setTimeout(() => setBrowserSaveMsg(''), 2500);
     }
+  };
+
+  const saveConnConfig = async () => {
+    let prefs: Record<string, unknown> = {};
+    try { const raw = await client.readFile('gui-prefs.json'); if (raw) prefs = JSON.parse(raw); } catch {}
+    prefs = { ...prefs, connMode, connRemoteUrl, sshHost, sshPort: parseInt(sshPort) || 22, sshUser, sshKeyPath, sshRemotePort: parseInt(sshRemotePort) || 8642, sshLocalPort: parseInt(sshLocalPort) || 18642 };
+    await client.writeFile('gui-prefs.json', JSON.stringify(prefs, null, 2));
+    setConnSaved(true);
+    setTimeout(() => setConnSaved(false), 2000);
+  };
+
+  const testConn = async () => {
+    setConnTesting(true);
+    setConnTestResult(null);
+    const ok = await client.getGatewayStatus().catch(() => false);
+    setConnTestResult(ok ? 'ok' : 'error');
+    setConnTesting(false);
+    setTimeout(() => setConnTestResult(null), 3000);
   };
 
   const saveWorkspaceConfig = async () => {
@@ -525,6 +576,120 @@ export default function SettingsModal() {
                     </button>
                     {clearMsg && <span style={{ fontSize: 12, color: 'var(--accent-green)' }}>{clearMsg}</span>}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {tab === 'connection' && (
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Connection</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>Choose how this app connects to the Hermes gateway</div>
+
+                {/* Mode selector */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                  {(['local', 'remote', 'ssh'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => setConnMode(mode)}
+                      style={{
+                        flex: 1,
+                        padding: '8px 0',
+                        background: connMode === mode ? 'var(--accent-green-dim)' : 'var(--bg1)',
+                        border: `1px solid ${connMode === mode ? 'var(--accent-green)' : 'var(--border)'}`,
+                        borderRadius: 8,
+                        color: connMode === mode ? 'var(--accent-green)' : 'var(--text-secondary)',
+                        fontSize: 13,
+                        fontWeight: connMode === mode ? 600 : 400,
+                        cursor: 'pointer',
+                        textTransform: 'capitalize',
+                        transition: 'border-color 0.15s, color 0.15s',
+                      }}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Local mode */}
+                {connMode === 'local' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                    <span className="dot dot-green" />
+                    Connected to local Hermes gateway on port 8642
+                  </div>
+                )}
+
+                {/* Remote mode */}
+                {connMode === 'remote' && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Remote URL</label>
+                      <input
+                        className="input-field"
+                        value={connRemoteUrl}
+                        onChange={e => setConnRemoteUrl(e.target.value)}
+                        placeholder="https://your-server:8642"
+                        style={{ fontFamily: 'var(--font-mono)' }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>API Key (optional)</label>
+                      <MaskedInput
+                        id="conn-api-key"
+                        placeholder="API Key (optional)"
+                        value={connApiKey}
+                        onChange={setConnApiKey}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* SSH mode */}
+                {connMode === 'ssh' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Host</label>
+                      <input className="input-field" value={sshHost} onChange={e => setSshHost(e.target.value)} placeholder="192.168.1.100" style={{ fontFamily: 'var(--font-mono)' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Port</label>
+                      <input className="input-field" value={sshPort} onChange={e => setSshPort(e.target.value)} placeholder="22" style={{ fontFamily: 'var(--font-mono)' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Username</label>
+                      <input className="input-field" value={sshUser} onChange={e => setSshUser(e.target.value)} placeholder="ubuntu" style={{ fontFamily: 'var(--font-mono)' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Key Path</label>
+                      <input className="input-field" value={sshKeyPath} onChange={e => setSshKeyPath(e.target.value)} placeholder="~/.ssh/id_rsa" style={{ fontFamily: 'var(--font-mono)' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Remote Port</label>
+                      <input className="input-field" value={sshRemotePort} onChange={e => setSshRemotePort(e.target.value)} placeholder="8642" style={{ fontFamily: 'var(--font-mono)' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Local Port</label>
+                      <input className="input-field" value={sshLocalPort} onChange={e => setSshLocalPort(e.target.value)} placeholder="18642" style={{ fontFamily: 'var(--font-mono)' }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={testConn}
+                    disabled={connTesting}
+                    style={{ fontSize: 13 }}
+                  >
+                    {connTesting ? 'Testing…' : connTestResult === 'ok' ? <span style={{ color: 'var(--accent-green)' }}>Connected ✓</span> : connTestResult === 'error' ? <span style={{ color: 'var(--accent-red)' }}>Failed ✗</span> : 'Test Connection'}
+                  </button>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={saveConnConfig}
+                    style={{ fontSize: 13 }}
+                  >
+                    {connSaved ? 'Saved ✓' : 'Save'}
+                  </button>
                 </div>
               </div>
             )}
