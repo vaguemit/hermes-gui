@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, CheckCircle2, Eye, EyeOff, Globe, Play, Radio, Settings, Square } from 'lucide-react';
+import { Check, CheckCircle2, Clipboard, ClipboardCheck, Eye, EyeOff, Globe, Play, Radio, Search, Settings, Square } from 'lucide-react';
 import { useStore } from '../store';
 import { useHermesClient, useHermesContext } from '../lib/hermes';
 import { getChromeCdpStatus, launchChrome, onGatewayReady, sendHermesPtyMessage, startHermesPtyChat } from '../api/desktop';
@@ -230,6 +230,33 @@ export default function GatewayPanel() {
     '[ready] Desktop gateway controls initialized',
     '[ready] Health endpoint: http://127.0.0.1:8642/health',
   ]);
+
+  const [logFilter, setLogFilter] = useState<'all' | 'info' | 'warn' | 'error'>('all');
+  const [logSearch, setLogSearch] = useState('');
+  const [logCopied, setLogCopied] = useState(false);
+  const [portInput, setPortInput] = useState('8642');
+  const [portApplied, setPortApplied] = useState(false);
+
+  useEffect(() => {
+    client.getGatewayPort().then(p => setPortInput(String(p))).catch(() => {});
+  }, [client]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function logLineColor(line: string): string {
+    if (line.toLowerCase().includes('error') || line.toLowerCase().includes('err:')) return 'var(--accent-red)';
+    if (line.toLowerCase().includes('warn')) return 'var(--accent-amber)';
+    if (line.toLowerCase().includes('success') || line.toLowerCase().includes('ready') || line.toLowerCase().includes('started')) return 'var(--accent-green)';
+    return 'var(--term-green)';
+  }
+
+  const filteredLog = gatewayLog
+    .filter(line => {
+      if (logFilter === 'all') return true;
+      if (logFilter === 'error') return line.toLowerCase().includes('error') || line.toLowerCase().includes('err');
+      if (logFilter === 'warn') return line.toLowerCase().includes('warn');
+      if (logFilter === 'info') return !line.toLowerCase().includes('error') && !line.toLowerCase().includes('warn');
+      return true;
+    })
+    .filter(line => !logSearch || line.toLowerCase().includes(logSearch.toLowerCase()));
 
   const isConnected = gatewayStatus === 'connected';
   const isConnecting = gatewayStatus === 'connecting';
@@ -496,7 +523,29 @@ export default function GatewayPanel() {
             <div style={{ fontSize: 16, fontWeight: 700 }}>Gateway</div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Messaging platforms and managed gateway process</div>
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Port</span>
+              <input
+                type="number"
+                value={portInput}
+                onChange={e => { setPortInput(e.target.value); setPortApplied(false); }}
+                style={{ width: 80, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 12, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', outline: 'none' }}
+              />
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={async () => {
+                  const p = parseInt(portInput, 10);
+                  if (isNaN(p)) return;
+                  await client.setGatewayPort(p).catch(() => {});
+                  setPortApplied(true);
+                  setTimeout(() => setPortApplied(false), 2000);
+                }}
+                style={{ fontSize: 12 }}
+              >
+                {portApplied ? 'Applied ✓' : 'Apply'}
+              </button>
+            </div>
             {isConnected ? (
               <button className="btn btn-danger" onClick={stopGateway} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
                 <Square size={13} /> Stop Gateway
@@ -616,10 +665,67 @@ export default function GatewayPanel() {
         </div>
 
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Process Log</div>
-        <div style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--text-secondary)', maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {gatewayLog.map((line, i) => (
-            <div key={`${line}-${i}`} style={{ color: line.includes('[error]') ? 'var(--accent-red)' : line.includes('[warn]') ? 'var(--accent-amber)' : line.includes('[info]') ? 'var(--text-secondary)' : 'var(--text-primary)' }}>{line}</div>
-          ))}
+        <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+          {/* Terminal bar */}
+          <div style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Filter dropdown */}
+            <select
+              value={logFilter}
+              onChange={e => setLogFilter(e.target.value as typeof logFilter)}
+              style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 11.5, padding: '3px 6px', cursor: 'pointer', outline: 'none' }}
+            >
+              <option value="all">All</option>
+              <option value="info">Info</option>
+              <option value="warn">Warnings</option>
+              <option value="error">Errors</option>
+            </select>
+            {/* Search input */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '3px 7px', width: 120 }}>
+              <Search size={11} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+              <input
+                value={logSearch}
+                onChange={e => setLogSearch(e.target.value)}
+                placeholder="Search…"
+                style={{ background: 'none', border: 'none', outline: 'none', color: 'var(--text-secondary)', fontSize: 11.5, width: '100%', fontFamily: 'var(--font-mono)' }}
+              />
+            </div>
+            {/* Right-side actions */}
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                title="Copy log"
+                onClick={() => {
+                  navigator.clipboard.writeText(gatewayLog.join('\n')).then(() => {
+                    setLogCopied(true);
+                    setTimeout(() => setLogCopied(false), 1500);
+                  }).catch(() => {});
+                }}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, padding: '3px 8px' }}
+              >
+                {logCopied ? <ClipboardCheck size={12} style={{ color: 'var(--accent-green)' }} /> : <Clipboard size={12} />}
+                {logCopied ? 'Copied' : 'Copy Log'}
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setGatewayLog([])}
+                style={{ fontSize: 11.5, padding: '3px 8px' }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          {/* Terminal body */}
+          <div style={{ background: 'var(--bg0)', padding: '10px 14px', fontFamily: 'var(--font-mono)', fontSize: 11.5, maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {filteredLog.length === 0 ? (
+              <div style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                {gatewayLog.length === 0 ? 'No log output yet.' : 'No lines match the current filter.'}
+              </div>
+            ) : (
+              filteredLog.map((line, i) => (
+                <div key={`${line}-${i}`} style={{ color: logLineColor(line) }}>{line}</div>
+              ))
+            )}
+          </div>
         </div>
 
         <div style={{ marginTop: 20 }}>
