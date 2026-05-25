@@ -299,30 +299,11 @@ function AppInner() {
   // Session persistence (load from disk + auto-save on change)
   useSessionPersistence();
 
-  const mainContent = () => {
-    switch (activeSection) {
-      case 'chat': return <ErrorBoundary><ConversationPanel /></ErrorBoundary>;
-      case 'install': return <ErrorBoundary><InstallPanel onOpenWizard={() => {
-        client.writeFile('gui-setup-state.json', JSON.stringify({ step: 'provider', provider: 'openrouter' })).catch(() => {});
-        setShowWizard(true);
-      }} /></ErrorBoundary>;
-      case 'commands': return <ErrorBoundary><CommandCenterPanel /></ErrorBoundary>;
-      case 'agents': return <ErrorBoundary><AgentsPanel /></ErrorBoundary>;
-      case 'gateway': return <ErrorBoundary><GatewayPanel /></ErrorBoundary>;
-      case 'crons': return <ErrorBoundary><CronPanel /></ErrorBoundary>;
-      case 'skills': return <ErrorBoundary><SkillsPanel /></ErrorBoundary>;
-      case 'dashboard': return <ErrorBoundary><DashboardPanel /></ErrorBoundary>;
-      case 'profiles': return <ErrorBoundary><ProfilesPanel /></ErrorBoundary>;
-      case 'models': return <ErrorBoundary><ModelsPanel /></ErrorBoundary>;
-      case 'sessions': return <ErrorBoundary><SessionsPanel /></ErrorBoundary>;
-      case 'terminal': return <ErrorBoundary><TerminalPanel /></ErrorBoundary>;
-      case 'soul': return <ErrorBoundary><SoulPanel /></ErrorBoundary>;
-      case 'kanban': return <ErrorBoundary><KanbanPanel /></ErrorBoundary>;
-      case 'providers': return <ErrorBoundary><ProvidersPanel /></ErrorBoundary>;
-      case 'memory': return <ErrorBoundary><MemoryPanel /></ErrorBoundary>;
-      default: return <ErrorBoundary><ConversationPanel /></ErrorBoundary>;
-    }
-  };
+  const ALL_SECTIONS = [
+    'chat', 'install', 'commands', 'agents', 'gateway', 'crons', 'skills',
+    'dashboard', 'profiles', 'models', 'sessions', 'terminal', 'soul',
+    'kanban', 'providers', 'memory',
+  ] as const;
 
   const showRightPanel = activeSection === 'chat';
 
@@ -423,8 +404,32 @@ function AppInner() {
 
         {/* Main content */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-          <div style={{ flex: 1, overflow: 'hidden', minWidth: 0 }}>
-            {mainContent()}
+          <div style={{ flex: 1, overflow: 'hidden', minWidth: 0, position: 'relative' }}>
+            {ALL_SECTIONS.map(section => (
+              <div key={section} style={{ display: activeSection === section ? 'flex' : 'none', flex: 1, height: '100%', overflow: 'hidden' }}>
+                <ErrorBoundary>
+                  {section === 'chat' && <ConversationPanel />}
+                  {section === 'install' && <InstallPanel onOpenWizard={() => {
+                    client.writeFile('gui-setup-state.json', JSON.stringify({ step: 'provider', provider: 'openrouter' })).catch(() => {});
+                    setShowWizard(true);
+                  }} />}
+                  {section === 'commands' && <CommandCenterPanel />}
+                  {section === 'agents' && <AgentsPanel />}
+                  {section === 'gateway' && <GatewayPanel />}
+                  {section === 'crons' && <CronPanel />}
+                  {section === 'skills' && <SkillsPanel />}
+                  {section === 'dashboard' && <DashboardPanel />}
+                  {section === 'profiles' && <ProfilesPanel />}
+                  {section === 'models' && <ModelsPanel />}
+                  {section === 'sessions' && <SessionsPanel />}
+                  {section === 'terminal' && <TerminalPanel />}
+                  {section === 'soul' && <SoulPanel />}
+                  {section === 'kanban' && <KanbanPanel />}
+                  {section === 'providers' && <ProvidersPanel />}
+                  {section === 'memory' && <MemoryPanel />}
+                </ErrorBoundary>
+              </div>
+            ))}
           </div>
 
           {/* Right rail */}
