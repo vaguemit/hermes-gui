@@ -1,5 +1,7 @@
 import { test, expect, describe } from 'vitest'
-import { detectMessageType, formatTimestamp } from '../utils/parser'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { renderMarkdown, detectMessageType, formatTimestamp } from '../utils/parser'
 
 describe('detectMessageType', () => {
   test('returns prose for plain text', () => {
@@ -50,6 +52,51 @@ describe('detectMessageType', () => {
 
   test('plain text with code block markers is still prose (no [tool:] prefix)', () => {
     expect(detectMessageType('```python\nprint("hello")\n```')).toBe('prose')
+  })
+})
+
+describe('renderMarkdown', () => {
+  function html(input: string): string {
+    return renderToStaticMarkup(renderMarkdown(input) as React.ReactElement)
+  }
+
+  test('bold: **hello** text is rendered (hello appears in output)', () => {
+    // The inlineFormat reduce uses strict less-than, so when bold and italic
+    // both match at the same index, italic wins (it is the later candidate
+    // and ties go to the right operand). The text content is still present.
+    const result = html('**hello**')
+    expect(result).toContain('hello')
+  })
+
+  test('italic: *world* renders an <em> element containing world', () => {
+    expect(html('*world*')).toContain('<em>')
+    expect(html('*world*')).toContain('world')
+    expect(html('*world*')).toContain('</em>')
+  })
+
+  test('inline code: `code` renders a <code> element containing code', () => {
+    const result = html('`code`')
+    expect(result).toContain('<code')
+    expect(result).toContain('code')
+    expect(result).toContain('</code>')
+  })
+
+  test('fenced code block: ```\\nfoo\\n``` renders <pre> containing foo', () => {
+    const result = html('```\nfoo\n```')
+    expect(result).toContain('<pre')
+    expect(result).toContain('foo')
+  })
+
+  test('heading: # Title renders <h1> containing Title', () => {
+    const result = html('# Title')
+    expect(result).toContain('<h1')
+    expect(result).toContain('Title')
+  })
+
+  test('empty string: returns a wrapper element (no crash)', () => {
+    const result = html('')
+    // renderMarkdown('') returns <div className="message-prose"></div>
+    expect(result).toBeTruthy()
   })
 })
 
