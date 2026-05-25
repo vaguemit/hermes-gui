@@ -36,6 +36,30 @@ function detectProvider(modelId: string): string {
   return 'Custom';
 }
 
+function detectProviderFromUrl(baseUrl: string): string | null {
+  const u = baseUrl.toLowerCase();
+  if (u.includes('openai.com')) return 'openai';
+  if (u.includes('anthropic.com')) return 'anthropic';
+  if (u.includes('openrouter.ai')) return 'openrouter';
+  if (u.includes('nvidia.com') || u.includes('nim.nvidia')) return 'custom';
+  if (u.includes('googleapis.com') || u.includes('generativelanguage')) return 'custom';
+  if (u.includes('groq.com')) return 'groq';
+  if (u.includes('together.ai') || u.includes('togetherai')) return 'custom';
+  if (u.includes('mistral.ai')) return 'custom';
+  if (u.includes('cohere.com')) return 'custom';
+  if (u.includes('nous')) return 'custom';
+  return null;
+}
+
+function getModelBadges(modelId: string): string[] {
+  const badges: string[] = [];
+  const m = modelId.toLowerCase();
+  if (m.includes('vision') || m.includes('4o') || m.includes('claude-3') || m.includes('gemini')) badges.push('vision');
+  if (m.includes('claude-3-5-sonnet') || m.includes('claude-opus') || m.includes('gpt-4o')) badges.push('top');
+  if (m.includes('mini') || m.includes('haiku') || m.includes('flash')) badges.push('fast');
+  return badges;
+}
+
 export default function ModelsPanel() {
   const client = useHermesClient();
   const { activeModel, setActiveModel, setActiveSection } = useStore();
@@ -59,6 +83,8 @@ export default function ModelsPanel() {
   const [formOpen, setFormOpen] = useState(false);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [providerTouched, setProviderTouched] = useState(false);
+  const [providerAutoDetected, setProviderAutoDetected] = useState(false);
 
   const loadSaved = useCallback(async () => {
     setSavedLoading(true);
@@ -144,6 +170,8 @@ export default function ModelsPanel() {
     setForm(EMPTY_FORM);
     setFormOpen(false);
     setSaving(false);
+    setProviderTouched(false);
+    setProviderAutoDetected(false);
   };
 
   const isSavedActive = (m: SavedModel) => activeModelId === `${m.provider}::${m.model}`;
@@ -216,7 +244,13 @@ export default function ModelsPanel() {
             </button>
             <button
               className="btn btn-primary btn-sm"
-              onClick={() => { setFormOpen(v => !v); setFormError(''); }}
+              onClick={() => {
+                setFormOpen(v => !v);
+                setFormError('');
+                setProviderTouched(false);
+                setProviderAutoDetected(false);
+                setForm(EMPTY_FORM);
+              }}
               style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
             >
               {formOpen ? <ChevronDown size={14} /> : <Plus size={14} />}
@@ -303,13 +337,20 @@ export default function ModelsPanel() {
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>
+                <label style={{ display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>
                   Provider
+                  {providerAutoDetected && (
+                    <span className="badge badge-info" style={{ fontSize: 10, padding: '1px 6px', marginLeft: 6 }}>auto-detected</span>
+                  )}
                 </label>
                 <select
                   className="input-field"
                   value={form.provider}
-                  onChange={e => setForm({ ...form, provider: e.target.value })}
+                  onChange={e => {
+                    setForm(f => ({ ...f, provider: e.target.value }));
+                    setProviderTouched(true);
+                    setProviderAutoDetected(false);
+                  }}
                   style={{ cursor: 'pointer' }}
                 >
                   {PROVIDERS.map(p => (
@@ -337,7 +378,18 @@ export default function ModelsPanel() {
                   className="input-field"
                   placeholder="https://... or leave blank"
                   value={form.baseUrl}
-                  onChange={e => setForm({ ...form, baseUrl: e.target.value })}
+                  onChange={e => {
+                    const url = e.target.value;
+                    setForm(f => {
+                      const detected = detectProviderFromUrl(url);
+                      if (detected && !providerTouched) {
+                        setProviderAutoDetected(true);
+                        return { ...f, baseUrl: url, provider: detected };
+                      }
+                      setProviderAutoDetected(false);
+                      return { ...f, baseUrl: url };
+                    });
+                  }}
                   style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5 }}
                 />
               </div>
@@ -497,6 +549,19 @@ export default function ModelsPanel() {
                                 </span>
                               )}
                             </div>
+                            {getModelBadges(modelId).length > 0 && (
+                              <div style={{ marginTop: 4 }}>
+                                {getModelBadges(modelId).map(b => (
+                                  <span
+                                    key={b}
+                                    className={`badge ${b === 'top' ? 'badge-connected' : b === 'fast' ? 'badge-info' : 'badge-muted'}`}
+                                    style={{ fontSize: 10, marginRight: 4 }}
+                                  >
+                                    {b}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
 
                           {/* Use button */}
@@ -574,6 +639,19 @@ export default function ModelsPanel() {
                               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)' }}>
                                 {m.model}
                               </div>
+                              {getModelBadges(m.model).length > 0 && (
+                                <div style={{ marginTop: 4 }}>
+                                  {getModelBadges(m.model).map(b => (
+                                    <span
+                                      key={b}
+                                      className={`badge ${b === 'top' ? 'badge-connected' : b === 'fast' ? 'badge-info' : 'badge-muted'}`}
+                                      style={{ fontSize: 10, marginRight: 4 }}
+                                    >
+                                      {b}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                               {m.baseUrl && (
                                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
                                   {m.baseUrl}

@@ -858,30 +858,34 @@ export default function ConversationPanel() {
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
+              historyIndexRef.current = -1;
               const ta = e.target; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px';
               if (e.target.value === '/') setPaletteOpen(true);
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); return; }
-              if (e.key === 'ArrowUp' && !e.shiftKey && (e.currentTarget.selectionStart === 0 || input === '')) {
-                if (sentMessages.current.length > 0) {
-                  e.preventDefault();
-                  const nextIdx = Math.min(historyIndex.current + 1, sentMessages.current.length - 1);
-                  historyIndex.current = nextIdx;
-                  setInput(sentMessages.current[nextIdx]);
-                }
+              if (e.key === 'ArrowUp' && !e.shiftKey) {
+                const history = inputHistoryRef.current;
+                if (history.length === 0) return;
+                const textarea = e.currentTarget as HTMLTextAreaElement;
+                const isOnFirstLine = textarea.selectionStart <= (textarea.value.indexOf('\n') === -1 ? textarea.value.length : textarea.value.indexOf('\n'));
+                if (!isOnFirstLine) return;
+                e.preventDefault();
+                const nextIndex = Math.min(historyIndexRef.current + 1, history.length - 1);
+                historyIndexRef.current = nextIndex;
+                setInput(history[nextIndex]);
                 return;
               }
               if (e.key === 'ArrowDown' && !e.shiftKey) {
-                if (historyIndex.current > 0) {
-                  e.preventDefault();
-                  historyIndex.current -= 1;
-                  setInput(sentMessages.current[historyIndex.current]);
-                } else if (historyIndex.current === 0) {
-                  e.preventDefault();
-                  historyIndex.current = -1;
-                  setInput('');
+                const history = inputHistoryRef.current;
+                if (historyIndexRef.current <= 0) {
+                  historyIndexRef.current = -1;
+                  return;
                 }
+                e.preventDefault();
+                const nextIndex = historyIndexRef.current - 1;
+                historyIndexRef.current = nextIndex;
+                setInput(nextIndex === -1 ? '' : history[nextIndex]);
                 return;
               }
             }}
