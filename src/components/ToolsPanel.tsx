@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useStore } from '../store';
-import { ChevronRight, ChevronDown, Terminal, CheckCircle2, XCircle, Loader2, Wrench } from 'lucide-react';
+import { ChevronRight, ChevronDown, CheckCircle2, XCircle, Loader2, Wrench, Save, ToggleLeft, ToggleRight } from 'lucide-react';
+import { useHermesClient } from '../lib/hermes';
 
 const TOOL_GROUPS = [
   { name: 'File System', tools: ['read_file', 'write_file', 'list_dir', 'delete_file'], icon: '📁', enabled: true },
@@ -64,79 +64,129 @@ function LiveToolCard({ tc }: { tc: { id: string; name: string; input: string; o
   );
 }
 
-export default function ToolsPanel() {
-  const { activeToolCalls, agentState } = useStore();
-  const [activeTab, setActiveTab] = useState<'live' | 'config'>('live');
-  const [toolGroups, setToolGroups] = useState(TOOL_GROUPS);
+const TOOL_CATALOG = [
+  { key: 'web', label: 'Web Search', description: 'Search the internet for information', icon: '🔍' },
+  { key: 'browser', label: 'Browser Control', description: 'Navigate, click, and extract from websites', icon: '🌐' },
+  { key: 'terminal', label: 'Terminal', description: 'Run shell commands and scripts', icon: '⚡' },
+  { key: 'file', label: 'File System', description: 'Read, write, and manage files', icon: '📁' },
+  { key: 'code_execution', label: 'Code Execution', description: 'Execute Python, JS, and other code', icon: '💻' },
+  { key: 'vision', label: 'Vision', description: 'Analyze and describe images', icon: '👁️' },
+  { key: 'image_gen', label: 'Image Generation', description: 'Create images from descriptions', icon: '🎨' },
+  { key: 'memory', label: 'Memory', description: 'Save and recall information across sessions', icon: '🧠' },
+  { key: 'skills', label: 'Skills', description: 'Invoke registered skill files', icon: '⚙️' },
+  { key: 'session_search', label: 'Session Search', description: 'Search through conversation history', icon: '🔎' },
+  { key: 'cronjob', label: 'Cron Jobs', description: 'Schedule and manage automated tasks', icon: '⏰' },
+  { key: 'delegation', label: 'Delegation', description: 'Spawn and manage sub-agents', icon: '🤖' },
+];
 
-  const toggleGroup = (idx: number) => {
-    setToolGroups(groups => groups.map((g, i) => i === idx ? { ...g, enabled: !g.enabled } : g));
+export default function ToolsPanel() {
+  const client = useHermesClient();
+  const [enabledTools, setEnabledTools] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem('hermes-enabled-tools') || '{}'); } catch { return {}; }
+  });
+  const [saved, setSaved] = useState(false);
+
+  const isEnabled = (key: string) => enabledTools[key] !== false;
+
+  const toggle = (key: string) => {
+    setEnabledTools(prev => ({ ...prev, [key]: !isEnabled(key) }));
+  };
+
+  const enableAll = () => {
+    const all: Record<string, boolean> = {};
+    TOOL_CATALOG.forEach(t => { all[t.key] = true; });
+    setEnabledTools(all);
+  };
+
+  const disableAll = () => {
+    const all: Record<string, boolean> = {};
+    TOOL_CATALOG.forEach(t => { all[t.key] = false; });
+    setEnabledTools(all);
+  };
+
+  const applyChanges = () => {
+    localStorage.setItem('hermes-enabled-tools', JSON.stringify(enabledTools));
+    const activeKeys = TOOL_CATALOG.map(t => t.key).filter(k => isEnabled(k)).join(',');
+    client.runHermesCommand(['config', 'set', 'enabled_tools', activeKeys]).catch(() => {});
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg1)', borderLeft: '1px solid var(--border)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', padding: '20px 20px 24px' }}>
       {/* Header */}
-      <div style={{ padding: '14px 14px 0', borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10, paddingLeft: 2 }}>Tools</div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button className={`tab-btn ${activeTab === 'live' ? 'active' : ''}`} onClick={() => setActiveTab('live')}>Live Activity</button>
-          <button className={`tab-btn ${activeTab === 'config' ? 'active' : ''}`} onClick={() => setActiveTab('config')}>Config</button>
-        </div>
+      <div className="section-label" style={{ marginBottom: 4 }}>Tool Configuration</div>
+      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>Enable or disable agent capabilities</div>
+
+      {/* Bulk actions */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <button className="btn btn-ghost btn-sm" onClick={enableAll} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <ToggleRight size={13} />
+          Enable All
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={disableAll} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <ToggleLeft size={13} />
+          Disable All
+        </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
-        {activeTab === 'live' && (
-          <>
-            {activeToolCalls.length > 0 && agentState === 'running_tool' && (
-              <div className="animate-in" style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                background: 'var(--accent-amber-dim)',
-                border: '1px solid var(--accent-amber)',
+      {/* Tool grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+        {TOOL_CATALOG.map(tool => {
+          const enabled = isEnabled(tool.key);
+          return (
+            <div
+              key={tool.key}
+              onClick={() => toggle(tool.key)}
+              style={{
+                background: 'var(--bg2)',
+                border: `1px solid ${enabled ? 'var(--accent-green-dim)' : 'var(--border)'}`,
+                borderRadius: 'var(--radius-md)',
+                padding: 14,
+                cursor: 'pointer',
+                opacity: enabled ? 1 : 0.6,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                transition: 'border-color 0.15s, opacity 0.15s',
+              }}
+            >
+              {/* Icon */}
+              <div style={{
+                width: 36, height: 36, flexShrink: 0,
+                background: 'var(--bg3)',
                 borderRadius: 'var(--radius-sm)',
-                padding: '8px 11px',
-                marginBottom: 10,
-                fontSize: 12,
-                color: 'var(--accent-amber)',
-                fontWeight: 500,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 16,
               }}>
-                <span className="dot dot-amber" style={{ flexShrink: 0, animation: 'pulse 1.4s ease-in-out infinite' }} />
-                Agent is using tools...
+                {tool.icon}
               </div>
-            )}
-            {activeToolCalls.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 160, gap: 8, color: 'var(--text-secondary)' }}>
-                <Wrench size={24} style={{ opacity: 0.25 }} />
-                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>No active tools</span>
-                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'center', lineHeight: 1.5, maxWidth: 160 }}>Tools used during this conversation will appear here.</span>
-              </div>
-            ) : (
-              activeToolCalls.map((tc) => <LiveToolCard key={tc.id} tc={tc} />)
-            )}
-          </>
-        )}
 
-        {activeTab === 'config' && (
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 10 }}>Toggle tool categories. Changes apply to new sessions.</div>
-            {toolGroups.map((g, idx) => (
-              <div key={g.name} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    <span style={{ fontSize: 14 }}>{g.icon}</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{g.name}</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{g.tools.join(', ')}</div>
-                </div>
-                <label className="toggle" style={{ marginTop: 2 }}>
-                  <input type="checkbox" checked={g.enabled} onChange={() => toggleGroup(idx)} />
-                  <span className="toggle-slider" />
-                </label>
+              {/* Text */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary)', marginBottom: 2 }}>{tool.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{tool.description}</div>
               </div>
-            ))}
-            <button className="btn-primary" style={{ marginTop: 14, width: '100%', padding: '8px 0', fontSize: 12.5 }}>Save Tool Config</button>
-          </div>
-        )}
+
+              {/* Toggle */}
+              <label className="toggle" style={{ flexShrink: 0, marginTop: 2 }} onClick={e => e.stopPropagation()}>
+                <input type="checkbox" checked={enabled} onChange={() => toggle(tool.key)} />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+          );
+        })}
       </div>
+
+      {/* Apply button */}
+      <button
+        className="btn btn-primary"
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+        onClick={applyChanges}
+      >
+        <Save size={13} />
+        {saved ? 'Applied ✓' : 'Apply Changes'}
+      </button>
     </div>
   );
 }
