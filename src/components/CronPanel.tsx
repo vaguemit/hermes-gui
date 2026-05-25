@@ -93,9 +93,29 @@ export default function CronPanel() {
   const client = useHermesClient();
   const { crons, addCron, toggleCron, deleteCron, updateCronLastRun, platforms, gatewayStatus, addToast } = useStore();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ schedule: '', description: '', platform: 'Telegram', mode: 'auto' as 'auto' | 'gateway' | 'pty' });
+  const [form, setForm] = useState({ description: '', platform: 'Telegram', mode: 'auto' as 'auto' | 'gateway' | 'pty' });
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('active-first');
+
+  type FreqTab = 'minutes' | 'hourly' | 'daily' | 'weekly' | 'custom';
+  const [freqTab, setFreqTab] = useState<FreqTab>('daily');
+  const [freqMinutes, setFreqMinutes] = useState('30');
+  const [freqHour, setFreqHour] = useState('9');
+  const [freqMinute, setFreqMinute] = useState('0');
+  const [freqDay, setFreqDay] = useState('monday');
+  const [freqDayHour, setFreqDayHour] = useState('9');
+  const [freqCustom, setFreqCustom] = useState('');
+
+  function buildSchedule(): string {
+    switch (freqTab) {
+      case 'minutes': return `Every ${freqMinutes} minutes`;
+      case 'hourly': return `Every hour at :${freqMinute.padStart(2, '0')}`;
+      case 'daily': return `Daily at ${freqHour}:${freqMinute.padStart(2, '0')}`;
+      case 'weekly': return `Every ${freqDay} at ${freqDayHour}:00`;
+      case 'custom': return freqCustom;
+      default: return '';
+    }
+  }
   // Per-row run state: id -> 'running' | 'done' | 'error'
   const [rowRunState, setRowRunState] = useState<Record<string, 'running' | 'done' | 'error'>>({});
 
@@ -246,10 +266,12 @@ export default function CronPanel() {
   };
 
   const handleAdd = () => {
-    if (!form.schedule || !form.description) return;
+    const schedule = buildSchedule();
+    if (!schedule || !form.description) return;
     const id = generateId();
-    addCron({ id, schedule: form.schedule, description: form.description, platform: form.platform, active: true, ...(form.mode !== 'auto' ? { mode: form.mode } : {}) } as CronJob);
-    setForm({ schedule: '', description: '', platform: 'Telegram', mode: 'auto' });
+    addCron({ id, schedule, description: form.description, platform: form.platform, active: true, ...(form.mode !== 'auto' ? { mode: form.mode } : {}) } as CronJob);
+    setForm({ description: '', platform: 'Telegram', mode: 'auto' });
+    setFreqCustom('');
     setShowForm(false);
   };
 
@@ -423,28 +445,78 @@ export default function CronPanel() {
         {showForm && (
           <div className="animate-in" style={{ background: 'var(--bg2)', border: '1px solid var(--border-active)', borderRadius: 12, padding: '16px 18px', marginBottom: 18 }}>
             <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 14 }}>Add Scheduled Task</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Schedule</label>
-                <input
-                  className="input-field"
-                  placeholder="e.g. every day at 9am"
-                  value={form.schedule}
-                  onChange={e => setForm({ ...form, schedule: e.target.value })}
-                />
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 }}>Natural language — Hermes parses this</div>
+            {/* Frequency Picker */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Frequency</label>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                {(['minutes', 'hourly', 'daily', 'weekly', 'custom'] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setFreqTab(tab)}
+                    style={{
+                      padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 500,
+                      border: `1px solid ${freqTab === tab ? 'var(--accent-green)' : 'var(--border)'}`,
+                      background: freqTab === tab ? 'var(--accent-green-dim)' : 'transparent',
+                      color: freqTab === tab ? 'var(--accent-green)' : 'var(--text-secondary)',
+                      cursor: 'pointer', transition: 'all 0.15s',
+                    }}
+                  >
+                    {tab === 'minutes' ? 'Every N min' : tab === 'custom' ? 'Custom CRON' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
+                ))}
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Delivery Platform</label>
-                <select
-                  className="input-field"
-                  value={form.platform}
-                  onChange={e => setForm({ ...form, platform: e.target.value })}
-                  style={{ cursor: 'pointer' }}
-                >
-                  {platforms.map(p => <option key={p.name}>{p.name}</option>)}
-                </select>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                {freqTab === 'minutes' && (
+                  <>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Every</span>
+                    <input type="number" className="input-field" min={1} max={1440} value={freqMinutes} onChange={e => setFreqMinutes(e.target.value)} style={{ width: 70 }} />
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>minutes</span>
+                  </>
+                )}
+                {freqTab === 'hourly' && (
+                  <>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>At minute</span>
+                    <input type="number" className="input-field" min={0} max={59} value={freqMinute} onChange={e => setFreqMinute(e.target.value)} style={{ width: 70 }} />
+                  </>
+                )}
+                {freqTab === 'daily' && (
+                  <>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>At</span>
+                    <input type="number" className="input-field" min={0} max={23} value={freqHour} onChange={e => setFreqHour(e.target.value)} style={{ width: 70 }} placeholder="Hour" />
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>:</span>
+                    <input type="number" className="input-field" min={0} max={59} value={freqMinute} onChange={e => setFreqMinute(e.target.value)} style={{ width: 70 }} placeholder="Min" />
+                  </>
+                )}
+                {freqTab === 'weekly' && (
+                  <>
+                    <select className="input-field" value={freqDay} onChange={e => setFreqDay(e.target.value)} style={{ cursor: 'pointer' }}>
+                      {['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase()+d.slice(1)}</option>)}
+                    </select>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>at hour</span>
+                    <input type="number" className="input-field" min={0} max={23} value={freqDayHour} onChange={e => setFreqDayHour(e.target.value)} style={{ width: 70 }} />
+                  </>
+                )}
+                {freqTab === 'custom' && (
+                  <div style={{ flex: 1 }}>
+                    <input className="input-field" placeholder="*/30 * * * *" value={freqCustom} onChange={e => setFreqCustom(e.target.value)} style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: 12 }} />
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>Standard CRON expression</div>
+                  </div>
+                )}
               </div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, fontFamily: 'var(--font-mono)' }}>
+                Schedule: {buildSchedule() || <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
+              </div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Delivery Platform</label>
+              <select
+                className="input-field"
+                value={form.platform}
+                onChange={e => setForm({ ...form, platform: e.target.value })}
+                style={{ cursor: 'pointer' }}
+              >
+                {platforms.map(p => <option key={p.name}>{p.name}</option>)}
+              </select>
             </div>
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Task Description</label>
