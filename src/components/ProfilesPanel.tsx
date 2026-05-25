@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { User, Brain, Plus, Trash2, Edit2, X, Eye, Copy } from 'lucide-react';
+import { User, Users, Brain, Plus, Trash2, Edit2, X, Eye, Copy, Download } from 'lucide-react';
 import { useHermesClient } from '../lib/hermes';
 import type { ProfileMeta, MemoryFileMeta } from '../lib/hermes';
+import { useStore } from '../store';
 
 const DEFAULT_PROFILE_CONTENT = `# Profile
 
@@ -25,6 +26,7 @@ type Tab = 'profiles' | 'memory';
 
 export default function ProfilesPanel() {
   const client = useHermesClient();
+  const { activeProfile, setActiveProfile } = useStore();
   const [tab, setTab] = useState<Tab>('profiles');
 
   // ── Profiles state ──
@@ -115,15 +117,24 @@ export default function ProfilesPanel() {
 
   // ── Duplicate profile ──
   const handleDuplicate = async (name: string) => {
-    const content = await client.readProfile(name);
-    let copyName = `${name} (copy)`;
-    const existing = profiles.map((p) => p.name);
-    let n = 2;
-    while (existing.includes(copyName)) {
-      copyName = `${name} (copy ${n++})`;
-    }
-    await client.writeProfile(copyName, content);
+    await client.runHermesCommand(['profile', 'copy', name, `${name}-copy`]);
     await loadProfiles();
+  };
+
+  // ── Export profile ──
+  const handleExport = async (name: string) => {
+    try {
+      const content = await client.readFile(`profiles/${name}/config.yaml`);
+      if (!content) return;
+      const url = URL.createObjectURL(new Blob([content], { type: 'text/yaml' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${name}.yaml`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silently fail if file not found
+    }
   };
 
   // ── Memory preview ──
@@ -259,10 +270,10 @@ export default function ProfilesPanel() {
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-lg)',
               }}>
-                <User size={28} style={{ color: 'var(--text-tertiary)', marginBottom: 10 }} />
+                <Users size={28} style={{ color: 'var(--text-tertiary)', marginBottom: 10 }} />
                 <div style={{ fontWeight: 500, marginBottom: 4 }}>No profiles yet</div>
                 <div style={{ color: 'var(--text-tertiary)', fontSize: 12, marginBottom: 14 }}>
-                  Create a profile to give Hermes context about who you are.
+                  Create your first profile to give Hermes context about who you are.
                 </div>
                 <button
                   className="btn btn-primary btn-sm"
@@ -270,7 +281,7 @@ export default function ProfilesPanel() {
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 >
                   <Plus size={13} />
-                  New Profile
+                  Create your first profile
                 </button>
               </div>
             )}
@@ -287,13 +298,30 @@ export default function ProfilesPanel() {
                         <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {p.name}
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-                          {p.modified}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                            {p.modified}
+                          </span>
+                          {p.name === 'default' && (
+                            <span className="badge badge-muted" style={{ fontSize: 10, padding: '1px 6px' }}>Default</span>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                      {activeProfile === p.name ? (
+                        <span className="badge badge-connected" style={{ fontSize: 10, padding: '2px 8px' }}>Active</span>
+                      ) : (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setActiveProfile(p.name)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                          title="Set as active profile"
+                        >
+                          Set Active
+                        </button>
+                      )}
                       <button
                         className="btn btn-ghost btn-sm"
                         onClick={() => handleEditOpen(p.name)}
@@ -304,17 +332,23 @@ export default function ProfilesPanel() {
                         Edit
                       </button>
                       <button
-                        className="btn btn-ghost btn-sm"
+                        className="btn btn-icon btn-ghost btn-sm"
                         onClick={() => handleDuplicate(p.name)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5 }}
                         title="Duplicate"
                       >
                         <Copy size={12} />
                       </button>
                       <button
-                        className="btn btn-ghost btn-sm"
+                        className="btn btn-icon btn-ghost btn-sm"
+                        onClick={() => handleExport(p.name)}
+                        title="Export profile"
+                      >
+                        <Download size={12} />
+                      </button>
+                      <button
+                        className="btn btn-icon btn-ghost btn-sm"
                         onClick={() => handleDelete(p.name)}
-                        style={{ color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: 5 }}
+                        style={{ color: 'var(--accent-red)' }}
                         title="Delete"
                       >
                         <Trash2 size={12} />
