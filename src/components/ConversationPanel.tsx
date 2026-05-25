@@ -5,8 +5,9 @@ import { useHermesClient } from '../lib/hermes';
 import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy, Check, MessageSquare,
-  ChevronDown, ChevronRight, AlertTriangle,
-  Brain, Terminal, CheckCircle2, XCircle, Loader2, Download, Zap
+  ChevronDown, ChevronRight, AlertTriangle, X,
+  Brain, Terminal, CheckCircle2, XCircle, Loader2, Download, Zap,
+  Edit2, RefreshCw
 } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).slice(2);
@@ -251,8 +252,10 @@ function extractSiteUrl(instruction: string): string {
 
 export default function ConversationPanel() {
   const client = useHermesClient();
-  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId, localBrowserUrl, setLocalBrowserUrl, setPtySessionId, setPtyEventId } = useStore();
+  const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId, localBrowserUrl, setLocalBrowserUrl, setPtySessionId, setPtyEventId, addToast } = useStore();
   const [input, setInput] = useState('');
+  const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string; size: number }[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<{ abort: () => void } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -300,12 +303,28 @@ export default function ConversationPanel() {
     URL.revokeObjectURL(url);
   };
 
+  const handleFileAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach(file => {
+      if (file.size > 500_000) { addToast(`${file.name} too large (max 500KB)`, 'error'); return; }
+      const reader = new FileReader();
+      reader.onload = ev => {
+        setAttachedFiles(prev => [...prev, { name: file.name, content: ev.target?.result as string, size: file.size }]);
+      };
+      reader.readAsText(file);
+    });
+    e.target.value = '';
+  };
+
   const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/terminal', '/tools', '/version', '/browser', '/status', '/memory', '/shell', '/persona', '/compress', '/retry', '/undo', '/compact', '/insights', '/platforms', '/kanban', '/soul', '/providers', '/fast']);
 
   const sendMessage = async () => {
-    if (!input.trim() || isRunning) return;
+    if ((!input.trim() && attachedFiles.length === 0) || isRunning) return;
     const userContent = input.trim();
+    const fileBlock = attachedFiles.map(f => `\`\`\`${f.name}\n${f.content}\n\`\`\``).join('\n\n');
+    const fullContent = attachedFiles.length > 0 ? (userContent ? `${userContent}\n\n${fileBlock}` : fileBlock) : userContent;
     setInput('');
+    setAttachedFiles([]);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     sentMessages.current = [userContent, ...sentMessages.current].slice(0, 50);
     historyIndex.current = -1;
@@ -493,7 +512,7 @@ export default function ConversationPanel() {
       return;
     }
 
-    const effectiveContent = userContent;
+    const effectiveContent = fullContent;
 
     const userMsg: Message = { id: generateId(), role: 'user', type: 'prose', content: effectiveContent, timestamp: Date.now() };
     addMessage(userMsg);
@@ -669,8 +688,28 @@ export default function ConversationPanel() {
             </button>
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 14px' }}>
-          <button title="Attach file" style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 4, borderRadius: 6, flexShrink: 0 }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".txt,.md,.json,.yaml,.yml,.csv,.py,.js,.ts,.tsx,.jsx,.rs,.go,.sh"
+          style={{ display: 'none' }}
+          onChange={handleFileAttach}
+        />
+        <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12 }}>
+          {attachedFiles.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 14px 0' }}>
+              {attachedFiles.map((f, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 20, fontSize: 11.5 }}>
+                  <Paperclip size={10} style={{ color: 'var(--text-tertiary)' }} />
+                  <span style={{ color: 'var(--text-secondary)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                  <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 0, display: 'flex' }}><X size={10} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, padding: '10px 14px' }}>
+          <button title="Attach file" onClick={() => fileInputRef.current?.click()} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 4, borderRadius: 6, flexShrink: 0 }}>
             <Paperclip size={17} />
           </button>
           <textarea
@@ -712,8 +751,9 @@ export default function ConversationPanel() {
           />
           {isRunning
             ? <button onClick={handleStop} id="stop-btn" style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: 'var(--accent-red)', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}><Square size={15} fill="currentColor" /></button>
-            : <button onClick={sendMessage} id="send-btn" disabled={!input.trim()} style={{ background: input.trim() ? 'var(--accent-green)' : 'var(--bg2)', border: 'none', borderRadius: 8, color: input.trim() ? 'white' : 'var(--text-secondary)', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: input.trim() ? 'pointer' : 'not-allowed', flexShrink: 0 }}><Send size={15} /></button>
+            : <button onClick={sendMessage} id="send-btn" disabled={!input.trim() && attachedFiles.length === 0} style={{ background: (input.trim() || attachedFiles.length > 0) ? 'var(--accent-green)' : 'var(--bg2)', border: 'none', borderRadius: 8, color: (input.trim() || attachedFiles.length > 0) ? 'white' : 'var(--text-secondary)', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: (input.trim() || attachedFiles.length > 0) ? 'pointer' : 'not-allowed', flexShrink: 0 }}><Send size={15} /></button>
           }
+          </div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, padding: '0 2px' }}>
           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}><kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>↵</kbd> Send · <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>Shift+↵</kbd> Newline · <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>↑↓</kbd> History</span>
