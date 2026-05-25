@@ -62,10 +62,23 @@ function ReasoningBlock({ content }: { content: string }) {
   );
 }
 
-function MessageBubble({ msg }: { msg: Message }) {
+interface MessageBubbleProps {
+  msg: Message;
+  isHovered: boolean;
+  isEditing: boolean;
+  editingContent: string;
+  onHoverEnter: () => void;
+  onHoverLeave: () => void;
+  onEditStart: () => void;
+  onEditChange: (v: string) => void;
+  onEditSave: () => void;
+  onEditCancel: () => void;
+}
+
+function MessageBubble({ msg, isHovered, isEditing, editingContent, onHoverEnter, onHoverLeave, onEditStart, onEditChange, onEditSave, onEditCancel }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Inject copy buttons into code blocks after render / on content change
   useEffect(() => {
@@ -88,6 +101,17 @@ function MessageBubble({ msg }: { msg: Message }) {
     });
   }, [msg.content]);
 
+  // Auto-resize + focus the edit textarea when editing begins
+  useEffect(() => {
+    if (isEditing && editTextareaRef.current) {
+      const ta = editTextareaRef.current;
+      ta.style.height = 'auto';
+      ta.style.height = ta.scrollHeight + 'px';
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
+  }, [isEditing]);
+
   if (msg.type === 'reasoning') return <ReasoningBlock content={msg.content} />;
   if (msg.type === 'error') return (
     <div className="animate-in" style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-start' }}>
@@ -106,6 +130,7 @@ function MessageBubble({ msg }: { msg: Message }) {
   );
 
   const isUser = msg.role === 'user';
+  const canEdit = isUser && msg.type === 'prose';
 
   const handleCopyMessage = () => {
     navigator.clipboard.writeText(msg.content);
@@ -114,63 +139,87 @@ function MessageBubble({ msg }: { msg: Message }) {
   };
 
   return (
-    <div className="animate-in" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{ display: 'flex', gap: 12, marginBottom: 18, flexDirection: isUser ? 'row-reverse' : 'row', alignItems: 'flex-start' }}>
+    <div className="animate-in" onMouseEnter={onHoverEnter} onMouseLeave={onHoverLeave} style={{ display: 'flex', gap: 12, marginBottom: 18, flexDirection: isUser ? 'row-reverse' : 'row', alignItems: 'flex-start' }}>
       <div style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, marginTop: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, background: isUser ? 'linear-gradient(135deg, #7c6af7, #3b9eff)' : 'linear-gradient(135deg, #1a1d26, #20242f)', border: isUser ? 'none' : '1px solid var(--border)', color: 'white' }}>
         {isUser ? 'U' : 'H'}
       </div>
       <div style={{ flex: 1, maxWidth: isUser ? '75%' : '100%', position: 'relative' }}>
-        {/* Top-right hover copy button */}
-        {!msg.isStreaming && hovered && (
-          <button
-            onClick={handleCopyMessage}
-            title="Copy message"
-            style={{
-              position: 'absolute',
-              top: isUser ? 6 : 0,
-              right: isUser ? 6 : 0,
-              zIndex: 10,
-              width: 24,
-              height: 24,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'var(--bg2)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              cursor: 'pointer',
-              color: copied ? 'var(--accent-green)' : 'var(--text-tertiary)',
-              transition: 'color 0.15s',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = copied ? 'var(--accent-green)' : 'var(--text-primary)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = copied ? 'var(--accent-green)' : 'var(--text-tertiary)'; }}
-          >
-            {copied ? <Check size={12} /> : <Copy size={12} />}
-          </button>
+        {/* Top-right hover action buttons (edit + copy) */}
+        {!msg.isStreaming && isHovered && !isEditing && (
+          <div style={{ position: 'absolute', top: isUser ? 6 : 0, right: isUser ? 6 : 0, zIndex: 10, display: 'flex', gap: 4 }}>
+            {canEdit && (
+              <button
+                onClick={onEditStart}
+                title="Edit message"
+                style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-tertiary)', transition: 'color 0.15s' }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-tertiary)'; }}
+              >
+                <Edit2 size={12} />
+              </button>
+            )}
+            <button
+              onClick={handleCopyMessage}
+              title="Copy message"
+              style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', color: copied ? 'var(--accent-green)' : 'var(--text-tertiary)', transition: 'color 0.15s' }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = copied ? 'var(--accent-green)' : 'var(--text-primary)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = copied ? 'var(--accent-green)' : 'var(--text-tertiary)'; }}
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+            </button>
+          </div>
         )}
 
-        <div ref={contentRef} style={{ background: isUser ? 'linear-gradient(135deg, rgba(124,106,247,0.2), rgba(59,158,255,0.12))' : 'transparent', border: isUser ? '1px solid rgba(124,106,247,0.3)' : 'none', borderRadius: isUser ? 12 : 0, padding: isUser ? '10px 14px' : 0 }}>
-          {msg.isStreaming
-            ? <div className="typing-cursor">{renderMarkdown(msg.content || '…')}</div>
-            : renderMarkdown(msg.content)
-          }
-        </div>
-        {msg.toolCalls?.map((tc) => <ToolCallCard key={tc.id} tc={tc} />)}
-        {!isUser && !msg.isStreaming && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-            <button onClick={handleCopyMessage}
-              style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: copied ? 'var(--accent-green)' : 'var(--text-secondary)', fontSize: 11.5, cursor: 'pointer', padding: '3px 7px', borderRadius: 5, transition: 'color 0.15s' }}>
-              {copied ? <Check size={11} /> : <Copy size={11} />}
-              {copied ? 'Copied!' : 'Copy'}
-            </button>
-            {hovered && (
-              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{formatTimestamp(msg.timestamp)}</span>
+        {/* Edit mode: textarea + Save/Cancel */}
+        {isEditing && canEdit ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <textarea
+              ref={editTextareaRef}
+              value={editingContent}
+              onChange={(e) => {
+                onEditChange(e.target.value);
+                const ta = e.target;
+                ta.style.height = 'auto';
+                ta.style.height = ta.scrollHeight + 'px';
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.preventDefault(); onEditCancel(); }
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onEditSave(); }
+              }}
+              style={{ width: '100%', background: 'var(--bg2)', border: '1px solid var(--border-active)', borderRadius: 10, padding: '10px 14px', color: 'var(--text-primary)', fontSize: 14, lineHeight: 1.6, resize: 'none', outline: 'none', fontFamily: 'var(--font-sans)', minHeight: 60, overflowY: 'hidden', boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={onEditCancel} className="btn btn-ghost btn-sm">Cancel</button>
+              <button onClick={onEditSave} className="btn btn-primary btn-sm" disabled={!editingContent.trim()}>Save &amp; Resend</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div ref={contentRef} style={{ background: isUser ? 'linear-gradient(135deg, rgba(124,106,247,0.2), rgba(59,158,255,0.12))' : 'transparent', border: isUser ? '1px solid rgba(124,106,247,0.3)' : 'none', borderRadius: isUser ? 12 : 0, padding: isUser ? '10px 14px' : 0 }}>
+              {msg.isStreaming
+                ? <div className="typing-cursor">{renderMarkdown(msg.content || '…')}</div>
+                : renderMarkdown(msg.content)
+              }
+            </div>
+            {msg.toolCalls?.map((tc) => <ToolCallCard key={tc.id} tc={tc} />)}
+            {!isUser && !msg.isStreaming && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <button onClick={handleCopyMessage}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: copied ? 'var(--accent-green)' : 'var(--text-secondary)', fontSize: 11.5, cursor: 'pointer', padding: '3px 7px', borderRadius: 5, transition: 'color 0.15s' }}>
+                  {copied ? <Check size={11} /> : <Copy size={11} />}
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+                {isHovered && (
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{formatTimestamp(msg.timestamp)}</span>
+                )}
+              </div>
             )}
-          </div>
-        )}
-        {isUser && hovered && (
-          <div style={{ textAlign: 'right', marginTop: 4 }}>
-            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{formatTimestamp(msg.timestamp)}</span>
-          </div>
+            {isUser && isHovered && !isEditing && (
+              <div style={{ textAlign: 'right', marginTop: 4 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{formatTimestamp(msg.timestamp)}</span>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -264,6 +313,9 @@ export default function ConversationPanel() {
   const historyIndex = useRef<number>(-1);
   const [autoScroll, setAutoScroll] = useState(true);
   const [fastMode, setFastMode] = useState(false);
+  const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const messages = activeSession?.messages ?? [];
@@ -314,6 +366,104 @@ export default function ConversationPanel() {
       reader.readAsText(file);
     });
     e.target.value = '';
+  };
+
+  // Core streaming send — called by sendMessage, edit save, and regenerate
+  const sendContent = async (effectiveContent: string, historyOverride?: { role: string; content: string }[]) => {
+    setAutoScroll(true);
+    setIsRunning(true);
+    setAgentState('thinking');
+    clearToolCalls();
+
+    addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: '', timestamp: Date.now(), isStreaming: true });
+
+    const currentMessages = useStore.getState().sessions.find(s => s.id === useStore.getState().activeSessionId)?.messages ?? [];
+    const history = historyOverride ?? [
+      ...currentMessages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.type === 'prose').map(m => ({ role: m.role, content: m.content })),
+      { role: 'user', content: effectiveContent },
+    ];
+
+    const eventId = Math.random().toString(36).slice(2);
+    const cleanupRef = { fn: null as (() => void) | null };
+    const cleanup = () => { if (cleanupRef.fn) { cleanupRef.fn(); cleanupRef.fn = null; } };
+    let aborted = false;
+
+    const abort = new AbortController();
+    abortRef.current = { abort: () => { aborted = true; abort.abort(); cleanup(); setIsRunning(false); setAgentState('idle'); updateLastMessage({ isStreaming: false }); } };
+
+    let accumulated = '';
+
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+
+      await new Promise<void>((resolve, reject) => {
+        Promise.all([
+          listen<string>(`chat-chunk-${eventId}`, (ev) => {
+            if (aborted) return;
+            accumulated += ev.payload;
+            updateLastMessage({ content: accumulated, isStreaming: true });
+          }),
+          listen<string>(`chat-done-${eventId}`, () => {
+            if (aborted) return;
+            useStore.getState().activeToolCalls.forEach((tc) => {
+              updateToolCallGlobal(tc.id, { status: 'done' });
+            });
+            updateLastMessage({ isStreaming: false });
+            setAgentState('idle');
+            cleanup();
+            resolve();
+          }),
+          listen<string>(`chat-error-${eventId}`, (ev) => {
+            if (aborted) return;
+            cleanup();
+            reject(new Error(ev.payload || 'Unknown gateway error'));
+          }),
+          listen<string>(`tool-progress-${eventId}`, (ev) => {
+            if (aborted) return;
+            addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() });
+            setAgentState('running_tool');
+          }),
+          listen<string>(`tool-call-${eventId}`, (ev) => {
+            if (aborted) return;
+            if (ev.payload === '__executing__') { setAgentState('running_tool'); return; }
+            addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() });
+            setAgentState('running_tool');
+          }),
+          listen<string>(`chat-session-${eventId}`, (ev) => {
+            if (ev.payload && !aborted) setHermesSessionId(ev.payload);
+          }),
+        ]).then(([u1, u2, u3, u4, u5, u6]) => {
+          cleanupRef.fn = () => { u1(); u2(); u3(); u4(); u5(); u6(); };
+
+          if (localBrowserUrl) {
+            chatCli(eventId, effectiveContent, hermesSessionId).catch(reject);
+            return;
+          }
+          const isTuiSlashCommand = effectiveContent.startsWith('/') && !LOCAL_COMMANDS.has(effectiveContent.split(/\s+/)[0].toLowerCase());
+          if (isTuiSlashCommand) {
+            chatCli(eventId, effectiveContent, hermesSessionId).catch(reject);
+          } else {
+            chatStream(eventId, history, activeModel).catch(reject);
+          }
+        }).catch(reject);
+      });
+
+    } catch (err: unknown) {
+      cleanup();
+      if (!aborted && (err as Error)?.name !== 'AbortError') {
+        const errMsg = (err as Error)?.message || 'Connection failed. Is the Hermes gateway running?';
+        updateLastMessage({ content: accumulated || errMsg, type: accumulated ? 'prose' : 'error', isStreaming: false });
+        setAgentState('error');
+        client.getGatewayStatus().then(ok => setGatewayStatus(ok ? 'connected' : 'disconnected')).catch(() => {});
+      } else if (aborted) {
+        updateLastMessage({ isStreaming: false });
+        setAgentState('idle');
+      }
+    } finally {
+      cleanup();
+      setIsRunning(false);
+      abortRef.current = null;
+    }
   };
 
   const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/terminal', '/tools', '/version', '/browser', '/status', '/memory', '/shell', '/persona', '/compress', '/retry', '/undo', '/compact', '/insights', '/platforms', '/kanban', '/soul', '/providers', '/fast']);
@@ -513,111 +663,73 @@ export default function ConversationPanel() {
     }
 
     const effectiveContent = fullContent;
-
     const userMsg: Message = { id: generateId(), role: 'user', type: 'prose', content: effectiveContent, timestamp: Date.now() };
     addMessage(userMsg);
-    setAutoScroll(true);
-    setIsRunning(true);
-    setAgentState('thinking');
-    clearToolCalls();
+    await sendContent(effectiveContent);
+  };
 
-    addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: '', timestamp: Date.now(), isStreaming: true });
+  const handleEditSave = async () => {
+    if (!editingMsgId || !editingContent.trim()) return;
+    const sid = activeSessionId;
+    if (!sid) return;
+    // Truncate messages to everything up to and including the edited message, then update its content
+    useStore.setState((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sid) return s;
+        const idx = s.messages.findIndex((m) => m.id === editingMsgId);
+        if (idx === -1) return s;
+        const truncated = s.messages.slice(0, idx + 1).map((m) =>
+          m.id === editingMsgId ? { ...m, content: editingContent.trim() } : m
+        );
+        return { ...s, messages: truncated };
+      }),
+    }));
+    const newContent = editingContent.trim();
+    setEditingMsgId(null);
+    setEditingContent('');
+    // Build history up to (not including) the edited user message for context
+    const stateAfter = useStore.getState();
+    const session = stateAfter.sessions.find((s) => s.id === sid);
+    const msgsAfter = session?.messages ?? [];
+    const editedIdx = msgsAfter.findIndex((m) => m.id === editingMsgId);
+    const historyBefore = msgsAfter
+      .slice(0, editedIdx)
+      .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.type === 'prose')
+      .map((m) => ({ role: m.role, content: m.content }));
+    await sendContent(newContent, [...historyBefore, { role: 'user', content: newContent }]);
+  };
 
-    const history = [...messages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.type === 'prose').map(m => ({ role: m.role, content: m.content })), { role: 'user', content: effectiveContent }];
-
-    const eventId = Math.random().toString(36).slice(2);
-    const cleanupRef = { fn: null as (() => void) | null };
-    const cleanup = () => { if (cleanupRef.fn) { cleanupRef.fn(); cleanupRef.fn = null; } };
-    let aborted = false;
-
-    const abort = new AbortController();
-    abortRef.current = { abort: () => { aborted = true; abort.abort(); cleanup(); setIsRunning(false); setAgentState('idle'); updateLastMessage({ isStreaming: false }); } };
-
-    let accumulated = '';
-
-    try {
-      const { listen } = await import('@tauri-apps/api/event');
-
-      await new Promise<void>((resolve, reject) => {
-        Promise.all([
-          listen<string>(`chat-chunk-${eventId}`, (ev) => {
-            if (aborted) return;
-            accumulated += ev.payload;
-            updateLastMessage({ content: accumulated, isStreaming: true });
-          }),
-          listen<string>(`chat-done-${eventId}`, () => {
-            if (aborted) return;
-            useStore.getState().activeToolCalls.forEach((tc) => {
-              updateToolCallGlobal(tc.id, { status: 'done' });
-            });
-            updateLastMessage({ isStreaming: false });
-            setAgentState('idle');
-            cleanup();
-            resolve();
-          }),
-          listen<string>(`chat-error-${eventId}`, (ev) => {
-            if (aborted) return;
-            cleanup();
-            reject(new Error(ev.payload || 'Unknown gateway error'));
-          }),
-          listen<string>(`tool-progress-${eventId}`, (ev) => {
-            if (aborted) return;
-            addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() });
-            setAgentState('running_tool');
-          }),
-          listen<string>(`tool-call-${eventId}`, (ev) => {
-            if (aborted) return;
-            if (ev.payload === '__executing__') {
-              setAgentState('running_tool');
-              return;
-            }
-            addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() });
-            setAgentState('running_tool');
-          }),
-          listen<string>(`chat-session-${eventId}`, (ev) => {
-            if (ev.payload && !aborted) {
-              setHermesSessionId(ev.payload);
-            }
-          }),
-        ]).then(([u1, u2, u3, u4, u5, u6]) => {
-          cleanupRef.fn = () => { u1(); u2(); u3(); u4(); u5(); u6(); };
-
-          // When local Chrome is connected, always use CLI so BROWSER_CDP_URL is read from .env
-          if (localBrowserUrl) {
-            chatCli(eventId, effectiveContent, hermesSessionId).catch(reject);
-            return;
-          }
-
-          // Slash commands not handled locally go to the hermes CLI (supports TUI commands like /web, etc.)
-          const isTuiSlashCommand = effectiveContent.startsWith('/') && !LOCAL_COMMANDS.has(effectiveContent.split(/\s+/)[0].toLowerCase());
-          if (isTuiSlashCommand) {
-            chatCli(eventId, effectiveContent, hermesSessionId).catch(reject);
-          } else {
-            chatStream(eventId, history, activeModel).catch(reject);
-          }
-        }).catch(reject);
-      });
-
-    } catch (err: unknown) {
-      cleanup();
-      if (!aborted && (err as Error)?.name !== 'AbortError') {
-        const errMsg = (err as Error)?.message || 'Connection failed. Is the Hermes gateway running?';
-        updateLastMessage({ content: accumulated || errMsg, type: accumulated ? 'prose' : 'error', isStreaming: false });
-        setAgentState('error');
-        client.getGatewayStatus().then(ok => setGatewayStatus(ok ? 'connected' : 'disconnected')).catch(() => {});
-      } else if (aborted) {
-        updateLastMessage({ isStreaming: false });
-        setAgentState('idle');
-      }
-    } finally {
-      cleanup();
-      setIsRunning(false);
-      abortRef.current = null;
-    }
+  const handleRegenerate = async () => {
+    if (isRunning) return;
+    const sid = activeSessionId;
+    if (!sid) return;
+    // Remove last assistant message
+    useStore.setState((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sid) return s;
+        const msgs = [...s.messages];
+        const lastAssistantIdx = msgs.map((m, i) => ({ m, i })).reverse().find(({ m }) => m.role === 'assistant')?.i;
+        if (lastAssistantIdx === undefined) return s;
+        msgs.splice(lastAssistantIdx, 1);
+        return { ...s, messages: msgs };
+      }),
+    }));
+    // Find last user message from the now-updated store
+    const updatedMsgs = useStore.getState().sessions.find((s) => s.id === sid)?.messages ?? [];
+    const lastUser = [...updatedMsgs].reverse().find((m) => m.role === 'user' && m.type === 'prose');
+    if (!lastUser) return;
+    const history = updatedMsgs
+      .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.type === 'prose')
+      .map((m) => ({ role: m.role, content: m.content }));
+    await sendContent(lastUser.content, [...history, { role: 'user', content: lastUser.content }]);
   };
 
   const isDisconnected = gatewayStatus === 'disconnected' || gatewayStatus === 'error';
   const usagePct = contextWindow > 0 ? (tokensUsed / contextWindow) * 100 : 0;
+
+  // Determine if Regenerate button should show
+  const lastMsg = messages[messages.length - 1];
+  const showRegenerate = !isRunning && lastMsg && lastMsg.role === 'assistant' && !lastMsg.isStreaming && messages.some((m) => m.role === 'user');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -654,7 +766,33 @@ export default function ConversationPanel() {
             </div>
           </div>
         )}
-        {messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)}
+        {messages.map((msg) => (
+          <MessageBubble
+            key={msg.id}
+            msg={msg}
+            isHovered={hoveredMsgId === msg.id}
+            isEditing={editingMsgId === msg.id}
+            editingContent={editingMsgId === msg.id ? editingContent : ''}
+            onHoverEnter={() => setHoveredMsgId(msg.id)}
+            onHoverLeave={() => setHoveredMsgId(null)}
+            onEditStart={() => { setEditingMsgId(msg.id); setEditingContent(msg.content); }}
+            onEditChange={setEditingContent}
+            onEditSave={handleEditSave}
+            onEditCancel={() => { setEditingMsgId(null); setEditingContent(''); }}
+          />
+        ))}
+        {showRegenerate && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleRegenerate}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <RefreshCw size={13} />
+              Regenerate
+            </button>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
