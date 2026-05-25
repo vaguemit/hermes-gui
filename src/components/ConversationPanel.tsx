@@ -309,8 +309,8 @@ export default function ConversationPanel() {
   const abortRef = useRef<{ abort: () => void } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const sentMessages = useRef<string[]>([]);
-  const historyIndex = useRef<number>(-1);
+  const inputHistoryRef = useRef<string[]>([]);
+  const historyIndexRef = useRef<number>(-1);
   const [autoScroll, setAutoScroll] = useState(true);
   const [fastMode, setFastMode] = useState(false);
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
@@ -476,13 +476,15 @@ export default function ConversationPanel() {
     setInput('');
     setAttachedFiles([]);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    sentMessages.current = [userContent, ...sentMessages.current].slice(0, 50);
-    historyIndex.current = -1;
+    if (userContent.trim()) {
+      inputHistoryRef.current = [userContent, ...inputHistoryRef.current.filter(h => h !== userContent)].slice(0, 50);
+    }
+    historyIndexRef.current = -1;
 
     if (userContent === '/new' || userContent === '/reset') {
       if (!window.confirm('Clear conversation?')) return;
       clearActiveSession(); clearToolCalls();
-      sentMessages.current = []; historyIndex.current = -1;
+      inputHistoryRef.current = []; historyIndexRef.current = -1;
       addMessage({ id: generateId(), role: 'system', type: 'system', content: 'Conversation cleared.', timestamp: Date.now() });
       return;
     }
@@ -608,7 +610,7 @@ export default function ConversationPanel() {
       const lastUser = [...messages].reverse().find(m => m.role === 'user');
       if (lastUser) {
         addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Retrying last message…', timestamp: Date.now() });
-        historyIndex.current = -1;
+        historyIndexRef.current = -1;
         setInput(lastUser.content);
       }
       return;
