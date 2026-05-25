@@ -6,7 +6,7 @@ import { Plus, X, Tag, User, Flag } from 'lucide-react';
 // ---------------------------------------------------------------------------
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent';
-type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'done';
+type TaskStatus = 'triage' | 'todo' | 'ready' | 'running' | 'blocked' | 'done';
 
 interface KanbanTask {
   id: string;
@@ -55,9 +55,11 @@ interface ColumnDef {
 }
 
 const COLUMNS: ColumnDef[] = [
-  { id: 'backlog', label: 'Backlog' },
-  { id: 'todo', label: 'Todo' },
-  { id: 'in_progress', label: 'In Progress', accentColor: 'var(--accent-amber)' },
+  { id: 'triage', label: 'Triage', accentColor: 'var(--text-secondary)' },
+  { id: 'todo', label: 'To-do', accentColor: 'var(--text-primary)' },
+  { id: 'ready', label: 'Ready', accentColor: 'var(--accent-blue)' },
+  { id: 'running', label: 'Running', accentColor: 'var(--accent-amber)' },
+  { id: 'blocked', label: 'Blocked', accentColor: 'var(--accent-red)' },
   { id: 'done', label: 'Done', accentColor: 'var(--accent-green)' },
 ];
 
@@ -603,7 +605,7 @@ export default function KanbanPanel() {
       )}
 
       {/* Columns */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', padding: 16, gap: 12 }}>
+      <div style={{ display: 'flex', flex: 1, overflowX: 'auto', overflowY: 'hidden', padding: 16, gap: 12 }}>
         {COLUMNS.map((col) => {
           const colTasks = activeBoard.tasks.filter((t) => t.status === col.id);
           const isAdding = addingColumn === col.id;
@@ -612,7 +614,8 @@ export default function KanbanPanel() {
             <div
               key={col.id}
               style={{
-                width: 260,
+                minWidth: 200,
+                width: 220,
                 flexShrink: 0,
                 display: 'flex',
                 flexDirection: 'column',
