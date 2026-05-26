@@ -12,6 +12,10 @@ import {
 
 const generateId = () => Math.random().toString(36).slice(2);
 
+function needsApproval(content: string): boolean {
+  return /\b(do you (approve|want me to|want to|confirm)|should i (proceed|continue)|please (approve|confirm)|waiting for (your )?(approval|confirmation))\b/i.test(content);
+}
+
 function ToolCallCard({ tc }: { tc: ToolCall }) {
   const [expanded, setExpanded] = useState(true);
   const statusIcon = {
@@ -64,6 +68,7 @@ function ReasoningBlock({ content }: { content: string }) {
 
 interface MessageBubbleProps {
   msg: Message;
+  isLast: boolean;
   isHovered: boolean;
   isEditing: boolean;
   editingContent: string;
@@ -73,9 +78,11 @@ interface MessageBubbleProps {
   onEditChange: (v: string) => void;
   onEditSave: () => void;
   onEditCancel: () => void;
+  onApprove: () => void;
+  onDeny: () => void;
 }
 
-function MessageBubble({ msg, isHovered, isEditing, editingContent, onHoverEnter, onHoverLeave, onEditStart, onEditChange, onEditSave, onEditCancel }: MessageBubbleProps) {
+function MessageBubble({ msg, isLast, isHovered, isEditing, editingContent, onHoverEnter, onHoverLeave, onEditStart, onEditChange, onEditSave, onEditCancel, onApprove, onDeny }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -202,6 +209,24 @@ function MessageBubble({ msg, isHovered, isEditing, editingContent, onHoverEnter
               }
             </div>
             {msg.toolCalls?.map((tc) => <ToolCallCard key={tc.id} tc={tc} />)}
+            {isLast && msg.role === 'assistant' && !msg.isStreaming && needsApproval(msg.content) && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                <button
+                  className="btn btn-success btn-sm"
+                  onClick={onApprove}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                >
+                  <Check size={13} /> Approve
+                </button>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={onDeny}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                >
+                  <X size={13} /> Deny
+                </button>
+              </div>
+            )}
             {!isUser && !msg.isStreaming && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                 <button onClick={handleCopyMessage}
@@ -768,10 +793,11 @@ export default function ConversationPanel() {
             </div>
           </div>
         )}
-        {messages.map((msg) => (
+        {messages.map((msg, idx) => (
           <MessageBubble
             key={msg.id}
             msg={msg}
+            isLast={idx === messages.length - 1}
             isHovered={hoveredMsgId === msg.id}
             isEditing={editingMsgId === msg.id}
             editingContent={editingMsgId === msg.id ? editingContent : ''}
@@ -781,6 +807,8 @@ export default function ConversationPanel() {
             onEditChange={setEditingContent}
             onEditSave={handleEditSave}
             onEditCancel={() => { setEditingMsgId(null); setEditingContent(''); }}
+            onApprove={() => { setInput('Yes, proceed.'); setTimeout(() => { textareaRef.current?.focus(); sendMessage(); }, 0); }}
+            onDeny={() => { setInput('No, cancel.'); setTimeout(() => { textareaRef.current?.focus(); sendMessage(); }, 0); }}
           />
         ))}
         {showRegenerate && (
