@@ -2674,6 +2674,41 @@ fn hermes_stop_ssh_tunnel(state: tauri::State<SshState>) -> Result<CommandResult
     }
 }
 
+// ── Batch 3: single-key env read + cron task list ────────────────────────────
+
+#[tauri::command]
+fn read_env_var(key: String) -> Result<String, String> {
+    let home = hermes_home();
+    let env_path = home.join(".env");
+    if !env_path.exists() {
+        return Err(format!("Key '{}' not found (no .env file)", key));
+    }
+    let map = read_env_file(&home);
+    map.get(&key)
+        .cloned()
+        .ok_or_else(|| format!("Key '{}' not found in .env", key))
+}
+
+#[tauri::command]
+fn list_cron_tasks() -> Result<Vec<serde_json::Value>, String> {
+    let bin = hermes_binary();
+    let result = run_command(bin, &[String::from("cron"), String::from("list"), String::from("--json")], 15)
+        .unwrap_or_else(|_| CommandResult {
+            success: false,
+            code: None,
+            command: String::new(),
+            stdout: String::new(),
+            stderr: String::new(),
+        });
+    if !result.success || result.stdout.trim().is_empty() {
+        return Ok(vec![]);
+    }
+    match serde_json::from_str::<Vec<serde_json::Value>>(result.stdout.trim()) {
+        Ok(arr) => Ok(arr),
+        Err(_) => Ok(vec![]),
+    }
+}
+
 // ── App entry point ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2816,6 +2851,8 @@ pub fn run() {
             hermes_create_profile,
             hermes_delete_profile,
             hermes_rename_profile,
+            read_env_var,
+            list_cron_tasks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
