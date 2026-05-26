@@ -778,8 +778,15 @@ export default function ConversationPanel() {
               <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Start a conversation</div>
               <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Ask anything, run commands, or type <kbd style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px', fontSize: 11, color: 'var(--text-secondary)' }}>/</kbd> for slash commands</div>
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 420 }}>
-              {['What can you do?', 'Show system status', 'Help me write code'].map((prompt) => (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 500 }}>
+              {[
+                'Search the web for latest AI news',
+                'Set a reminder for tomorrow at 9am',
+                'Read my unread emails',
+                'Write a Python script to parse CSV',
+                'Schedule a daily cron job',
+                'Analyze this data and chart it',
+              ].map((prompt) => (
                 <button
                   key={prompt}
                   onClick={() => { setInput(prompt); textareaRef.current?.focus(); }}
