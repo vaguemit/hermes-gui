@@ -573,6 +573,22 @@ export async function renameProfileDisk(oldName: string, newName: string): Promi
   return invoke<CommandResult>('hermes_rename_profile', { oldName, newName });
 }
 
+/** Read a single key from the hermes .env file. Throws if key not found. */
+export async function readEnvVar(key: string): Promise<string> {
+  if (!isTauriApp()) throw new Error('Tauri not available');
+  return invoke<string>('read_env_var', { key });
+}
+
+/** List cron tasks from `hermes cron list --json`. Returns [] if hermes is unavailable. */
+export async function listCronTasks(): Promise<unknown[]> {
+  if (!isTauriApp()) return [];
+  try {
+    return await invoke<unknown[]>('list_cron_tasks');
+  } catch {
+    return [];
+  }
+}
+
 /** Set all Playwright/browser headed-mode env vars in one call. */
 export async function setBrowserHeadedMode(headed: boolean): Promise<void> {
   const val = headed ? 'false' : 'true'; // PLAYWRIGHT_HEADLESS=false means headed
