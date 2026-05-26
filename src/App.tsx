@@ -29,7 +29,7 @@ import MemoryPanel from './components/MemoryPanel';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import SplashScreen from './components/SplashScreen';
-import { PanelRightClose, PanelRight } from 'lucide-react';
+import { PanelRightClose, PanelRight, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // ─── Local hooks ─────────────────────────────────────────────────────────────
 
@@ -195,6 +195,7 @@ function AppInner() {
     activeSection,
     gatewayStatus, setGatewayStatus,
     rightPanelOpen, setRightPanelOpen,
+    sidebarOpen, setSidebarOpen,
     paletteOpen, setPaletteOpen,
     toasts, removeToast,
     theme, activeProfile,
@@ -320,12 +321,29 @@ function AppInner() {
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--bg0)' }}>
       {/* Sidebar */}
-      <div style={{ width: 220, flexShrink: 0, height: '100%' }}>
+      <div style={{ width: sidebarOpen ? 220 : 0, flexShrink: 0, height: '100%', overflow: 'hidden', transition: 'width 0.2s ease' }}>
         <Sidebar />
       </div>
 
       {/* Main content + header */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, position: 'relative' }}>
+        {/* Sidebar collapse toggle */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          style={{
+            position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
+            zIndex: 10, background: 'var(--bg2)', border: '1px solid var(--border)',
+            borderLeft: 'none', borderRadius: '0 6px 6px 0', padding: '8px 4px',
+            cursor: 'pointer', color: 'var(--text-secondary)', transition: 'color 0.15s, background 0.15s',
+            display: 'flex', alignItems: 'center',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; (e.currentTarget as HTMLElement).style.background = 'var(--bg3)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; (e.currentTarget as HTMLElement).style.background = 'var(--bg2)'; }}
+        >
+          {sidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+        </button>
+
         {/* Header bar */}
         <div style={{
           height: 44,
