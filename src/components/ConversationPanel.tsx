@@ -338,6 +338,7 @@ export default function ConversationPanel() {
   const historyIndexRef = useRef<number>(-1);
   const [autoScroll, setAutoScroll] = useState(true);
   const [fastMode, setFastMode] = useState(false);
+  const [sessionGoal, setSessionGoal] = useState<string | null>(null);
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
@@ -491,7 +492,7 @@ export default function ConversationPanel() {
     }
   };
 
-  const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/terminal', '/tools', '/version', '/browser', '/status', '/memory', '/shell', '/persona', '/compress', '/retry', '/undo', '/compact', '/insights', '/platforms', '/kanban', '/soul', '/providers', '/fast']);
+  const LOCAL_COMMANDS = new Set(['/new', '/reset', '/usage', '/help', '/model', '/agents', '/skills', '/gateway', '/terminal', '/tools', '/version', '/browser', '/status', '/memory', '/shell', '/persona', '/compress', '/retry', '/undo', '/compact', '/insights', '/platforms', '/kanban', '/soul', '/providers', '/fast', '/goal', '/debug', '/export']);
 
   const sendMessage = async () => {
     if ((!input.trim() && attachedFiles.length === 0) || isRunning) return;
@@ -579,13 +580,11 @@ export default function ConversationPanel() {
       return;
     }
     if (userContent === '/status') {
-      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Fetching agent status...', timestamp: Date.now() });
-      import('../api/desktop').then(({ runHermesCommand }) => {
-        runHermesCommand(['status'], 30).then(result => {
-          const text = (result.stdout || result.stderr || 'No output from hermes status.').trim();
-          addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: text, timestamp: Date.now() });
-        });
-      });
+      const currentSession = useStore.getState().sessions.find(s => s.id === useStore.getState().activeSessionId);
+      const msgCount = currentSession?.messages.filter(m => m.role === 'user' || m.role === 'assistant').length ?? 0;
+      const { tokensUsed: tUsed, contextWindow: ctxWin, activeModel: aModel } = useStore.getState();
+      const statusText = `Session: ${currentSession?.title ?? 'New Conversation'} · Messages: ${msgCount} · Tokens: ${tUsed.toLocaleString()} / ${ctxWin.toLocaleString()} · Model: ${aModel}${sessionGoal ? ` · Goal: ${sessionGoal}` : ''}`;
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: statusText, timestamp: Date.now() });
       return;
     }
     if (userContent === '/memory') {
@@ -607,7 +606,32 @@ export default function ConversationPanel() {
     if (userContent === '/fast') {
       const next = !fastMode;
       setFastMode(next);
-      addMessage({ id: generateId(), role: 'system', type: 'info', content: `Fast mode ${next ? 'ON' : 'OFF'}`, timestamp: Date.now() });
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: next ? 'Fast mode ON — using claude-haiku-4-5' : 'Fast mode OFF', timestamp: Date.now() });
+      return;
+    }
+    if (userContent.startsWith('/goal')) {
+      const goalText = userContent.slice('/goal'.length).trim();
+      if (!goalText) {
+        addMessage({ id: generateId(), role: 'system', type: 'info', content: sessionGoal ? `Current goal: ${sessionGoal}` : 'No goal set. Usage: /goal <text>', timestamp: Date.now() });
+      } else {
+        setSessionGoal(goalText);
+        addMessage({ id: generateId(), role: 'system', type: 'info', content: `Goal set: ${goalText}`, timestamp: Date.now() });
+      }
+      return;
+    }
+    if (userContent === '/debug') {
+      const last5 = messages.slice(-5);
+      const debugJson = JSON.stringify(last5, null, 2);
+      addMessage({ id: generateId(), role: 'system', type: 'system', content: `\`\`\`json\n${debugJson}\n\`\`\``, timestamp: Date.now() });
+      return;
+    }
+    if (userContent === '/export') {
+      const md = generateMarkdownExport(messages);
+      navigator.clipboard.writeText(md).then(() => {
+        addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Conversation copied to clipboard.', timestamp: Date.now() });
+      }).catch(() => {
+        addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Could not write to clipboard.', timestamp: Date.now() });
+      });
       return;
     }
     if (userContent.startsWith('/shell ')) {
@@ -632,20 +656,33 @@ export default function ConversationPanel() {
       return;
     }
     if (userContent === '/retry') {
-      const lastUser = [...messages].reverse().find(m => m.role === 'user');
-      if (lastUser) {
-        addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Retrying last message…', timestamp: Date.now() });
-        historyIndexRef.current = -1;
-        setInput(lastUser.content);
+      const lastUser = [...messages].reverse().find(m => m.role === 'user' && m.type === 'prose');
+      if (!lastUser) {
+        addMessage({ id: generateId(), role: 'system', type: 'info', content: 'No previous message to retry.', timestamp: Date.now() });
+        return;
       }
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Retrying last message…', timestamp: Date.now() });
+      await sendContent(lastUser.content);
       return;
     }
     if (userContent === '/undo') {
-      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Undo sent to Hermes CLI…', timestamp: Date.now() });
-      import('../api/desktop').then(({ chatCli }) => {
-        const eventId = Math.random().toString(36).slice(2);
-        chatCli(eventId, '/undo', hermesSessionId).catch(() => {});
-      });
+      const sid = activeSessionId;
+      if (sid) {
+        useStore.setState((state) => ({
+          sessions: state.sessions.map((s) => {
+            if (s.id !== sid) return s;
+            const msgs = [...s.messages];
+            // Remove last assistant message
+            const lastAssIdx = [...msgs].reverse().findIndex(m => m.role === 'assistant');
+            if (lastAssIdx !== -1) msgs.splice(msgs.length - 1 - lastAssIdx, 1);
+            // Remove last user message
+            const lastUserIdx = [...msgs].reverse().findIndex(m => m.role === 'user');
+            if (lastUserIdx !== -1) msgs.splice(msgs.length - 1 - lastUserIdx, 1);
+            return { ...s, messages: msgs };
+          }),
+        }));
+      }
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Last message pair removed.', timestamp: Date.now() });
       return;
     }
     if (userContent.startsWith('/insights')) {
@@ -680,15 +717,6 @@ export default function ConversationPanel() {
       });
       return;
     }
-    if (userContent === '/fast') {
-      const enabling = !fastMode;
-      setFastMode(enabling);
-      addMessage({ id: generateId(), role: 'system', type: 'info', content: enabling ? 'Fast mode ON — priority processing enabled' : 'Fast mode OFF', timestamp: Date.now() });
-      const eventId = Math.random().toString(36).slice(2);
-      chatCli(eventId, '/fast', hermesSessionId).catch(() => {});
-      return;
-    }
-
     const effectiveContent = fullContent;
     const userMsg: Message = { id: generateId(), role: 'user', type: 'prose', content: effectiveContent, timestamp: Date.now() };
     addMessage(userMsg);

@@ -77,6 +77,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/copy', desc: 'Copy an assistant response', category: 'Info' },
   { cmd: '/image', desc: 'Attach a local image path', category: 'Info' },
   { cmd: '/debug', desc: 'Upload a debug report', category: 'Info' },
+  { cmd: '/export', desc: 'Export conversation as markdown to clipboard', category: 'Info' },
   { cmd: '/profile', desc: 'Show active profile and home', category: 'Info' },
   { cmd: '/quit', desc: 'Exit the CLI', category: 'Exit' },
   { cmd: '/web', desc: 'Search the web', category: 'Tools' },
