@@ -36,7 +36,17 @@ export default function Sidebar() {
     activeModel, setModelSwitcherOpen, sessions, activeSessionId,
     setActiveSession, addSession, tokensUsed, contextWindow, setSettingsOpen,
     browserConnected, localBrowserUrl, deleteSession, renameSession,
+    crons, skills, sidebarOpen,
   } = useStore();
+
+  const activeCronCount = crons.filter(c => c.active).length;
+  const gatewayDotClass = {
+    connected: 'dot dot-green',
+    connecting: 'dot dot-amber',
+    error: 'dot dot-red',
+    disconnected: 'dot dot-red',
+    unchecked: 'dot dot-dim',
+  }[gatewayStatus];
 
   const [historyExpanded, setHistoryExpanded] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -143,10 +153,31 @@ export default function Sidebar() {
             key={id}
             onClick={() => setActiveSection(id as typeof activeSection)}
             className={`nav-item ${activeSection === id ? 'active' : ''}`}
-            style={{ width: '100%', border: 'none', textAlign: 'left' }}
+            style={{ width: '100%', border: 'none', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden' }}
           >
-            <Icon size={16} />
-            {label}
+            {id === 'gateway' ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, overflow: 'hidden' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 0, flexShrink: 0 }}>
+                  <Icon size={16} />
+                  <span className={gatewayDotClass} style={{ marginLeft: 4 }} />
+                </span>
+                {sidebarOpen && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>}
+              </span>
+            ) : (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, overflow: 'hidden' }}>
+                <Icon size={16} style={{ flexShrink: 0 }} />
+                {sidebarOpen && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{label}</span>}
+                {sidebarOpen && id === 'crons' && activeCronCount > 0 && (
+                  <span className="badge badge-muted" style={{ fontSize: 10, marginLeft: 'auto', flexShrink: 0 }}>{activeCronCount}</span>
+                )}
+                {sidebarOpen && id === 'skills' && skills.length > 0 && (
+                  <span className="badge badge-muted" style={{ fontSize: 10, marginLeft: 'auto', flexShrink: 0 }}>{skills.length}</span>
+                )}
+                {sidebarOpen && id === 'chat' && sessions.length > 0 && (
+                  <span className="badge badge-muted" style={{ fontSize: 10, marginLeft: 'auto', flexShrink: 0 }}>{sessions.length}</span>
+                )}
+              </span>
+            )}
           </button>
         ))}
       </nav>
@@ -160,7 +191,7 @@ export default function Sidebar() {
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 16px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600 }}
         >
           {historyExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-          Recent Sessions
+          Recent Sessions{sessions.length > 0 && ` (${sessions.length})`}
         </button>
         {historyExpanded && (
           <>
