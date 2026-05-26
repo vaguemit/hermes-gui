@@ -553,6 +553,26 @@ export async function stopSshTunnel(): Promise<CommandResult> {
   return invoke<CommandResult>('hermes_stop_ssh_tunnel');
 }
 
+export async function listProfilesDisk(): Promise<string[]> {
+  if (!isTauriApp()) return ['default'];
+  return invoke<string[]>('hermes_list_profiles');
+}
+
+export async function createProfileDisk(name: string): Promise<CommandResult> {
+  if (!isTauriApp()) return browserOnlyResult(`create profile ${name}`);
+  return invoke<CommandResult>('hermes_create_profile', { name });
+}
+
+export async function deleteProfileDisk(name: string): Promise<CommandResult> {
+  if (!isTauriApp()) return browserOnlyResult(`delete profile ${name}`);
+  return invoke<CommandResult>('hermes_delete_profile', { name });
+}
+
+export async function renameProfileDisk(oldName: string, newName: string): Promise<CommandResult> {
+  if (!isTauriApp()) return browserOnlyResult(`rename profile ${oldName} -> ${newName}`);
+  return invoke<CommandResult>('hermes_rename_profile', { oldName, newName });
+}
+
 /** Set all Playwright/browser headed-mode env vars in one call. */
 export async function setBrowserHeadedMode(headed: boolean): Promise<void> {
   const val = headed ? 'false' : 'true'; // PLAYWRIGHT_HEADLESS=false means headed
