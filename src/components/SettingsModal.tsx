@@ -382,11 +382,21 @@ export default function SettingsModal() {
     setWorkspaceSaving(true);
     setWorkspaceSaveMsg('');
     try {
+      // TODO(phase-1): replace with a proper YAML parser (js-yaml) to prevent injection.
+      // Guard: reject working_dir values that would break YAML structure.
+      if (workingDir.includes('\n') || workingDir.includes('\r')) {
+        setWorkspaceSaveMsg('Error: path must not contain newlines');
+        return;
+      }
+      // Escape any trailing characters that could break inline YAML (e.g. bare # starts a comment).
+      // Wrap in double-quotes if the value contains YAML-special characters.
+      const needsQuoting = /[:#\[\]{},&*?|<>=!%@`'"\\]/.test(workingDir) || workingDir.trimStart() !== workingDir || workingDir.trimEnd() !== workingDir;
+      const safeDir = needsQuoting ? `"${workingDir.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : workingDir;
       let yaml = await client.readConfig().catch(() => '');
       if (/working_dir:\s*.+/.test(yaml)) {
-        yaml = yaml.replace(/working_dir:\s*.+/, `working_dir: ${workingDir}`);
+        yaml = yaml.replace(/working_dir:\s*.+/, `working_dir: ${safeDir}`);
       } else {
-        yaml = yaml ? `${yaml.trimEnd()}\nworking_dir: ${workingDir}\n` : `working_dir: ${workingDir}\n`;
+        yaml = yaml ? `${yaml.trimEnd()}\nworking_dir: ${safeDir}\n` : `working_dir: ${safeDir}\n`;
       }
       await client.writeConfig(yaml);
       await client.setGatewayPort(gatewayPort).catch(() => {});
