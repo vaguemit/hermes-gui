@@ -4,9 +4,11 @@ import {
   Clock, Radio, History, Brain, Key,
 } from 'lucide-react';
 import { useStore } from '../store';
-import { getSystemInfo } from '../api/desktop';
+import { getSystemInfo, getHermesInstallStatus } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import type { ModelConfig } from '../lib/hermes';
+
+type ActivityItem = { type: 'session' | 'cron' | 'skill'; label: string; ts: number };
 
 function formatUptime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
@@ -32,6 +34,7 @@ export default function DashboardPanel() {
     gatewayStatus, setGatewayStatus, setSettingsOpen, setActiveSection,
     sessions, crons, skills, activeModel, platforms,
     addSession, setActiveSession,
+    tokensUsed, contextWindow,
   } = useStore();
 
   const [isRunning, setIsRunning] = useState(false);
@@ -42,6 +45,10 @@ export default function DashboardPanel() {
 
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [sysInfo, setSysInfo] = useState<{ ram_gb: number; cpu_count: number } | null>(null);
+  const [extSysInfo, setExtSysInfo] = useState<{ platform: string; version: string; hermesHome: string } | null>(null);
+  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>(() => {
+    try { return JSON.parse(localStorage.getItem('hermes-activity') || '[]'); } catch { return []; }
+  });
 
   const [message, setMessage] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -78,7 +85,30 @@ export default function DashboardPanel() {
     client.getModelConfig().then(setModelConfig).catch(() => null);
     getSystemInfo().then(setSysInfo).catch(() => null);
     client.getGatewayPort().then(setGatewayPort).catch(() => null);
+    getHermesInstallStatus().then(info => {
+      setExtSysInfo({
+        platform: info.platform || '',
+        version: info.version || '',
+        hermesHome: info.hermes_home || '',
+      });
+    }).catch(() => {});
   }, []);
+
+  // Track recent activity from sessions
+  useEffect(() => {
+    if (sessions.length === 0) return;
+    const top = sessions[0];
+    if (!top || !top.messages || top.messages.length === 0) return;
+    setRecentActivity(prev => {
+      if (prev.length > 0 && prev[0].ts === top.timestamp) return prev;
+      const next: ActivityItem[] = [
+        { type: 'session' as const, label: top.title || 'Untitled session', ts: top.timestamp },
+        ...prev.filter(a => a.ts !== top.timestamp),
+      ].slice(0, 10);
+      try { localStorage.setItem('hermes-activity', JSON.stringify(next)); } catch { /* noop */ }
+      return next;
+    });
+  }, [sessions]);
 
   const handleStart = async () => {
     setGatewayLoading(true);
@@ -187,7 +217,7 @@ export default function DashboardPanel() {
 
         {/* ── Stats Row ──────────────────────────────────────────────────── */}
         <div className="section-label">Overview</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: extSysInfo || tokensUsed > 0 ? 10 : 20 }}>
           {stats.map(stat => {
             const Icon = stat.icon;
             return (
@@ -211,6 +241,69 @@ export default function DashboardPanel() {
             );
           })}
         </div>
+
+        {/* ── System Info Strip ──────────────────────────────────────────── */}
+        {extSysInfo && (
+          <div style={{
+            display: 'flex',
+            gap: 16,
+            padding: '7px 12px',
+            background: 'var(--bg1)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            marginBottom: 10,
+            flexWrap: 'wrap',
+          }}>
+            {extSysInfo.platform && (
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                Platform: <span style={{ color: 'var(--text-secondary)' }}>{extSysInfo.platform}</span>
+              </span>
+            )}
+            {extSysInfo.version && (
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                Version: <span style={{ color: 'var(--text-secondary)' }}>{extSysInfo.version}</span>
+              </span>
+            )}
+            {extSysInfo.hermesHome && (
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>
+                Home: <span style={{ color: 'var(--text-secondary)' }}>
+                  {extSysInfo.hermesHome.length > 40 ? '…' + extSysInfo.hermesHome.slice(-38) : extSysInfo.hermesHome}
+                </span>
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* ── Context Usage Widget ───────────────────────────────────────── */}
+        {tokensUsed > 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '10px 14px',
+            background: 'var(--bg1)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            marginBottom: 20,
+          }}>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+              Context Usage
+            </span>
+            <div style={{ flex: 1, height: 4, background: 'var(--bg0)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.min(100, (tokensUsed / contextWindow) * 100)}%`,
+                background: 'var(--accent-green)',
+                borderRadius: 2,
+                transition: 'width 0.3s ease',
+              }} />
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+              {Math.round(tokensUsed / 1000)}k / {Math.round(contextWindow / 1000)}k tokens
+            </span>
+          </div>
+        )}
+        {tokensUsed === 0 && !extSysInfo && <div style={{ marginBottom: 10 }} />}
 
         {/* ── Gateway Status Widget ──────────────────────────────────────── */}
         <div className="section-label">Gateway</div>
