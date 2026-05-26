@@ -1,245 +1,284 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { Clipboard, ClipboardCheck } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Terminal, RefreshCw, Trash2, Send, X } from 'lucide-react';
+import { isTauriApp, ptySpawn, ptyWrite, ptyKill } from '../api/desktop';
 
-const HISTORY_LIMIT = 20;
+const SHELL_PROGRAM = navigator.platform.toLowerCase().includes('win') ? 'powershell.exe' : 'bash';
+const SHELL_ARGS = navigator.platform.toLowerCase().includes('win') ? ['-NoLogo'] : ['--login'];
 
-const QUICK_COMMANDS = [
-  { label: 'ls',            cmd: 'ls' },
-  { label: 'pwd',           cmd: 'pwd' },
-  { label: 'hermes status', cmd: 'hermes status' },
-  { label: 'hermes doctor', cmd: 'hermes doctor' },
-  { label: 'clear',         cmd: 'clear' },
-];
+const HISTORY_LIMIT = 50;
 
-const stripAnsi = (str: string) =>
-  str
-    .replace(/\x1B\[[0-9;?]*[A-Za-z]/g, '')
-    .replace(/\x1B[()][A-Z0-9]/g, '')
-    .replace(/\x1B[NOPQRSTUVWXYZ\\^_]/g, '');
+const stripAnsi = (s: string) =>
+  s.replace(/\x1B\[[0-9;?]*[A-Za-z]/g, '')
+   .replace(/\x1B[()][A-Z0-9]/g, '')
+   .replace(/\x1B[NOPQRSTUVWXYZ\\^_]/g, '');
 
-interface PtySession {
-  ptyId: string;
-  eventId: string;
-}
-
-type Status = 'starting' | 'running' | 'stopped' | 'error';
+type TermStatus = 'starting' | 'running' | 'stopped' | 'error';
 
 export default function TerminalPanel() {
   const [lines, setLines] = useState<string[]>([]);
   const [input, setInput] = useState('');
-  const [status, setStatus] = useState<Status>('starting');
-  const [errorMsg, setErrorMsg] = useState('');
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const [copied, setCopied] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const sessionRef = useRef<PtySession | null>(null);
+  const [status, setStatus] = useState<TermStatus>('starting');
+  const [errMsg, setErrMsg] = useState('');
+  const [histIdx, setHistIdx] = useState(-1);
+
+  const ptyIdRef = useRef<string | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
-  const historyRef = useRef<string[]>([]);
+  const histRef = useRef<string[]>([]);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const start = useCallback(async () => {
+  // ── Spawn shell ──────────────────────────────────────────────────────────────
+  const spawnShell = useCallback(async () => {
     setStatus('starting');
-    setErrorMsg('');
-    try {
-      const result = await invoke<{ pty_id: string; event_id: string }>('hermes_pty_start');
-      const sess: PtySession = { ptyId: result.pty_id, eventId: result.event_id };
-      sessionRef.current = sess;
-      setStatus('running');
+    setErrMsg('');
 
-      const unlisten = await listen<string>(result.event_id, (event) => {
-        if (event.payload === '__DONE__') {
+    const eventId = `pty-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    try {
+      // Register event listener before spawning to avoid dropping early output
+      const { listen } = await import('@tauri-apps/api/event');
+      const unlisten = await listen<string>(eventId, (ev) => {
+        if (ev.payload === '__DONE__') {
           setStatus('stopped');
           setLines(prev => [...prev, '[Process exited]']);
           return;
         }
-        const clean = stripAnsi(event.payload);
+        const clean = stripAnsi(ev.payload);
         setLines(prev => [...prev, clean]);
       });
       unlistenRef.current = unlisten;
+
+      const ptyId = await ptySpawn(SHELL_PROGRAM, SHELL_ARGS, 40, 120, eventId);
+      ptyIdRef.current = ptyId;
+      setStatus('running');
+      inputRef.current?.focus();
     } catch (err) {
       setStatus('error');
-      setErrorMsg(String(err));
+      setErrMsg(String(err));
+      if (unlistenRef.current) {
+        unlistenRef.current();
+        unlistenRef.current = null;
+      }
     }
   }, []);
 
+  // ── Mount / unmount ──────────────────────────────────────────────────────────
   useEffect(() => {
-    start();
+    if (!isTauriApp()) return;
+    spawnShell();
+
     return () => {
-      if (unlistenRef.current) unlistenRef.current();
-      if (sessionRef.current) {
-        invoke('hermes_pty_stop', { ptyId: sessionRef.current.ptyId }).catch(() => {});
+      if (unlistenRef.current) {
+        unlistenRef.current();
+        unlistenRef.current = null;
+      }
+      if (ptyIdRef.current) {
+        ptyKill(ptyIdRef.current).catch(() => {});
+        ptyIdRef.current = null;
       }
     };
-  }, [start]);
+  }, [spawnShell]);
 
+  // ── Auto-scroll ──────────────────────────────────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [lines]);
 
-  const submitCommand = (cmd: string) => {
+  // ── Send a line ──────────────────────────────────────────────────────────────
+  const sendLine = (cmd: string) => {
     const trimmed = cmd.trim();
-    if (!trimmed || !sessionRef.current || status !== 'running') return;
+    if (!trimmed || status !== 'running' || !ptyIdRef.current) return;
 
-    // Handle built-in clear
     if (trimmed === 'clear') {
       setLines([]);
       setInput('');
-      setHistoryIndex(-1);
+      setHistIdx(-1);
       return;
     }
 
-    // Push to history (newest first for arrow-up navigation)
-    historyRef.current = [trimmed, ...historyRef.current.filter(c => c !== trimmed)].slice(0, HISTORY_LIMIT);
-
-    invoke('hermes_pty_write', { ptyId: sessionRef.current.ptyId, input: trimmed }).catch(console.error);
+    histRef.current = [trimmed, ...histRef.current.filter(c => c !== trimmed)].slice(0, HISTORY_LIMIT);
+    ptyWrite(ptyIdRef.current, trimmed + '\n').catch(() => {});
     setInput('');
-    setHistoryIndex(-1);
+    setHistIdx(-1);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    submitCommand(input);
+    sendLine(input);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const history = historyRef.current;
+    const hist = histRef.current;
     if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (history.length === 0) return;
-      const next = Math.min(historyIndex + 1, history.length - 1);
-      setHistoryIndex(next);
-      setInput(history[next]);
+      if (hist.length === 0) return;
+      const next = Math.min(histIdx + 1, hist.length - 1);
+      setHistIdx(next);
+      setInput(hist[next]);
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (historyIndex <= 0) {
-        setHistoryIndex(-1);
-        setInput('');
-      } else {
-        const next = historyIndex - 1;
-        setHistoryIndex(next);
-        setInput(history[next]);
-      }
+      if (histIdx <= 0) { setHistIdx(-1); setInput(''); }
+      else { const next = histIdx - 1; setHistIdx(next); setInput(hist[next]); }
     }
   };
 
-  const handleRestart = () => {
-    if (unlistenRef.current) {
-      unlistenRef.current();
-      unlistenRef.current = null;
-    }
-    if (sessionRef.current) {
-      invoke('hermes_pty_stop', { ptyId: sessionRef.current.ptyId }).catch(() => {});
-      sessionRef.current = null;
-    }
+  // ── Restart ──────────────────────────────────────────────────────────────────
+  const handleRestart = async () => {
+    if (unlistenRef.current) { unlistenRef.current(); unlistenRef.current = null; }
+    if (ptyIdRef.current) { ptyKill(ptyIdRef.current).catch(() => {}); ptyIdRef.current = null; }
     setLines([]);
-    start();
+    spawnShell();
   };
 
-  const copyAll = async () => {
-    await navigator.clipboard.writeText(lines.join('\n'));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
+  // ── Browser-only fallback ────────────────────────────────────────────────────
+  if (!isTauriApp()) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--bg0)' }}>
+        <div style={{ textAlign: 'center' }}>
+          <Terminal size={32} style={{ color: 'var(--text-tertiary)', marginBottom: 12 }} />
+          <span className="badge badge-info" style={{ fontSize: 13, padding: '6px 16px' }}>
+            Terminal only available in desktop mode
+          </span>
+          <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-secondary)' }}>
+            Run <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--term-green)' }}>npm run tauri dev</code> to enable the terminal.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const dotClass = status === 'running' ? 'dot-green' : status === 'error' ? 'dot-red' : 'dot-dim';
-  const statusLabel = status === 'starting' ? 'Starting hermes…' : status === 'running' ? 'hermes terminal' : status === 'stopped' ? 'Process exited' : 'Error';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg0)' }}>
-      {/* Header bar */}
-      <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg1)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <span className={`dot ${dotClass}`} />
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)', flex: 1 }}>{statusLabel}</span>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={copyAll}
-          title="Copy all terminal output"
-          style={{ fontFamily: 'var(--font-mono)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 5 }}
-        >
-          {copied ? <ClipboardCheck size={12} style={{ color: 'var(--accent-green)' }} /> : <Clipboard size={12} />}
-          {copied ? 'Copied' : 'Copy All'}
-        </button>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => setLines([])}
-          title="Clear terminal"
-          style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
-        >
-          Clear
-        </button>
-        {(status === 'stopped' || status === 'error') && (
+
+      {/* ── Header bar ─────────────────────────────────────────────────────── */}
+      <div style={{
+        padding: '8px 14px',
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--bg1)',
+        display: 'flex', alignItems: 'center', gap: 8,
+        flexShrink: 0,
+      }}>
+        <Terminal size={14} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+        <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>Terminal</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-secondary)' }}>
+          {SHELL_PROGRAM}
+        </span>
+        <span className={`dot ${dotClass}`} style={{ marginLeft: 2 }} />
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-secondary)' }}>
+          {status === 'starting' ? 'starting…' : status === 'running' ? 'running' : status === 'stopped' ? 'exited' : 'error'}
+        </span>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
-            className="btn btn-ghost btn-sm"
-            onClick={handleRestart}
-            style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
+            className="btn btn-ghost btn-sm btn-icon"
+            onClick={() => setLines([])}
+            title="Clear output"
           >
-            Restart
+            <Trash2 size={13} />
           </button>
-        )}
+          <button
+            className="btn btn-ghost btn-sm btn-icon"
+            onClick={handleRestart}
+            title="Kill and restart shell"
+          >
+            <RefreshCw size={13} />
+          </button>
+          {status === 'stopped' || status === 'error' ? (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleRestart}
+              style={{ fontSize: 11, fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: 5 }}
+            >
+              <RefreshCw size={11} /> Restart
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      {/* Output area */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--term-green)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.55 }}>
+      {/* ── Output area ────────────────────────────────────────────────────── */}
+      <div
+        className="terminal-body"
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          maxHeight: 'none',
+          padding: '12px 16px',
+          color: 'var(--term-green)',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+          lineHeight: 1.6,
+          cursor: 'text',
+        }}
+        onClick={() => inputRef.current?.focus()}
+      >
+        {status === 'starting' && (
+          <div style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>Starting {SHELL_PROGRAM}…</div>
+        )}
         {status === 'error' && (
-          <div style={{ color: 'var(--accent-red)', marginBottom: 8 }}>Failed to start hermes: {errorMsg}</div>
+          <div style={{ color: 'var(--accent-red)', marginBottom: 6 }}>
+            Failed to start shell: {errMsg}
+          </div>
         )}
         {lines.map((line, i) => (
-          <div key={i}>{line || ' '}</div>
+          <div key={i} className="term-line">
+            <span className="term-out" style={{ color: 'var(--term-green)' }}>{line || ' '}</span>
+          </div>
         ))}
         <div ref={bottomRef} />
       </div>
 
-      {/* Quick command chips */}
-      <div style={{ padding: '6px 12px', borderTop: '1px solid var(--border)', background: 'var(--bg1)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
-        <span style={{ fontSize: 10, color: 'var(--text-label)', fontFamily: 'var(--font-mono)', marginRight: 2 }}>quick:</span>
-        {QUICK_COMMANDS.map(qc => (
-          <button
-            key={qc.cmd}
-            onClick={() => {
-              if (qc.cmd === 'clear') {
-                setLines([]);
-              } else {
-                setInput(qc.cmd);
-              }
-            }}
-            disabled={status !== 'running'}
-            style={{
-              background: 'var(--bg3)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11,
-              padding: '2px 9px',
-              cursor: status === 'running' ? 'pointer' : 'default',
-              opacity: status === 'running' ? 1 : 0.4,
-              transition: 'background 0.12s, border-color 0.12s',
-            }}
-            onMouseEnter={e => { if (status === 'running') { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg4)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-hover)'; } }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg3)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; }}
-          >
-            {qc.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Input bar */}
+      {/* ── Input bar ──────────────────────────────────────────────────────── */}
       <form
         onSubmit={handleSubmit}
-        style={{ borderTop: '1px solid var(--border)', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg1)', flexShrink: 0 }}
+        style={{
+          borderTop: '1px solid var(--border)',
+          background: 'var(--bg1)',
+          padding: '8px 12px',
+          display: 'flex', alignItems: 'center', gap: 8,
+          flexShrink: 0,
+        }}
       >
-        <span style={{ color: 'var(--accent-green)', fontFamily: 'var(--font-mono)', fontSize: 14, flexShrink: 0 }}>❯</span>
+        <span style={{ color: 'var(--accent-green)', fontFamily: 'var(--font-mono)', fontSize: 14, flexShrink: 0, userSelect: 'none' }}>
+          ❯
+        </span>
         <input
+          ref={inputRef}
           className="input-field"
           value={input}
-          onChange={e => { setInput(e.target.value); setHistoryIndex(-1); }}
+          onChange={e => { setInput(e.target.value); setHistIdx(-1); }}
           onKeyDown={handleKeyDown}
-          placeholder={status === 'running' ? 'Type a command… (↑↓ history)' : ''}
+          placeholder={
+            status === 'running' ? 'Type a command…  ↑↓ history' :
+            status === 'starting' ? 'Starting shell…' :
+            'Shell stopped — click Restart'
+          }
           disabled={status !== 'running'}
-          style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 13 }}
           autoFocus
+          spellCheck={false}
+          autoComplete="off"
+          autoCorrect="off"
+          style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 13, background: 'var(--bg0)', border: '1px solid var(--border)' }}
         />
+        <button
+          type="submit"
+          className="btn btn-ghost btn-sm btn-icon"
+          disabled={status !== 'running' || !input.trim()}
+          title="Send"
+        >
+          <Send size={13} />
+        </button>
+        {status === 'running' && input && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm btn-icon"
+            onClick={() => { setInput(''); setHistIdx(-1); }}
+            title="Clear input"
+          >
+            <X size={13} />
+          </button>
+        )}
       </form>
     </div>
   );
