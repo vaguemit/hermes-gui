@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, CheckCircle2, Clipboard, ClipboardCheck, Eye, EyeOff, Globe, Play, Radio, Search, Settings, Square } from 'lucide-react';
+import { Activity, AlertTriangle, Check, CheckCircle2, Clock, Clipboard, ClipboardCheck, Eye, EyeOff, Globe, Play, Radio, Search, Settings, Square, Wifi, WifiOff } from 'lucide-react';
 import { useStore } from '../store';
 import { useHermesClient, useHermesContext } from '../lib/hermes';
 import { getChromeCdpStatus, launchChrome, onGatewayReady, sendHermesPtyMessage, startHermesPtyChat } from '../api/desktop';
@@ -236,10 +236,20 @@ export default function GatewayPanel() {
   const [logCopied, setLogCopied] = useState(false);
   const [portInput, setPortInput] = useState('8642');
   const [portApplied, setPortApplied] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const logBodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     client.getGatewayPort().then(p => setPortInput(String(p))).catch(() => {});
   }, [client]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function nowTimestamp(): string {
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `[${hh}:${mm}:${ss}]`;
+  }
 
   function logLineColor(line: string): string {
     if (line.toLowerCase().includes('error') || line.toLowerCase().includes('err:')) return 'var(--accent-red)';
@@ -585,7 +595,7 @@ export default function GatewayPanel() {
         </div>
 
         {isConnected && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11.5, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
               Port: 8642
             </span>
@@ -597,6 +607,12 @@ export default function GatewayPanel() {
                 Latency: {gateway.latencyMs}ms
               </span>
             )}
+            <span style={{ fontSize: 11.5, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', color: 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
+              Requests: {gatewayLog.filter(l => /\b(GET|POST|PUT|DELETE)\b/.test(l)).length}
+            </span>
+            <span style={{ fontSize: 11.5, background: 'var(--accent-red-dim)', border: '1px solid var(--accent-red)', borderRadius: 6, padding: '4px 10px', color: 'var(--accent-red)', fontFamily: 'var(--font-mono)' }}>
+              Errors: {gatewayLog.filter(l => /error|err:/i.test(l)).length}
+            </span>
           </div>
         )}
 
