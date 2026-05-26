@@ -176,13 +176,6 @@ export default function DashboardPanel() {
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, 5);
 
-  const stats = [
-    { label: 'Sessions', value: sessions.length, icon: History, color: 'var(--accent-green)' },
-    { label: 'Active Model', value: activeModel || 'None', icon: Cpu, color: 'var(--accent-blue)' },
-    { label: 'Skills', value: skills.length, icon: Zap, color: 'var(--accent-amber)' },
-    { label: 'Crons', value: `${activeCrons.length} active`, icon: Clock, color: 'var(--accent-green)' },
-  ];
-
   const QUICK_ACTIONS: { label: string; icon: React.ElementType; section: string }[] = [
     { label: 'New Chat', icon: MessageSquare, section: 'chat' },
     { label: 'Gateway', icon: Radio, section: 'gateway' },
@@ -193,6 +186,41 @@ export default function DashboardPanel() {
   ];
 
   const dotClass = isRunning ? 'dot dot-green' : 'dot dot-red';
+
+  // Token usage derived values
+  const tokenPct = contextWindow > 0 ? Math.round((tokensUsed / contextWindow) * 100) : 0;
+  const tokenBarColor = tokenPct >= 90
+    ? 'var(--accent-red)'
+    : tokenPct >= 70
+      ? 'var(--accent-amber)'
+      : 'var(--accent-green)';
+
+  const statsGrid = [
+    {
+      label: 'Total Sessions',
+      value: sessions.length,
+      icon: History,
+      color: 'var(--accent-green)',
+    },
+    {
+      label: 'Active Crons',
+      value: crons.filter(c => c.active).length,
+      icon: Clock,
+      color: 'var(--accent-amber)',
+    },
+    {
+      label: 'Skills Loaded',
+      value: skills.length,
+      icon: Zap,
+      color: 'var(--accent-blue)',
+    },
+    {
+      label: 'Context Used',
+      value: `${tokenPct}%`,
+      icon: Cpu,
+      color: tokenBarColor,
+    },
+  ];
 
   return (
     <div style={{
@@ -215,23 +243,20 @@ export default function DashboardPanel() {
           </p>
         </div>
 
-        {/* ── Stats Row ──────────────────────────────────────────────────── */}
+        {/* ── Stats Summary Row ──────────────────────────────────────────── */}
         <div className="section-label">Overview</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: extSysInfo || tokensUsed > 0 ? 10 : 20 }}>
-          {stats.map(stat => {
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
+          {statsGrid.map(stat => {
             const Icon = stat.icon;
             return (
-              <div key={stat.label} style={{
-                background: 'var(--bg1)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
+              <div key={stat.label} className="card" style={{
                 padding: 16,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 8,
               }}>
-                <Icon size={18} style={{ color: stat.color }} />
-                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <Icon size={16} style={{ color: stat.color }} />
+                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {stat.value}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -240,6 +265,33 @@ export default function DashboardPanel() {
               </div>
             );
           })}
+        </div>
+
+        {/* ── Token Usage Bar ────────────────────────────────────────────── */}
+        <div style={{
+          padding: '12px 16px',
+          background: 'var(--bg1)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-sm)',
+          marginBottom: 10,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+              Context Usage
+            </span>
+            <span style={{ fontSize: 11, color: tokenBarColor, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+              {tokensUsed.toLocaleString()} / {contextWindow.toLocaleString()} tokens ({tokenPct}%)
+            </span>
+          </div>
+          <div style={{ height: 5, background: 'var(--bg0)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${Math.min(100, tokenPct)}%`,
+              background: tokenBarColor,
+              borderRadius: 3,
+              transition: 'width 0.4s ease, background 0.3s ease',
+            }} />
+          </div>
         </div>
 
         {/* ── System Info Strip ──────────────────────────────────────────── */}
@@ -274,38 +326,7 @@ export default function DashboardPanel() {
           </div>
         )}
 
-        {/* ── Context Usage Widget ───────────────────────────────────────── */}
-        {tokensUsed > 0 && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '10px 14px',
-            background: 'var(--bg1)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            marginBottom: 20,
-          }}>
-            <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-              Context Usage
-            </span>
-            <div style={{ flex: 1, height: 4, background: 'var(--bg0)', borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${Math.min(100, (tokensUsed / contextWindow) * 100)}%`,
-                background: 'var(--accent-green)',
-                borderRadius: 2,
-                transition: 'width 0.3s ease',
-              }} />
-            </div>
-            <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-              {Math.round(tokensUsed / 1000)}k / {Math.round(contextWindow / 1000)}k tokens
-            </span>
-          </div>
-        )}
-        {tokensUsed === 0 && !extSysInfo && <div style={{ marginBottom: 10 }} />}
-
-        {/* ── Gateway Status Widget ──────────────────────────────────────── */}
+        {/* ── Gateway Status Card ────────────────────────────────────────── */}
         <div className="section-label">Gateway</div>
         <div className="card" style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -315,21 +336,27 @@ export default function DashboardPanel() {
                 <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
                   {isRunning ? 'Gateway running' : 'Gateway stopped'}
                 </div>
-                {isRunning && (
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    Port {gatewayPort} · Uptime {formatUptime(uptime)}
-                  </div>
-                )}
-                {!isRunning && (
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                    Start the gateway to enable agent messaging
-                  </div>
-                )}
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                  {isRunning
+                    ? `Port ${gatewayPort} · Uptime ${formatUptime(uptime)}`
+                    : activeModel
+                      ? <span>Model: <span style={{ color: 'var(--text-primary)' }}>{activeModel}</span></span>
+                      : 'Start the gateway to enable agent messaging'
+                  }
+                </div>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {isRunning ? (
                 <>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setActiveSection('gateway')}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <Radio size={13} />
+                    Go to Gateway
+                  </button>
                   <button
                     className="btn btn-ghost btn-sm"
                     onClick={() => setActiveSection('chat')}
@@ -365,6 +392,28 @@ export default function DashboardPanel() {
               )}
             </div>
           </div>
+          {/* Active model strip */}
+          {activeModel && (
+            <div style={{
+              marginTop: 12,
+              paddingTop: 10,
+              borderTop: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              <Cpu size={12} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: 'var(--text-label)', fontFamily: 'var(--font-mono)' }}>
+                Active model:
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                {activeModel}
+              </span>
+              <span className={`badge ${isRunning ? 'badge-connected' : 'badge-idle'}`} style={{ marginLeft: 'auto' }}>
+                {gatewayStatus}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* ── Quick Actions 2×3 Grid ─────────────────────────────────────── */}
@@ -406,46 +455,53 @@ export default function DashboardPanel() {
         </div>
 
         {/* ── Recent Sessions ────────────────────────────────────────────── */}
-        {recentSessions.length > 0 && (
-          <>
-            <div className="section-label">Recent Sessions</div>
-            <div className="card" style={{ marginBottom: 20, padding: 0, overflow: 'hidden' }}>
-              {recentSessions.map((s, i) => (
-                <button
+        <div className="section-label">Recent Sessions</div>
+        <div className="card" style={{ marginBottom: 20, padding: 0, overflow: 'hidden' }}>
+          {recentSessions.length === 0 ? (
+            <div style={{
+              padding: '24px 16px',
+              textAlign: 'center',
+              color: 'var(--text-secondary)',
+              fontSize: 13,
+              fontFamily: 'var(--font-mono)',
+            }}>
+              No sessions yet
+            </div>
+          ) : (
+            recentSessions.map((s, i) => {
+              const msgCount = s.messages?.length ?? 0;
+              const titleDisplay = s.title.length > 45 ? s.title.slice(0, 45) + '…' : s.title;
+              return (
+                <div
                   key={s.id}
-                  onClick={() => { setActiveSession(s.id); setActiveSection('chat'); }}
                   style={{
-                    width: '100%',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 12,
-                    padding: '12px 16px',
-                    background: 'none',
-                    border: 'none',
+                    gap: 10,
+                    padding: '11px 14px',
                     borderTop: i > 0 ? '1px solid var(--border)' : 'none',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'background 0.15s',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg2)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
                 >
-                  <MessageSquare size={14} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+                  <MessageSquare size={13} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
                   <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {s.title}
+                    {titleDisplay}
                   </span>
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-                    {s.messages?.length ?? 0} msg{(s.messages?.length ?? 0) !== 1 ? 's' : ''}
+                  <span className="badge badge-muted" style={{ fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                    {msgCount} msg{msgCount !== 1 ? 's' : ''}
                   </span>
-                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', marginLeft: 8 }}>
-                    {relativeTime(s.timestamp)}
-                  </span>
-                  <ChevronRight size={12} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => { setActiveSession(s.id); setActiveSection('chat'); }}
+                    style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    Open
+                    <ChevronRight size={11} />
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
 
         {/* ── Active Crons Widget ───────────────────────────────────────── */}
         {activeCrons.length > 0 && (
