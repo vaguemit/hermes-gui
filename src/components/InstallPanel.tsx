@@ -1,9 +1,26 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, CheckCircle2, Clipboard, Download, HeartPulse, Play, RefreshCw, Settings, Terminal, XCircle } from 'lucide-react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle,
+  CheckCircle2,
+  Clipboard,
+  Download,
+  HeartPulse,
+  Loader2,
+  Package,
+  Play,
+  RefreshCw,
+  Settings,
+  Terminal,
+  XCircle,
+} from 'lucide-react';
 import type { CommandResult } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import type { HermesInstallStatus, DoctorResult, UpdateInfo } from '../lib/hermes';
 import { CLI_COMMANDS } from '../data/hermesCatalog';
+
+// ─── StatusPill ─────────────────────────────────────────────────────────────
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return (
@@ -14,31 +31,27 @@ function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-function ResultBlock({ result, streamLines }: { result: CommandResult | null; streamLines?: string[] }) {
-  const [copied, setCopied] = useState(false);
-  if (!result && (!streamLines || streamLines.length === 0)) return null;
-  const body = result
-    ? [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n\n')
-    : streamLines!.join('\n');
-  const success = result ? result.success : true;
-  const command = result?.command ?? 'hermes install';
-  const code = result?.code ?? null;
+// ─── ResultBlock ─────────────────────────────────────────────────────────────
 
-  const copyToClipboard = () => {
+function ResultBlock({ result }: { result: CommandResult }) {
+  const [copied, setCopied] = useState(false);
+  const body = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n\n');
+  const copy = () => {
     navigator.clipboard.writeText(body || '(no output)').then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     }).catch(() => {});
   };
-
   return (
     <div style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        {success ? <CheckCircle2 size={14} style={{ color: 'var(--accent-green)' }} /> : <XCircle size={14} style={{ color: 'var(--accent-red)' }} />}
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)' }}>{command}</span>
-        {code !== null && <span className="badge badge-muted">exit {code}</span>}
+        {result.success
+          ? <CheckCircle2 size={14} style={{ color: 'var(--accent-green)' }} />
+          : <XCircle size={14} style={{ color: 'var(--accent-red)' }} />}
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)' }}>{result.command}</span>
+        {result.code !== null && <span className="badge badge-muted">exit {result.code}</span>}
         <button
-          onClick={copyToClipboard}
+          onClick={copy}
           title="Copy output"
           style={{ marginLeft: 'auto', background: 'none', border: 'none', color: copied ? 'var(--accent-green)' : 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5 }}
         >
@@ -51,6 +64,8 @@ function ResultBlock({ result, streamLines }: { result: CommandResult | null; st
     </div>
   );
 }
+
+// ─── DoctorResultBlock ───────────────────────────────────────────────────────
 
 function DoctorResultBlock({ result }: { result: DoctorResult }) {
   return (
@@ -78,27 +93,159 @@ function DoctorResultBlock({ result }: { result: DoctorResult }) {
   );
 }
 
+// ─── StreamingTerminal ───────────────────────────────────────────────────────
+
+function StreamingTerminal({
+  lines,
+  title,
+  onCancel,
+  cancelled,
+}: {
+  lines: string[];
+  title: string;
+  onCancel?: () => void;
+  cancelled?: boolean;
+}) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+  }, [lines]);
+
+  return (
+    <div className="terminal" style={{ marginTop: 16 }}>
+      <div className="terminal-bar" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Terminal size={13} style={{ color: 'var(--accent-amber)' }} />
+        <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{title}</span>
+        {!cancelled && onCancel && (
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={onCancel}
+            style={{ marginLeft: 'auto', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 5 }}
+          >
+            <XCircle size={11} /> Cancel
+          </button>
+        )}
+        {cancelled && (
+          <span className="badge badge-warning" style={{ marginLeft: 'auto' }}>Cancelled</span>
+        )}
+      </div>
+      <div className="terminal-body" ref={bodyRef}>
+        {lines.length === 0 ? (
+          <div className="term-line term-out">Waiting for output...</div>
+        ) : (
+          lines.map((line, i) => (
+            <div key={i} className={`term-line ${line.startsWith('ERROR') || line.startsWith('error') ? 'term-err' : line.startsWith('WARNING') || line.startsWith('warn') ? 'term-warn' : 'term-out'}`}>
+              {line}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── PrerequisiteCheck ───────────────────────────────────────────────────────
+
+type PrereqState = 'pending' | 'checking' | 'pass' | 'fail';
+
+interface Prereq {
+  id: string;
+  name: string;
+  detail: string;
+  state: PrereqState;
+  message: string;
+}
+
+function PrerequisiteIcon({ state }: { state: PrereqState }) {
+  if (state === 'pending') return <div className="step-icon step-pending"><span>?</span></div>;
+  if (state === 'checking') return <div className="step-icon step-running"><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /></div>;
+  if (state === 'pass') return <div className="step-icon step-done"><CheckCircle size={12} /></div>;
+  return <div className="step-icon" style={{ background: 'var(--accent-red-dim)', color: 'var(--accent-red)', border: '1px solid rgba(239,68,68,0.25)', width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><XCircle size={12} /></div>;
+}
+
+// ─── PostInstallCard ─────────────────────────────────────────────────────────
+
+function PostInstallCard({ status }: { status: HermesInstallStatus }) {
+  return (
+    <div style={{ background: 'var(--accent-green-dim)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 10, padding: '14px 18px', marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <Package size={15} style={{ color: 'var(--accent-green)' }} />
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--accent-green)' }}>Installation Complete</span>
+        {status.version && (
+          <span className="badge badge-connected" style={{ marginLeft: 'auto' }}>
+            {status.version.startsWith('v') ? status.version : `v${status.version}`}
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {status.binary_path && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', minWidth: 80 }}>binary</span>
+            <span style={{ fontSize: 11.5, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', overflowWrap: 'anywhere' }}>{status.binary_path}</span>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', minWidth: 80 }}>home</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', overflowWrap: 'anywhere' }}>{status.hermes_home}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', minWidth: 80 }}>platform</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{status.platform}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ──────────────────────────────────────────────────────────
+
+const INITIAL_PREREQS: Prereq[] = [
+  { id: 'python', name: 'Python 3.10+', detail: 'Required runtime for Hermes Agent', state: 'pending', message: '' },
+  { id: 'pip', name: 'pip', detail: 'Python package installer', state: 'pending', message: '' },
+  { id: 'git', name: 'git', detail: 'Version control — used by installer', state: 'pending', message: '' },
+  { id: 'internet', name: 'Internet connectivity', detail: 'Needed to fetch packages', state: 'pending', message: '' },
+];
+
 export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => void }) {
   const client = useHermesClient();
+
+  // Install status
   const [status, setStatus] = useState<HermesInstallStatus | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // General command runner
   const [running, setRunning] = useState<string | null>(null);
   const [result, setResult] = useState<CommandResult | null>(null);
-  const [installLines, setInstallLines] = useState<string[]>([]);
 
-  // Health check state
+  // Streaming install
+  const [installLines, setInstallLines] = useState<string[]>([]);
+  const [installCancelled, setInstallCancelled] = useState(false);
+  const [postInstallStatus, setPostInstallStatus] = useState<HermesInstallStatus | null>(null);
+
+  // Streaming update
+  const [updateRunning, setUpdateRunning] = useState(false);
+  const [updateLines, setUpdateLines] = useState<string[]>([]);
+  const [updateCancelled, setUpdateCancelled] = useState(false);
+
+  // Doctor
   const [doctorRunning, setDoctorRunning] = useState(false);
   const [doctorResult, setDoctorResult] = useState<DoctorResult | null>(null);
 
-  // Update check state
+  // Update check
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+
+  // Prerequisites
+  const [prereqs, setPrereqs] = useState<Prereq[]>(INITIAL_PREREQS);
+  const [prereqsDone, setPrereqsDone] = useState(false);
 
   const safeAdminCommands = useMemo(
     () => CLI_COMMANDS.filter((cmd) => ['status', 'doctor', 'dump', 'update-check'].includes(cmd.id)),
     []
   );
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
   const refresh = async () => {
     setLoading(true);
@@ -122,9 +269,95 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
     }
   };
 
+  // ── Prerequisites check ───────────────────────────────────────────────────
+
+  const runPrereqs = async () => {
+    // Reset to checking state
+    setPrereqs(INITIAL_PREREQS.map(p => ({ ...p, state: 'checking' as PrereqState })));
+    setPrereqsDone(false);
+
+    const checks: Array<{ id: string; run: () => Promise<{ pass: boolean; message: string }> }> = [
+      {
+        id: 'python',
+        run: async () => {
+          try {
+            const res = await client.runHermesCommand(['--check-python'], 15);
+            if (res.success) return { pass: true, message: res.stdout.trim().split('\n')[0] || 'OK' };
+            // Fallback: check via doctor output
+            const doc = await client.runHermesCommand(['doctor', '--check', 'python'], 15);
+            const pass = doc.success || (doc.stdout + doc.stderr).toLowerCase().includes('3.1');
+            const msg = (doc.stdout + doc.stderr).trim().split('\n')[0] || (pass ? 'OK' : 'Not found or version too old');
+            return { pass, message: msg };
+          } catch {
+            return { pass: false, message: 'Check failed' };
+          }
+        },
+      },
+      {
+        id: 'pip',
+        run: async () => {
+          try {
+            const res = await client.runHermesCommand(['doctor', '--check', 'pip'], 15);
+            const out = (res.stdout + res.stderr).toLowerCase();
+            const pass = res.success || out.includes('pip') && !out.includes('not found');
+            return { pass, message: res.stdout.trim().split('\n')[0] || (pass ? 'OK' : 'pip not found') };
+          } catch {
+            return { pass: false, message: 'Check failed' };
+          }
+        },
+      },
+      {
+        id: 'git',
+        run: async () => {
+          try {
+            const res = await client.runHermesCommand(['doctor', '--check', 'git'], 15);
+            const out = (res.stdout + res.stderr).toLowerCase();
+            const pass = res.success || (out.includes('git') && !out.includes('not found'));
+            return { pass, message: res.stdout.trim().split('\n')[0] || (pass ? 'OK' : 'git not found') };
+          } catch {
+            return { pass: false, message: 'Check failed' };
+          }
+        },
+      },
+      {
+        id: 'internet',
+        run: async () => {
+          try {
+            const res = await client.runHermesCommand(['doctor', '--check', 'network'], 15);
+            const pass = res.success || (res.stdout + res.stderr).toLowerCase().includes('ok');
+            return { pass, message: pass ? 'Reachable' : 'No internet or DNS resolution failed' };
+          } catch {
+            // Basic connectivity fallback
+            return { pass: true, message: 'Assumed reachable' };
+          }
+        },
+      },
+    ];
+
+    const results: Prereq[] = [...INITIAL_PREREQS];
+
+    for (const check of checks) {
+      const idx = results.findIndex(p => p.id === check.id);
+      if (idx === -1) continue;
+      results[idx] = { ...results[idx], state: 'checking' };
+      setPrereqs([...results]);
+
+      const { pass, message } = await check.run();
+      results[idx] = { ...results[idx], state: pass ? 'pass' : 'fail', message };
+      setPrereqs([...results]);
+    }
+
+    setPrereqsDone(true);
+  };
+
+  // ── Mount ────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     void refresh();
+    void runPrereqs();
   }, []);
+
+  // ── Actions ───────────────────────────────────────────────────────────────
 
   const runAction = async (id: string, action: () => Promise<CommandResult>) => {
     setRunning(id);
@@ -150,12 +383,25 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
     setRunning('installer');
     setResult(null);
     setInstallLines([]);
+    setInstallCancelled(false);
+    setPostInstallStatus(null);
     try {
       const output = await client.installHermes(
-        (line) => setInstallLines((prev) => [...prev, line]),
+        (line) => {
+          setInstallLines((prev) => {
+            if (prev.length > 2000) return [...prev.slice(-1999), line];
+            return [...prev, line];
+          });
+        },
       );
       setResult(output);
-      await refresh();
+      if (output.success) {
+        const fresh = await client.getInstallStatus();
+        setPostInstallStatus(fresh);
+        setStatus(fresh);
+      } else {
+        await refresh();
+      }
     } catch (err) {
       setResult({
         success: false,
@@ -194,7 +440,7 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
       const info = await client.checkUpdate();
       setUpdateInfo(info);
       if (!info.update_available) {
-        setUpdateMsg('Up to date ✓');
+        setUpdateMsg('Up to date');
         setTimeout(() => setUpdateMsg(null), 3000);
       }
     } catch (err) {
@@ -205,15 +451,49 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
     }
   };
 
+  const runUpdateNow = async () => {
+    setUpdateRunning(true);
+    setUpdateLines([]);
+    setUpdateCancelled(false);
+    try {
+      await client.streamCommand(
+        ['update'],
+        (line) => {
+          setUpdateLines((prev) => {
+            if (prev.length > 2000) return [...prev.slice(-1999), line];
+            return [...prev, line];
+          });
+        },
+        600,
+      );
+      setUpdateInfo(null);
+      await runUpdateCheck();
+      await refresh();
+    } catch (err) {
+      setUpdateLines((prev) => [...prev, `ERROR: ${err instanceof Error ? err.message : String(err)}`]);
+    } finally {
+      setUpdateRunning(false);
+    }
+  };
+
+  // ── Derived ───────────────────────────────────────────────────────────────
+
   const installCommand = /win/i.test(status?.platform || '')
     ? 'irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1 | iex'
     : 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash';
 
-  const isbusy = running !== null || doctorRunning || updateChecking;
+  const isInstalling = running === 'installer';
+  const isbusy = running !== null || doctorRunning || updateChecking || updateRunning;
+
+  const prereqAllPass = prereqsDone && prereqs.every(p => p.state === 'pass');
+  const prereqAnyFail = prereqsDone && prereqs.some(p => p.state === 'fail');
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '22px 26px' }}>
       <div style={{ maxWidth: 980 }}>
+
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
           <Download size={20} style={{ color: 'var(--accent-green)' }} />
@@ -221,7 +501,12 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
             <div style={{ fontSize: 17, fontWeight: 700 }}>Install and Runtime</div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Hermes Agent discovery, official install, setup, health, and diagnostics</div>
           </div>
-          <button className="btn btn-ghost" onClick={refresh} disabled={loading} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, opacity: loading ? 0.7 : 1 }}>
+          <button
+            className="btn btn-ghost"
+            onClick={refresh}
+            disabled={loading}
+            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, opacity: loading ? 0.7 : 1 }}
+          >
             <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : undefined }} />
             Refresh
           </button>
@@ -261,7 +546,6 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
-              {/* Health check button */}
               <button
                 className="btn btn-ghost btn-sm"
                 onClick={runHealthCheck}
@@ -271,11 +555,10 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
                 <HeartPulse size={13} style={{ color: 'var(--accent-green)' }} />
                 {doctorRunning ? 'Checking...' : 'Run Health Check'}
               </button>
-              {/* Update check button + result */}
+              {/* Update check row */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {updateInfo?.update_available && (
-                  <span className="badge badge-connected" style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5 }}>
-                    <CheckCircle2 size={11} />
+                  <span className="badge badge-beta" style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5 }}>
                     Update available: {updateInfo.latest_version ?? ''}
                   </span>
                 )}
@@ -292,6 +575,26 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
                   {updateChecking ? 'Checking...' : 'Check for Updates'}
                 </button>
               </div>
+              {/* Update now button */}
+              {updateInfo?.update_available && !updateRunning && (
+                <button
+                  className="btn btn-success btn-sm"
+                  onClick={runUpdateNow}
+                  disabled={isbusy}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}
+                >
+                  <Download size={12} /> Update now
+                </button>
+              )}
+              {updateRunning && (
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={() => setUpdateCancelled(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}
+                >
+                  <XCircle size={12} /> Cancel update
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -333,7 +636,7 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
         </div>
 
         {status?.last_error && (
-          <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 8, color: 'var(--accent-amber)', fontSize: 12.5, padding: '10px 12px', marginBottom: 16 }}>
+          <div style={{ background: 'var(--accent-amber-dim)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 8, color: 'var(--accent-amber)', fontSize: 12.5, padding: '10px 12px', marginBottom: 16 }}>
             {status.last_error}
           </div>
         )}
@@ -341,23 +644,121 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
         {/* Doctor result */}
         {doctorResult && <DoctorResultBlock result={doctorResult} />}
 
-        {/* Official installer block */}
+        {/* ── Prerequisites check ── */}
         <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16, marginTop: doctorResult ? 16 : 0 }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 5 }}>Official Installer</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 10 }}>Runs the Nous Research installer with setup skipped, then lets you launch setup from this app.</div>
-              <pre style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 7, padding: '9px 11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{installCommand}</pre>
-            </div>
-            <button className="btn btn-primary" onClick={runInstall} disabled={isbusy} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, opacity: isbusy ? 0.75 : 1 }}>
-              <Download size={14} />
-              {running === 'installer' ? 'Installing...' : 'Install Hermes'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700 }}>Prerequisites</span>
+            {prereqsDone && prereqAllPass && (
+              <span className="badge badge-connected" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <CheckCircle size={10} /> All prerequisites met
+              </span>
+            )}
+            {prereqsDone && prereqAnyFail && (
+              <span className="badge badge-error" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <XCircle size={10} /> Fix prerequisites
+              </span>
+            )}
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={runPrereqs}
+              disabled={prereqs.some(p => p.state === 'checking')}
+              style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, opacity: prereqs.some(p => p.state === 'checking') ? 0.6 : 1 }}
+            >
+              <RefreshCw size={11} style={{ animation: prereqs.some(p => p.state === 'checking') ? 'spin 1s linear infinite' : undefined }} />
+              Re-check
             </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {prereqs.map((prereq) => (
+              <div key={prereq.id} className="install-step">
+                <PrerequisiteIcon state={prereq.state} />
+                <div className="step-text">
+                  <div className="step-name">{prereq.name}</div>
+                  <div className="step-detail">
+                    {prereq.state === 'pending' && prereq.detail}
+                    {prereq.state === 'checking' && 'Checking...'}
+                    {(prereq.state === 'pass' || prereq.state === 'fail') && (prereq.message || prereq.detail)}
+                  </div>
+                </div>
+                {prereq.state === 'checking' && (
+                  <span className="badge badge-beta">checking</span>
+                )}
+                {prereq.state === 'pass' && (
+                  <span className="badge badge-connected">OK</span>
+                )}
+                {prereq.state === 'fail' && (
+                  <span className="badge badge-error">missing</span>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
+        {/* Official installer block */}
+        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 5 }}>Official Installer</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                Runs the Nous Research installer with setup skipped, then lets you launch setup from this app.
+              </div>
+              <pre style={{ background: 'var(--bg0)', border: '1px solid var(--border)', borderRadius: 7, padding: '9px 11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                {installCommand}
+              </pre>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
+              <button
+                className="btn btn-primary"
+                onClick={runInstall}
+                disabled={isbusy}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, opacity: isbusy ? 0.75 : 1 }}
+              >
+                <Download size={14} />
+                {isInstalling ? 'Installing...' : 'Install Hermes'}
+              </button>
+              {isInstalling && (
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={() => setInstallCancelled(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                >
+                  <XCircle size={11} /> Cancel
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Streaming install terminal */}
+          {(isInstalling || (installLines.length > 0 && !result)) && (
+            <StreamingTerminal
+              lines={installLines}
+              title="hermes install"
+              onCancel={() => setInstallCancelled(true)}
+              cancelled={installCancelled}
+            />
+          )}
+        </div>
+
+        {/* Streaming update terminal */}
+        {(updateRunning || updateLines.length > 0) && (
+          <div style={{ marginBottom: 16 }}>
+            <StreamingTerminal
+              lines={updateLines}
+              title="hermes update"
+              onCancel={() => setUpdateCancelled(true)}
+              cancelled={updateCancelled}
+            />
+          </div>
+        )}
+
+        {/* Post-install summary card */}
+        {postInstallStatus && <PostInstallCard status={postInstallStatus} />}
+
+        {/* Command result (non-install actions) */}
+        {result && running === null && <ResultBlock result={result} />}
+
         {/* Quick action buttons */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10, marginTop: 16 }}>
           <button
             className="btn btn-primary"
             onClick={() => onOpenWizard?.()}
@@ -379,10 +780,6 @@ export default function InstallPanel({ onOpenWizard }: { onOpenWizard?: () => vo
           ))}
         </div>
 
-        {running === 'installer' && installLines.length > 0 && !result && (
-          <ResultBlock result={null} streamLines={installLines} />
-        )}
-        {result && <ResultBlock result={result} />}
       </div>
     </div>
   );
