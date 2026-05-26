@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
-import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe, Palette, Network } from 'lucide-react';
-import { getAutostartEnabled, toggleAutostart } from '../api/desktop';
+import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe, Palette, Network, Activity, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
+import { getAutostartEnabled, toggleAutostart, getHermesInstallStatus, runHermesDoctor, checkUpdate, runHermesCommand, DoctorResult, UpdateInfo } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 
 const PROVIDERS_KEYS = [
@@ -69,6 +69,7 @@ const TABS = [
   { id: 'browser', label: 'Browser', icon: Globe },
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'connection', label: 'Connection', icon: Network },
+  { id: 'diagnostics', label: 'Diagnostics', icon: Activity },
 ] as const;
 
 const THEMES = [
@@ -134,6 +135,17 @@ export default function SettingsModal() {
   const [headedMode, setHeadedMode] = useState(true);
   const [browserSaving, setBrowserSaving] = useState(false);
   const [browserSaveMsg, setBrowserSaveMsg] = useState('');
+
+  // Diagnostics tab state
+  const [diagVersion, setDiagVersion] = useState<string | null>(null);
+  const [diagVersionLoading, setDiagVersionLoading] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [doctorResult, setDoctorResult] = useState<DoctorResult | null>(null);
+  const [doctorRunning, setDoctorRunning] = useState(false);
+  const [doctorRawOpen, setDoctorRawOpen] = useState(false);
+  const [quickCmdOutput, setQuickCmdOutput] = useState<Record<string, string>>({});
+  const [quickCmdRunning, setQuickCmdRunning] = useState<Record<string, boolean>>({});
 
   // API Keys: load on tab open
   useEffect(() => {
@@ -272,6 +284,61 @@ export default function SettingsModal() {
       }).catch(() => {});
     }
   }, [settingsOpen, tab]);
+
+  // Diagnostics: load version on tab open
+  useEffect(() => {
+    if (settingsOpen && tab === 'diagnostics' && diagVersion === null && !diagVersionLoading) {
+      setDiagVersionLoading(true);
+      getHermesInstallStatus().then(status => {
+        setDiagVersion(status.version ?? 'Not installed');
+      }).catch(() => {
+        setDiagVersion('Not installed');
+      }).finally(() => {
+        setDiagVersionLoading(false);
+      });
+    }
+  }, [settingsOpen, tab]);
+
+  const handleCheckUpdate = async () => {
+    setUpdateChecking(true);
+    setUpdateInfo(null);
+    try {
+      const info = await checkUpdate();
+      setUpdateInfo(info);
+    } catch {
+      setUpdateInfo({ current_version: null, latest_version: null, update_available: false, release_url: null });
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
+
+  const handleRunDoctor = async () => {
+    setDoctorRunning(true);
+    setDoctorResult(null);
+    setDoctorRawOpen(false);
+    try {
+      const result = await runHermesDoctor();
+      setDoctorResult(result);
+    } catch {
+      setDoctorResult({ ok: false, checks: [], raw: 'Failed to run hermes doctor.' });
+    } finally {
+      setDoctorRunning(false);
+    }
+  };
+
+  const handleQuickCmd = async (key: string, args: string[]) => {
+    setQuickCmdRunning(prev => ({ ...prev, [key]: true }));
+    setQuickCmdOutput(prev => ({ ...prev, [key]: '' }));
+    try {
+      const result = await runHermesCommand(args);
+      const out = [result.stdout, result.stderr].filter(Boolean).join('\n').trim() || '(no output)';
+      setQuickCmdOutput(prev => ({ ...prev, [key]: out }));
+    } catch (e) {
+      setQuickCmdOutput(prev => ({ ...prev, [key]: String(e) }));
+    } finally {
+      setQuickCmdRunning(prev => ({ ...prev, [key]: false }));
+    }
+  };
 
   const saveBrowserSettings = async () => {
     setBrowserSaving(true);
@@ -718,6 +785,169 @@ export default function SettingsModal() {
                       <span style={{ fontSize: 13, fontWeight: 500, color: theme === t.id ? 'var(--accent-green)' : 'var(--text-primary)' }}>{t.label}</span>
                       {theme === t.id && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent-green)' }}>✓</span>}
                     </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {tab === 'diagnostics' && (
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Diagnostics</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 20 }}>Engine info, health checks, and quick commands</div>
+
+                {/* Hermes Engine section */}
+                <div style={{ marginBottom: 24 }}>
+                  <div className="section-label" style={{ marginBottom: 12 }}>Hermes Engine</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Installed version</span>
+                      {diagVersionLoading ? (
+                        <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>Loading…</span>
+                      ) : diagVersion && diagVersion !== 'Not installed' ? (
+                        <span className="badge badge-connected" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{diagVersion}</span>
+                      ) : (
+                        <span className="badge badge-error" style={{ fontSize: 11 }}>Not installed</span>
+                      )}
+                    </div>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={handleCheckUpdate}
+                      disabled={updateChecking}
+                      style={{ fontSize: 12 }}
+                    >
+                      {updateChecking ? 'Checking…' : 'Check for Updates'}
+                    </button>
+                  </div>
+                  {updateInfo && (
+                    <div style={{ padding: '10px 14px', background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <span style={{ color: 'var(--text-secondary)', minWidth: 110 }}>Current version</span>
+                          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{updateInfo.current_version ?? '—'}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <span style={{ color: 'var(--text-secondary)', minWidth: 110 }}>Latest version</span>
+                          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{updateInfo.latest_version ?? '—'}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span style={{ color: 'var(--text-secondary)', minWidth: 110 }}>Status</span>
+                          {updateInfo.update_available ? (
+                            <span className="badge badge-info" style={{ fontSize: 11 }}>Update available</span>
+                          ) : (
+                            <span className="badge badge-connected" style={{ fontSize: 11 }}>Up to date</span>
+                          )}
+                        </div>
+                        {updateInfo.release_url && (
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2 }}>
+                            <span style={{ color: 'var(--text-secondary)', minWidth: 110 }}>Release notes</span>
+                            <a
+                              href={updateInfo.release_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: 'var(--accent-blue)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}
+                            >
+                              Open <ExternalLink size={11} />
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Health Check section */}
+                <div style={{ marginBottom: 24 }}>
+                  <div className="section-label" style={{ marginBottom: 12 }}>Health Check</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={handleRunDoctor}
+                      disabled={doctorRunning}
+                      style={{ fontSize: 12 }}
+                    >
+                      {doctorRunning ? 'Running…' : 'Run Doctor'}
+                    </button>
+                    {doctorResult && (
+                      doctorResult.ok
+                        ? <span className="badge badge-connected" style={{ fontSize: 11 }}>All checks passed</span>
+                        : <span className="badge badge-error" style={{ fontSize: 11 }}>Some checks failed</span>
+                    )}
+                  </div>
+                  {doctorResult && (
+                    <div>
+                      {doctorResult.checks.length > 0 && (
+                        <div style={{ background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 8 }}>
+                          {doctorResult.checks.map((check, i) => (
+                            <div
+                              key={i}
+                              style={{
+                                display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 12px',
+                                borderBottom: i < doctorResult.checks.length - 1 ? '1px solid var(--border)' : 'none',
+                              }}
+                            >
+                              {check.passed
+                                ? <CheckCircle size={14} style={{ color: 'var(--accent-green)', marginTop: 1, flexShrink: 0 }} />
+                                : <XCircle size={14} style={{ color: 'var(--accent-red)', marginTop: 1, flexShrink: 0 }} />
+                              }
+                              <div>
+                                <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-primary)' }}>{check.name}</div>
+                                {check.message && (
+                                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>{check.message}</div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {doctorResult.raw && (
+                        <div>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => setDoctorRawOpen(v => !v)}
+                            style={{ fontSize: 11, marginBottom: 6 }}
+                          >
+                            {doctorRawOpen ? 'Hide' : 'Show'} raw output
+                          </button>
+                          {doctorRawOpen && (
+                            <div className="terminal">
+                              <div className="terminal-body" style={{ maxHeight: 180, overflowY: 'auto' }}>
+                                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: 11.5 }}>{doctorResult.raw}</pre>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Commands section */}
+                <div>
+                  <div className="section-label" style={{ marginBottom: 12 }}>Quick Commands</div>
+                  {[
+                    { key: 'status', label: 'hermes status', args: ['status'] },
+                    { key: 'version', label: 'hermes --version', args: ['--version'] },
+                  ].map(cmd => (
+                    <div key={cmd.key} style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => handleQuickCmd(cmd.key, cmd.args)}
+                          disabled={quickCmdRunning[cmd.key]}
+                          style={{ fontSize: 12 }}
+                        >
+                          {quickCmdRunning[cmd.key] ? 'Running…' : 'Run'}
+                        </button>
+                        <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)' }}>{cmd.label}</code>
+                      </div>
+                      {quickCmdOutput[cmd.key] !== undefined && (
+                        <div className="terminal">
+                          <div className="terminal-body" style={{ maxHeight: 120, overflowY: 'auto' }}>
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: 11.5 }}>{quickCmdOutput[cmd.key]}</pre>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
