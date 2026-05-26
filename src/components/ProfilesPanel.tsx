@@ -1,8 +1,14 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { User, Users, Brain, Plus, Trash2, Edit2, X, Eye, Copy, Download } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { User, Users, Brain, Plus, Trash2, Edit2, X, Eye, Copy, Download, Check } from 'lucide-react';
 import { useHermesClient } from '../lib/hermes';
 import type { ProfileMeta, MemoryFileMeta } from '../lib/hermes';
 import { useStore } from '../store';
+import {
+  listProfilesDisk,
+  createProfileDisk,
+  deleteProfileDisk,
+  renameProfileDisk,
+} from '../api/desktop';
 
 const DEFAULT_PROFILE_CONTENT = `# Profile
 
@@ -32,13 +38,25 @@ export default function ProfilesPanel() {
   // ── Profiles state ──
   const [profiles, setProfiles] = useState<ProfileMeta[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(false);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
 
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+
+  // ── Rename state ──
+  const [renamingProfile, setRenamingProfile] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Delete confirmation state ──
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // ── Memory state ──
   const [memFiles, setMemFiles] = useState<MemoryFileMeta[]>([]);
@@ -48,14 +66,33 @@ export default function ProfilesPanel() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [memConfirmDelete, setMemConfirmDelete] = useState<string | null>(null);
 
-  // ── Load profiles ──
+  // ── Load profiles — disk IPC first, fall back to client ──
   const loadProfiles = useCallback(async () => {
     setProfilesLoading(true);
+    setProfilesError(null);
     try {
-      const data = await client.listProfiles();
-      setProfiles(data);
+      // Try disk IPC first — gives us real on-disk list
+      const diskNames = await listProfilesDisk();
+      // Build ProfileMeta from disk names; try to get modified times from client
+      let enriched: ProfileMeta[] = [];
+      try {
+        const clientData = await client.listProfiles();
+        // Merge: disk names are authoritative, client data fills in metadata
+        const clientMap = new Map(clientData.map((p) => [p.name, p]));
+        enriched = diskNames.map((name) => clientMap.get(name) ?? { name, modified: '' });
+      } catch {
+        enriched = diskNames.map((name) => ({ name, modified: '' }));
+      }
+      setProfiles(enriched);
     } catch {
-      setProfiles([]);
+      // Disk IPC failed — fall back entirely to client
+      try {
+        const data = await client.listProfiles();
+        setProfiles(data);
+      } catch {
+        setProfiles([]);
+        setProfilesError('Failed to load profiles from disk.');
+      }
     } finally {
       setProfilesLoading(false);
     }
@@ -79,19 +116,44 @@ export default function ProfilesPanel() {
     loadMemFiles();
   }, [loadProfiles, loadMemFiles]);
 
+  // Focus rename input when it appears
+  useEffect(() => {
+    if (renamingProfile !== null) {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
+  }, [renamingProfile]);
+
   // ── Create profile ──
   const handleCreate = async () => {
     const name = newName.trim();
     if (!name || creating) return;
     setCreating(true);
-    await client.writeProfile(name, DEFAULT_PROFILE_CONTENT);
-    setNewName('');
-    setShowCreateForm(false);
-    await loadProfiles();
-    setCreating(false);
+    setCreateError(null);
+    try {
+      const result = await createProfileDisk(name);
+      if (!result.success) {
+        setCreateError(result.stderr || `Failed to create profile "${name}"`);
+        setCreating(false);
+        return;
+      }
+      // Also write default content via client so the profile file exists
+      try {
+        await client.writeProfile(name, DEFAULT_PROFILE_CONTENT);
+      } catch {
+        // non-fatal — directory was created, content write is best-effort
+      }
+      setNewName('');
+      setShowCreateForm(false);
+      await loadProfiles();
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Unknown error creating profile');
+    } finally {
+      setCreating(false);
+    }
   };
 
-  // ── Edit profile ──
+  // ── Edit profile (content editor) ──
   const handleEditOpen = async (name: string) => {
     const content = await client.readProfile(name);
     setEditContent(content);
@@ -109,10 +171,66 @@ export default function ProfilesPanel() {
 
   // ── Delete profile ──
   const handleDelete = async (name: string) => {
-    if (!window.confirm(`Delete profile "${name}"? This cannot be undone.`)) return;
-    await client.deleteProfile(name);
-    await loadProfiles();
-    if (editingName === name) { setEditingName(null); setEditContent(''); }
+    if (deleteConfirm !== name) {
+      // First click — show inline confirmation
+      setDeleteConfirm(name);
+      setDeleteError(null);
+      return;
+    }
+    // Second click — confirmed, proceed
+    setDeleteError(null);
+    try {
+      const result = await deleteProfileDisk(name);
+      if (!result.success) {
+        setDeleteError(`Delete failed: ${result.stderr || 'unknown error'}`);
+        setDeleteConfirm(null);
+        return;
+      }
+      setDeleteConfirm(null);
+      await loadProfiles();
+      if (editingName === name) { setEditingName(null); setEditContent(''); }
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Delete failed');
+      setDeleteConfirm(null);
+    }
+  };
+
+  // ── Rename profile ──
+  const startRename = (name: string) => {
+    setRenamingProfile(name);
+    setRenameValue(name);
+    setRenameError(null);
+  };
+
+  const commitRename = async () => {
+    if (!renamingProfile) return;
+    const newNameTrimmed = renameValue.trim();
+    if (!newNameTrimmed || newNameTrimmed === renamingProfile) {
+      setRenamingProfile(null);
+      return;
+    }
+    setRenameError(null);
+    try {
+      const result = await renameProfileDisk(renamingProfile, newNameTrimmed);
+      if (!result.success) {
+        setRenameError(`Rename failed: ${result.stderr || 'unknown error'}`);
+        return;
+      }
+      // Update active profile reference if this was the active one
+      if (activeProfile === renamingProfile) {
+        setActiveProfile(newNameTrimmed);
+      }
+      setRenamingProfile(null);
+      await loadProfiles();
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : 'Rename failed');
+    }
+  };
+
+  const cancelRename = () => {
+    setRenamingProfile(null);
+    setRenameValue('');
+    setRenameError(null);
   };
 
   // ── Duplicate profile ──
@@ -205,13 +323,34 @@ export default function ProfilesPanel() {
               <span className="section-label" style={{ margin: 0 }}>Saved Profiles</span>
               <button
                 className="btn btn-primary btn-sm"
-                onClick={() => { setShowCreateForm((v) => !v); setNewName(''); }}
+                onClick={() => { setShowCreateForm((v) => !v); setNewName(''); setCreateError(null); }}
                 style={{ display: 'flex', alignItems: 'center', gap: 6 }}
               >
                 <Plus size={13} />
                 New Profile
               </button>
             </div>
+
+            {/* Top-level error */}
+            {profilesError && (
+              <div className="badge badge-error" style={{ display: 'block', marginBottom: 12, padding: '6px 10px', fontSize: 12 }}>
+                {profilesError}
+              </div>
+            )}
+
+            {/* Delete error */}
+            {deleteError && (
+              <div className="badge badge-error" style={{ display: 'block', marginBottom: 12, padding: '6px 10px', fontSize: 12 }}>
+                {deleteError}
+              </div>
+            )}
+
+            {/* Rename error */}
+            {renameError && (
+              <div className="badge badge-error" style={{ display: 'block', marginBottom: 12, padding: '6px 10px', fontSize: 12 }}>
+                {renameError}
+              </div>
+            )}
 
             {/* Inline create form */}
             {showCreateForm && (
@@ -222,35 +361,42 @@ export default function ProfilesPanel() {
                 padding: '12px 14px',
                 marginBottom: 16,
                 display: 'flex',
+                flexDirection: 'column',
                 gap: 8,
-                alignItems: 'center',
               }}>
-                <input
-                  className="input-field"
-                  placeholder="Profile name…"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCreate();
-                    if (e.key === 'Escape') { setShowCreateForm(false); setNewName(''); }
-                  }}
-                  autoFocus
-                  style={{ flex: 1 }}
-                />
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={handleCreate}
-                  disabled={creating || !newName.trim()}
-                  style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}
-                >
-                  {creating ? 'Creating…' : 'Create'}
-                </button>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => { setShowCreateForm(false); setNewName(''); }}
-                >
-                  <X size={13} />
-                </button>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    className="input-field"
+                    placeholder="Profile name…"
+                    value={newName}
+                    onChange={(e) => { setNewName(e.target.value); setCreateError(null); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCreate();
+                      if (e.key === 'Escape') { setShowCreateForm(false); setNewName(''); setCreateError(null); }
+                    }}
+                    autoFocus
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleCreate}
+                    disabled={creating || !newName.trim()}
+                    style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    {creating ? 'Creating…' : 'Create'}
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => { setShowCreateForm(false); setNewName(''); setCreateError(null); }}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+                {createError && (
+                  <div className="badge badge-error" style={{ fontSize: 11, padding: '4px 8px' }}>
+                    {createError}
+                  </div>
+                )}
               </div>
             )}
 
@@ -290,18 +436,56 @@ export default function ProfilesPanel() {
               {profiles.map((p) => (
                 <div key={p.name}>
                   <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                      <div className="profile-avatar" style={{ width: 28, height: 28, fontSize: 11, borderRadius: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                      <div className="profile-avatar" style={{ width: 28, height: 28, fontSize: 11, borderRadius: 6, flexShrink: 0 }}>
                         {p.name.slice(0, 2).toUpperCase()}
                       </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {p.name}
-                        </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        {/* Inline rename — double-click to activate */}
+                        {renamingProfile === p.name ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <input
+                              ref={renameInputRef}
+                              className="input-field"
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') commitRename();
+                                if (e.key === 'Escape') cancelRename();
+                              }}
+                              onBlur={commitRename}
+                              style={{ fontSize: 13, padding: '3px 7px', flex: 1 }}
+                            />
+                            <button
+                              className="btn btn-icon btn-ghost btn-sm"
+                              onMouseDown={(e) => { e.preventDefault(); commitRename(); }}
+                              title="Confirm rename"
+                            >
+                              <Check size={12} style={{ color: 'var(--accent-green)' }} />
+                            </button>
+                            <button
+                              className="btn btn-icon btn-ghost btn-sm"
+                              onMouseDown={(e) => { e.preventDefault(); cancelRename(); }}
+                              title="Cancel"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div
+                            style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: p.name === 'default' ? 'default' : 'text' }}
+                            onDoubleClick={() => { if (p.name !== 'default') startRename(p.name); }}
+                            title={p.name !== 'default' ? 'Double-click to rename' : undefined}
+                          >
+                            {p.name}
+                          </div>
+                        )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-                            {p.modified}
-                          </span>
+                          {p.modified && (
+                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                              {p.modified}
+                            </span>
+                          )}
                           {p.name === 'default' && (
                             <span className="badge badge-muted" style={{ fontSize: 10, padding: '1px 6px' }}>Default</span>
                           )}
@@ -309,6 +493,7 @@ export default function ProfilesPanel() {
                       </div>
                     </div>
 
+                    {/* Action buttons */}
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
                       {activeProfile === p.name ? (
                         <span className="badge badge-connected" style={{ fontSize: 10, padding: '2px 8px' }}>Active</span>
@@ -326,7 +511,7 @@ export default function ProfilesPanel() {
                         className="btn btn-ghost btn-sm"
                         onClick={() => handleEditOpen(p.name)}
                         style={{ display: 'flex', alignItems: 'center', gap: 5 }}
-                        title="Edit"
+                        title="Edit content"
                       >
                         <Edit2 size={12} />
                         Edit
@@ -345,18 +530,44 @@ export default function ProfilesPanel() {
                       >
                         <Download size={12} />
                       </button>
-                      <button
-                        className="btn btn-icon btn-ghost btn-sm"
-                        onClick={() => handleDelete(p.name)}
-                        style={{ color: 'var(--accent-red)' }}
-                        title="Delete"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      {p.name !== 'default' && (
+                        <>
+                          {deleteConfirm === p.name ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: 11, color: 'var(--accent-red)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                                Confirm?
+                              </span>
+                              <button
+                                className="btn btn-danger btn-sm"
+                                onClick={() => handleDelete(p.name)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                              >
+                                <Trash2 size={11} />
+                                Delete
+                              </button>
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => { setDeleteConfirm(null); setDeleteError(null); }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              className="btn btn-icon btn-ghost btn-sm"
+                              onClick={() => handleDelete(p.name)}
+                              style={{ color: 'var(--accent-red)' }}
+                              title="Delete profile"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  {/* Inline editor */}
+                  {/* Inline content editor */}
                   {editingName === p.name && (
                     <div style={{
                       marginTop: 6,
