@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, X, Tag, User, Flag } from 'lucide-react';
+import { Plus, X, Tag, GripVertical, Calendar, Flag } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -17,6 +17,7 @@ interface KanbanTask {
   assignee?: string;
   createdAt: number;
   completedAt?: number;
+  dueDate?: string; // ISO date string YYYY-MM-DD
   tags: string[];
 }
 
@@ -33,7 +34,7 @@ interface KanbanBoard {
 // Constants
 // ---------------------------------------------------------------------------
 
-const PERSIST_KEY = 'hermes-kanban-boards';
+const PERSIST_KEY = 'hermes_kanban_boards';
 
 const BOARD_ICONS = ['📋', '🚀', '💡', '🔧', '📊', '🎯'];
 
@@ -55,13 +56,21 @@ interface ColumnDef {
 }
 
 const COLUMNS: ColumnDef[] = [
-  { id: 'triage', label: 'Triage', accentColor: 'var(--text-secondary)' },
-  { id: 'todo', label: 'To-do', accentColor: 'var(--text-primary)' },
-  { id: 'ready', label: 'Ready', accentColor: 'var(--accent-blue)' },
-  { id: 'running', label: 'Running', accentColor: 'var(--accent-amber)' },
-  { id: 'blocked', label: 'Blocked', accentColor: 'var(--accent-red)' },
-  { id: 'done', label: 'Done', accentColor: 'var(--accent-green)' },
+  { id: 'triage',  label: 'Triage',  accentColor: 'var(--text-secondary)' },
+  { id: 'todo',    label: 'To-do',   accentColor: 'var(--text-primary)'   },
+  { id: 'ready',   label: 'Ready',   accentColor: 'var(--accent-blue)'    },
+  { id: 'running', label: 'Running', accentColor: 'var(--accent-amber)'   },
+  { id: 'blocked', label: 'Blocked', accentColor: 'var(--accent-red)'     },
+  { id: 'done',    label: 'Done',    accentColor: 'var(--accent-green)'   },
 ];
+
+// Priority colour config
+const PRIORITY_COLORS: Record<Priority, string> = {
+  low:    'var(--text-tertiary)',
+  medium: 'var(--accent-blue)',
+  high:   'var(--accent-amber)',
+  urgent: 'var(--accent-red)',
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -78,6 +87,17 @@ function relativeTime(ts: number): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+function formatDueDate(iso: string): string {
+  // Format YYYY-MM-DD → "Mon DD"
+  try {
+    const [year, month, day] = iso.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch {
+    return iso;
+  }
 }
 
 function loadBoards(): KanbanBoard[] {
@@ -102,14 +122,10 @@ function saveBoards(boards: KanbanBoard[]) {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// PriorityBadge
 // ---------------------------------------------------------------------------
 
-interface PriorityBadgeProps {
-  priority: Priority;
-}
-
-function PriorityBadge({ priority }: PriorityBadgeProps) {
+function PriorityBadge({ priority }: { priority: Priority }) {
   if (priority === 'urgent') {
     return (
       <span style={{
@@ -118,44 +134,80 @@ function PriorityBadge({ priority }: PriorityBadgeProps) {
         color: 'var(--accent-red)',
         whiteSpace: 'nowrap',
       }}>
-        🔥 Urgent
+        <Flag size={9} style={{ color: 'var(--accent-red)' }} />
+        Urgent
       </span>
     );
   }
 
-  const dotColor =
-    priority === 'high' ? 'var(--accent-red)' :
-    priority === 'medium' ? 'var(--accent-amber)' :
-    'var(--text-tertiary)';
-
-  const textColor =
-    priority === 'high' ? 'var(--accent-red)' :
-    priority === 'medium' ? 'var(--accent-amber)' :
-    'var(--text-tertiary)';
-
-  const label =
-    priority === 'high' ? 'High' :
-    priority === 'medium' ? 'Medium' :
-    'Low';
+  const color = PRIORITY_COLORS[priority];
+  const label = priority === 'high' ? 'High' : priority === 'medium' ? 'Medium' : 'Low';
 
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 4,
-      fontSize: 10.5,
-      color: textColor,
-      whiteSpace: 'nowrap',
+      fontSize: 10.5, color, whiteSpace: 'nowrap',
     }}>
       <span style={{
-        width: 6, height: 6,
-        borderRadius: '50%',
-        background: dotColor,
-        flexShrink: 0,
-        display: 'inline-block',
+        width: 6, height: 6, borderRadius: '50%',
+        background: color, flexShrink: 0, display: 'inline-block',
       }} />
       {label}
     </span>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Priority radio dot picker
+// ---------------------------------------------------------------------------
+
+function PriorityPicker({ value, onChange }: { value: Priority; onChange: (p: Priority) => void }) {
+  const options: { value: Priority; color: string; label: string }[] = [
+    { value: 'low',    color: 'var(--text-tertiary)', label: 'Low'    },
+    { value: 'medium', color: 'var(--accent-blue)',   label: 'Medium' },
+    { value: 'high',   color: 'var(--accent-amber)',  label: 'High'   },
+    { value: 'urgent', color: 'var(--accent-red)',    label: 'Urgent' },
+  ];
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <Flag size={11} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+      {options.map((opt) => (
+        <label
+          key={opt.value}
+          title={opt.label}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: 'var(--text-secondary)' }}
+        >
+          <input
+            type="radio"
+            name="priority-pick"
+            value={opt.value}
+            checked={value === opt.value}
+            onChange={() => onChange(opt.value)}
+            style={{ display: 'none' }}
+          />
+          <span style={{
+            width: 11, height: 11, borderRadius: '50%',
+            background: opt.color,
+            border: value === opt.value
+              ? `2px solid var(--text-primary)`
+              : `2px solid transparent`,
+            outline: value === opt.value ? `1px solid ${opt.color}` : 'none',
+            outlineOffset: 1,
+            transition: 'border-color 0.12s',
+            display: 'inline-block',
+            flexShrink: 0,
+          }} />
+          {value === opt.value && <span style={{ color: opt.color, fontSize: 10.5 }}>{opt.label}</span>}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AddTaskForm
+// ---------------------------------------------------------------------------
 
 interface AddTaskFormProps {
   columnId: TaskStatus;
@@ -168,6 +220,7 @@ function AddTaskForm({ columnId, onSave, onCancel }: AddTaskFormProps) {
   const [priority, setPriority] = useState<Priority>('medium');
   const [assignee, setAssignee] = useState('');
   const [tagsRaw, setTagsRaw] = useState('');
+  const [dueDate, setDueDate] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -183,6 +236,7 @@ function AddTaskForm({ columnId, onSave, onCancel }: AddTaskFormProps) {
       priority,
       status: columnId,
       assignee: assignee.trim() || undefined,
+      dueDate: dueDate || undefined,
       tags,
     });
   };
@@ -215,25 +269,23 @@ function AddTaskForm({ columnId, onSave, onCancel }: AddTaskFormProps) {
         style={{ fontSize: 12.5, padding: '6px 9px' }}
       />
 
-      <select
-        value={priority}
-        onChange={(e) => setPriority(e.target.value as Priority)}
-        style={{
-          background: 'var(--bg3)',
-          border: '1px solid var(--border)',
-          borderRadius: 6,
-          color: 'var(--text-primary)',
-          fontSize: 12,
-          padding: '4px 7px',
-          cursor: 'pointer',
-          width: '100%',
-        }}
-      >
-        <option value="low">Low</option>
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
-        <option value="urgent">Urgent</option>
-      </select>
+      {/* Priority picker */}
+      <PriorityPicker value={priority} onChange={setPriority} />
+
+      {/* Due date */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Calendar size={11} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+        <input
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          className="input-field"
+          style={{
+            fontSize: 11.5, padding: '4px 8px', flex: 1,
+            colorScheme: 'dark',
+          }}
+        />
+      </div>
 
       <input
         className="input-field"
@@ -273,21 +325,52 @@ function AddTaskForm({ columnId, onSave, onCancel }: AddTaskFormProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Task card
+// TaskCard
 // ---------------------------------------------------------------------------
 
 interface TaskCardProps {
   task: KanbanTask;
   onMove: (taskId: string, status: TaskStatus) => void;
   onDelete: (taskId: string) => void;
+  onEditTitle: (taskId: string, newTitle: string) => void;
+  onDragStart: (e: React.DragEvent, taskId: string, fromStatus: TaskStatus) => void;
+  onDragEnd: (e: React.DragEvent) => void;
 }
 
-function TaskCard({ task, onMove, onDelete }: TaskCardProps) {
+function TaskCard({ task, onMove, onDelete, onEditTitle, onDragStart, onDragEnd }: TaskCardProps) {
   const [hovered, setHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Inline edit state
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(task.title);
+  const editRef = useRef<HTMLTextAreaElement>(null);
+
   const isDone = task.status === 'done';
+
+  // Focus textarea when editing starts
+  useEffect(() => {
+    if (editing && editRef.current) {
+      editRef.current.focus();
+      editRef.current.select();
+    }
+  }, [editing]);
+
+  const commitEdit = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== task.title) {
+      onEditTitle(task.id, trimmed);
+    } else {
+      setEditValue(task.title); // revert if empty or unchanged
+    }
+    setEditing(false);
+  };
+
+  const cancelEdit = () => {
+    setEditValue(task.title);
+    setEditing(false);
+  };
 
   const handleDeleteClick = () => {
     if (confirmDelete) {
@@ -307,6 +390,9 @@ function TaskCard({ task, onMove, onDelete }: TaskCardProps) {
   return (
     <div
       className="animate-in"
+      draggable
+      onDragStart={(e) => onDragStart(e, task.id, task.status)}
+      onDragEnd={onDragEnd}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -319,24 +405,79 @@ function TaskCard({ task, onMove, onDelete }: TaskCardProps) {
         gap: 7,
         transition: 'border-color 0.15s, background 0.15s',
         position: 'relative',
+        cursor: 'grab',
+        userSelect: 'none',
       }}
     >
-      {/* Top row: title + priority badge */}
+      {/* Drag handle + title row */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-        <span style={{
-          flex: 1,
-          fontSize: 13,
-          fontWeight: 600,
-          color: isDone ? 'var(--text-secondary)' : 'var(--text-primary)',
-          textDecoration: isDone ? 'line-through' : 'none',
-          opacity: isDone ? 0.6 : 1,
-          lineHeight: 1.4,
-          wordBreak: 'break-word',
-        }}>
-          {task.title}
-        </span>
+        <GripVertical
+          size={13}
+          style={{
+            color: 'var(--text-tertiary)',
+            flexShrink: 0,
+            marginTop: 1,
+            cursor: 'grab',
+          }}
+        />
+        {editing ? (
+          <textarea
+            ref={editRef}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(); }
+              if (e.key === 'Escape') cancelEdit();
+            }}
+            onBlur={commitEdit}
+            rows={2}
+            style={{
+              flex: 1,
+              background: 'var(--bg3)',
+              border: '1px solid var(--border-active)',
+              borderRadius: 4,
+              color: 'var(--text-primary)',
+              fontSize: 13,
+              fontFamily: 'var(--font-sans)',
+              fontWeight: 600,
+              lineHeight: 1.4,
+              padding: '3px 6px',
+              resize: 'none',
+              cursor: 'text',
+              userSelect: 'text',
+            }}
+          />
+        ) : (
+          <span
+            title="Double-click to edit"
+            onDoubleClick={() => { setEditing(true); setEditValue(task.title); }}
+            style={{
+              flex: 1,
+              fontSize: 13,
+              fontWeight: 600,
+              color: isDone ? 'var(--text-secondary)' : 'var(--text-primary)',
+              textDecoration: isDone ? 'line-through' : 'none',
+              opacity: isDone ? 0.6 : 1,
+              lineHeight: 1.4,
+              wordBreak: 'break-word',
+              cursor: 'pointer',
+            }}
+          >
+            {task.title}
+          </span>
+        )}
         <PriorityBadge priority={task.priority} />
       </div>
+
+      {/* Due date chip */}
+      {task.dueDate && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <Calendar size={10} style={{ color: 'var(--accent-blue)', flexShrink: 0 }} />
+          <span style={{ fontSize: 10.5, color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)' }}>
+            {formatDueDate(task.dueDate)}
+          </span>
+        </div>
+      )}
 
       {/* Tags */}
       {task.tags.length > 0 && (
@@ -433,6 +574,11 @@ export default function KanbanPanel() {
   const [newBoardIcon, setNewBoardIcon] = useState(BOARD_ICONS[0]);
   const newBoardInputRef = useRef<HTMLInputElement>(null);
 
+  // Drag state
+  const dragCardId = useRef<string | null>(null);
+  const dragFromStatus = useRef<TaskStatus | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
+
   // Persist on every boards change
   useEffect(() => {
     saveBoards(boards);
@@ -475,6 +621,13 @@ export default function KanbanPanel() {
     updateActiveBoard((b) => ({ ...b, tasks: b.tasks.filter((t) => t.id !== taskId) }));
   };
 
+  const handleEditTitle = (taskId: string, newTitle: string) => {
+    updateActiveBoard((b) => ({
+      ...b,
+      tasks: b.tasks.map((t) => t.id === taskId ? { ...t, title: newTitle } : t),
+    }));
+  };
+
   const handleCreateBoard = () => {
     if (!newBoardName.trim()) return;
     const board: KanbanBoard = {
@@ -490,6 +643,48 @@ export default function KanbanPanel() {
     setNewBoardName('');
     setNewBoardIcon(BOARD_ICONS[0]);
     setNewBoardOpen(false);
+  };
+
+  // ── Drag handlers ──────────────────────────────────────────────────
+
+  const handleDragStart = (e: React.DragEvent, taskId: string, fromStatus: TaskStatus) => {
+    dragCardId.current = taskId;
+    dragFromStatus.current = fromStatus;
+    // Use ghost image default; reduce opacity via style on the card's parent
+    e.dataTransfer.effectAllowed = 'move';
+    // Mark dragging element
+    const target = e.currentTarget as HTMLElement;
+    target.style.opacity = '0.5';
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    const target = e.currentTarget as HTMLElement;
+    target.style.opacity = '';
+    dragCardId.current = null;
+    dragFromStatus.current = null;
+    setDragOverColumn(null);
+  };
+
+  const handleColumnDragOver = (e: React.DragEvent, colId: TaskStatus) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverColumn(colId);
+  };
+
+  const handleColumnDragLeave = (e: React.DragEvent) => {
+    // Only clear if leaving the column container itself (not a child)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOverColumn(null);
+    }
+  };
+
+  const handleColumnDrop = (e: React.DragEvent, targetStatus: TaskStatus) => {
+    e.preventDefault();
+    setDragOverColumn(null);
+    const cardId = dragCardId.current;
+    const fromStatus = dragFromStatus.current;
+    if (!cardId || !fromStatus || fromStatus === targetStatus) return;
+    handleMoveTask(cardId, targetStatus);
   };
 
   if (!activeBoard) return null;
@@ -609,10 +804,14 @@ export default function KanbanPanel() {
         {COLUMNS.map((col) => {
           const colTasks = activeBoard.tasks.filter((t) => t.status === col.id);
           const isAdding = addingColumn === col.id;
+          const isDragOver = dragOverColumn === col.id;
 
           return (
             <div
               key={col.id}
+              onDragOver={(e) => handleColumnDragOver(e, col.id)}
+              onDragLeave={handleColumnDragLeave}
+              onDrop={(e) => handleColumnDrop(e, col.id)}
               style={{
                 minWidth: 200,
                 width: 220,
@@ -620,9 +819,11 @@ export default function KanbanPanel() {
                 display: 'flex',
                 flexDirection: 'column',
                 background: 'var(--bg1)',
-                border: '1px solid var(--border)',
+                border: `1px solid ${isDragOver ? 'var(--accent-blue)' : 'var(--border)'}`,
                 borderRadius: 12,
                 overflow: 'hidden',
+                transition: 'border-color 0.15s',
+                boxShadow: isDragOver ? '0 0 0 2px var(--accent-blue-dim)' : 'none',
               }}
             >
               {/* Column header */}
@@ -641,17 +842,11 @@ export default function KanbanPanel() {
                 }}>
                   {col.label}
                 </span>
-                <span style={{
-                  background: 'var(--bg3)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  padding: '1px 7px',
-                  fontSize: 10.5,
-                  color: 'var(--text-secondary)',
-                  fontFamily: 'var(--font-mono)',
-                  minWidth: 20,
-                  textAlign: 'center',
-                }}>
+                {/* Card count badge */}
+                <span
+                  className="badge badge-muted"
+                  style={{ fontSize: 10, fontFamily: 'var(--font-mono)', minWidth: 20, textAlign: 'center' }}
+                >
                   {colTasks.length}
                 </span>
               </div>
@@ -659,8 +854,12 @@ export default function KanbanPanel() {
               {/* Task list (scrollable) */}
               <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {colTasks.length === 0 && !isAdding && (
-                  <div style={{ color: 'var(--text-tertiary)', fontSize: 11.5, textAlign: 'center', marginTop: 20, userSelect: 'none' }}>
-                    No tasks
+                  <div style={{
+                    color: isDragOver ? 'var(--accent-blue)' : 'var(--text-tertiary)',
+                    fontSize: 11.5, textAlign: 'center', marginTop: 20, userSelect: 'none',
+                    transition: 'color 0.15s',
+                  }}>
+                    {isDragOver ? 'Drop here' : 'No tasks'}
                   </div>
                 )}
                 {colTasks.map((task) => (
@@ -669,6 +868,9 @@ export default function KanbanPanel() {
                     task={task}
                     onMove={handleMoveTask}
                     onDelete={handleDeleteTask}
+                    onEditTitle={handleEditTitle}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
                   />
                 ))}
               </div>
