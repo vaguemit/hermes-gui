@@ -29,6 +29,7 @@ import MemoryPanel from './components/MemoryPanel';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import SplashScreen from './components/SplashScreen';
+import WelcomePanel from './components/WelcomePanel';
 import { PanelRightClose, PanelRight, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // ─── Local hooks ─────────────────────────────────────────────────────────────
@@ -221,6 +222,11 @@ function AppInner() {
     client.writeFile('gui-prefs.json', JSON.stringify({ theme })).catch(() => {});
   }, [theme, client]);
 
+  // First-run onboarding: show WelcomePanel if localStorage key is not set and gateway hasn't been checked yet
+  const [onboardingDone, setOnboardingDone] = useState(() => {
+    return localStorage.getItem('hermes_onboarding_done') === '1';
+  });
+
   // Install check (wizard)
   const { showWizard, setShowWizard, wizardDone, setWizardDone, checkingInstall } = useInstallCheck();
 
@@ -307,6 +313,9 @@ function AppInner() {
   ] as const;
 
   const showRightPanel = activeSection === 'chat';
+
+  // Show onboarding wizard on first launch (before gateway status is known)
+  const showOnboarding = !onboardingDone && gatewayStatus === 'unchecked';
 
   // Show wizard for first-time users (not yet done, not still checking)
   if (!checkingInstall && showWizard && !wizardDone) {
@@ -463,6 +472,7 @@ function AppInner() {
       <CommandPalette />
       <ModelSwitcher />
       <SettingsModal />
+      {showOnboarding && <WelcomePanel onDone={() => setOnboardingDone(true)} />}
 
       {/* Toast notifications */}
       <Toast toasts={toasts} onDismiss={removeToast} />
