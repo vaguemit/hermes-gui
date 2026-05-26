@@ -384,6 +384,7 @@ fn validate_env_key(key: &str) -> Result<(), String> {
     if key.is_empty() {
         return Err("Env key cannot be empty".to_string());
     }
+    // Allow leading underscore (e.g. _CUSTOM_TOKEN) — POSIX convention
     if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return Err("Env key must contain only alphanumeric characters and underscores".to_string());
     }
@@ -393,10 +394,13 @@ fn validate_env_key(key: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Reject env values that contain unescaped newlines (would inject extra lines).
+/// Reject env values that contain characters that would corrupt the .env file.
 fn validate_env_value(value: &str) -> Result<(), String> {
     if value.contains('\n') || value.contains('\r') {
         return Err("Env value cannot contain newline characters".to_string());
+    }
+    if value.contains('\0') {
+        return Err("Env value cannot contain null bytes".to_string());
     }
     Ok(())
 }
@@ -417,18 +421,21 @@ fn validate_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Resolve `..` and `.` components without filesystem access.
-/// Needed for write paths that don't exist yet.
-fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
-    let mut out: Vec<std::path::Component> = Vec::new();
-    for component in path.components() {
+/// Walk path components and reject any `..`, root, or prefix (drive letter) components.
+/// Returns the joined absolute path under `base` if safe.
+fn normalize_path_components(base: &Path, relative: &str) -> Result<PathBuf, String> {
+    let mut result = base.to_path_buf();
+    for component in Path::new(relative).components() {
         match component {
-            std::path::Component::ParentDir => { out.pop(); }
+            std::path::Component::Normal(c) => result.push(c),
             std::path::Component::CurDir => {}
-            c => out.push(c),
+            _ => return Err(format!("path traversal rejected: {}", relative)),
         }
     }
-    out.iter().collect()
+    if !result.starts_with(base) {
+        return Err(format!("path escapes home: {}", relative));
+    }
+    Ok(result)
 }
 
 /// Reject relative paths that could escape the hermes home directory.
@@ -444,11 +451,8 @@ fn validate_subpath(rel: &str) -> Result<(), String> {
         return Err("Absolute paths not allowed".to_string());
     }
     let home = hermes_home();
-    let norm_home = normalize_path(&home);
-    let norm_joined = normalize_path(&home.join(rel));
-    if !norm_joined.starts_with(&norm_home) {
-        return Err("Path escapes the Hermes home directory".to_string());
-    }
+    // Use component-based normalization: explicitly rejects .. and root components.
+    normalize_path_components(&home, rel)?;
     Ok(())
 }
 
@@ -682,6 +686,8 @@ fn hermes_start_gateway(app_handle: tauri::AppHandle, _state: tauri::State<Gatew
     // shell hooks defined in the user's own hermes config. This is scoped to localhost.
     // GATEWAY_ALLOW_ALL_USERS: runtime-only, allows the WebView to call the local API
     // without per-session auth. Not written to disk (see comment above).
+    eprintln!("WARNING: unsafe gateway flag active: --accept-hooks (local desktop mode)");
+    eprintln!("WARNING: unsafe gateway flag active: GATEWAY_ALLOW_ALL_USERS (local loopback only, not persisted)");
     cmd.args(["gateway", "run", "--accept-hooks"])
         .env("HERMES_HOME", &home)
         .env("PATH", enhanced_path(&home))
@@ -2691,8 +2697,7 @@ fn read_env_var(key: String) -> Result<String, String> {
 
 #[tauri::command]
 fn list_cron_tasks() -> Result<Vec<serde_json::Value>, String> {
-    let bin = hermes_binary();
-    let result = run_command(bin, &[String::from("cron"), String::from("list"), String::from("--json")], 15)
+    let result = run_command(command_program(), &[String::from("cron"), String::from("list"), String::from("--json")], 15)
         .unwrap_or_else(|_| CommandResult {
             success: false,
             code: None,
@@ -2904,11 +2909,11 @@ mod tests {
     }
 
     #[test]
-    fn normalize_path_resolves_dotdot() {
+    fn normalize_path_components_allows_valid_relative() {
         let home = std::path::PathBuf::from("/home/user/.hermes");
-        let p = home.join("skills").join("..").join("config.yaml");
-        let norm = normalize_path(&p);
-        assert_eq!(norm, std::path::PathBuf::from("/home/user/.hermes/config.yaml"));
+        let result = normalize_path_components(&home, "skills/myplugin/SKILL.md");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), home.join("skills").join("myplugin").join("SKILL.md"));
     }
 
     #[test]
@@ -2924,5 +2929,56 @@ mod tests {
         let result = validate_subpath("gui-crons.json");
         // In test environment hermes_home may be arbitrary but the path won't escape it
         assert!(result.is_ok() || result.is_err()); // just verify no panic
+    }
+
+    #[test]
+    fn test_path_traversal_rejected() {
+        // .. traversal is rejected
+        assert!(validate_subpath("../etc/passwd").is_err());
+        assert!(validate_subpath("sessions/../../../etc/shadow").is_err());
+        assert!(validate_subpath("..").is_err());
+        // Absolute paths are rejected
+        assert!(validate_subpath("/tmp/evil").is_err());
+        assert!(validate_subpath("\\Windows\\System32").is_err());
+        // Valid relative paths are accepted
+        assert!(validate_subpath("sessions/foo.json").is_ok());
+        assert!(validate_subpath("gui-crons.json").is_ok());
+    }
+
+    #[test]
+    fn test_env_key_validation() {
+        // Valid keys
+        assert!(validate_env_key("ANTHROPIC_API_KEY").is_ok());
+        assert!(validate_env_key("MY_VAR_123").is_ok());
+        assert!(validate_env_key("_UNDERSCORE_START").is_ok());
+        // Invalid: key with spaces
+        assert!(validate_env_key("MY KEY").is_err());
+        // Invalid: key with =
+        assert!(validate_env_key("KEY=VALUE").is_err());
+        // Invalid: key starting with digit
+        assert!(validate_env_key("1STARTS_WITH_DIGIT").is_err());
+        // Invalid: empty key
+        assert!(validate_env_key("").is_err());
+    }
+
+    #[test]
+    fn test_env_value_newline_rejection() {
+        // Value containing \n should be rejected
+        assert!(validate_env_value("value\ninjected").is_err());
+        // Value containing \r should be rejected
+        assert!(validate_env_value("value\rinjected").is_err());
+        // Normal values with spaces and special chars should be accepted
+        assert!(validate_env_value("sk-abc123XYZ!@#$%^&*()").is_ok());
+        assert!(validate_env_value("hello world with spaces").is_ok());
+        assert!(validate_env_value("").is_ok());
+    }
+
+    #[test]
+    fn test_normalize_path_components_rejects_traversal() {
+        let base = std::path::PathBuf::from("/home/user/.hermes");
+        assert!(normalize_path_components(&base, "../etc/passwd").is_err());
+        assert!(normalize_path_components(&base, "sessions/../../evil").is_err());
+        assert!(normalize_path_components(&base, "/absolute/path").is_err());
+        assert!(normalize_path_components(&base, "sessions/valid.json").is_ok());
     }
 }
