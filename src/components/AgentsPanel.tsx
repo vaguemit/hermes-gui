@@ -26,6 +26,24 @@ const TOOL_LIST = [
   { id: 'memory',    label: 'Memory',             description: 'Persistent agent memory' },
 ];
 
+interface RunRecord {
+  id: string;
+  task: string;
+  timestamp: number;
+  status: 'success' | 'error';
+  output: string;
+}
+
+const RUN_HISTORY_KEY = 'hermes_agent_runs';
+
+function loadRunHistory(): RunRecord[] {
+  try { return JSON.parse(localStorage.getItem(RUN_HISTORY_KEY) || '[]'); } catch { return []; }
+}
+
+function saveRunHistory(records: RunRecord[]): void {
+  try { localStorage.setItem(RUN_HISTORY_KEY, JSON.stringify(records.slice(0, 10))); } catch { /* ignore */ }
+}
+
 function loadMode(): ModeId {
   try { return (localStorage.getItem('hermes-agent-mode') as ModeId) || 'auto'; } catch { return 'auto'; }
 }
@@ -109,6 +127,9 @@ export default function AgentsPanel() {
   const [enabledTools, setEnabledTools] = useState<Record<string, boolean>>(loadTools);
   const [applied, setApplied] = useState(false);
 
+  // Run history
+  const [runHistory, setRunHistory] = useState<RunRecord[]>(loadRunHistory);
+
   const applySettings = () => {
     try {
       localStorage.setItem('hermes-agent-mode', selectedMode);
@@ -166,12 +187,13 @@ export default function AgentsPanel() {
     setStreamLines([]);
     cancelRef.current = null;
 
+    let runResult: CommandResult | null = null;
     try {
       if (mode.id === 'gateway') {
-        setResult(await client.startGateway());
+        runResult = await client.startGateway();
       } else if (mode.id === 'background' || mode.id === 'goal') {
         fillChat(commandFor(mode));
-        setResult({ success: true, code: null, command: commandFor(mode), stdout: 'Staged in the chat composer.', stderr: '' });
+        runResult = { success: true, code: null, command: commandFor(mode), stdout: 'Staged in the chat composer.', stderr: '' };
       } else if (mode.needsPrompt) {
         let cancelled = false;
         cancelRef.current = () => { cancelled = true; };
@@ -179,19 +201,33 @@ export default function AgentsPanel() {
         const res = await client.streamCommand(args, (line) => { if (!cancelled) setStreamLines(prev => [...prev, line]); }, 180);
         if (cancelled) {
           setStreamLines(prev => [...prev, '— Cancelled —']);
-          setResult(null);
         } else {
-          setResult(res);
+          runResult = res;
         }
         cancelRef.current = null;
       } else {
-        setResult(await client.runHermesCommand([...mode.args, '--no-color'], 20));
+        runResult = await client.runHermesCommand([...mode.args, '--no-color'], 20);
       }
     } catch (err) {
-      setResult({ success: false, code: null, command: commandFor(mode), stdout: '', stderr: err instanceof Error ? err.message : String(err) });
+      runResult = { success: false, code: null, command: commandFor(mode), stdout: '', stderr: err instanceof Error ? err.message : String(err) };
     } finally {
       setRunning(null);
       cancelRef.current = null;
+      if (runResult) {
+        setResult(runResult);
+        const record: RunRecord = {
+          id: Math.random().toString(36).slice(2),
+          task: prompt.slice(0, 60) || mode.title,
+          timestamp: Date.now(),
+          status: runResult.success ? 'success' : 'error',
+          output: (runResult.stdout || runResult.stderr || '').slice(0, 300),
+        };
+        setRunHistory(prev => {
+          const updated = [record, ...prev].slice(0, 10);
+          saveRunHistory(updated);
+          return updated;
+        });
+      }
     }
   };
 
@@ -365,6 +401,50 @@ export default function AgentsPanel() {
         </div>
 
         <ResultBlock result={result} streamLines={streamLines} />
+
+        {/* ── Run History ──────────────────────────────────────────── */}
+        {runHistory.length > 0 && (
+          <div style={{ marginTop: 28 }}>
+            <div className="divider" style={{ marginBottom: 20 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Run History</div>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Last {runHistory.length} runs</span>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => { setRunHistory([]); saveRunHistory([]); }}
+                style={{ marginLeft: 'auto', fontSize: 11.5 }}
+              >
+                Clear
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {runHistory.map(rec => (
+                <div key={rec.id} style={{ background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ marginTop: 2, flexShrink: 0 }}>
+                    {rec.status === 'success'
+                      ? <CheckCircle2 size={13} style={{ color: 'var(--accent-green)' }} />
+                      : <XCircle size={13} style={{ color: 'var(--accent-red)' }} />}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {rec.task}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      {new Date(rec.timestamp).toLocaleTimeString()}
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => { setPrompt(rec.task); }}
+                    style={{ fontSize: 11, flexShrink: 0 }}
+                  >
+                    Re-run
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
