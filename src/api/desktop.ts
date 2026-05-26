@@ -142,7 +142,9 @@ export async function isGatewayRunning(): Promise<boolean> {
 
 export async function dispatchCronTask(description: string, timeoutSecs?: number): Promise<CommandResult> {
   if (!isTauriApp()) return browserOnlyResult(`cron: ${description}`);
-  return invoke<CommandResult>('dispatch_cron_task', { description, timeoutSecs });
+  // Rust dispatch_cron_task requires event_id (camelCase: eventId) for the stream event channel.
+  const eventId = `cron-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return invoke<CommandResult>('dispatch_cron_task', { description, eventId, timeoutSecs });
 }
 
 export function onGatewayReady(cb: (ready: boolean) => void): () => void {
@@ -212,6 +214,10 @@ export async function readEnv(): Promise<Record<string, string>> {
 
 export async function writeEnv(key: string, value: string): Promise<void> {
   if (!isTauriApp()) return;
+  // Guard: reject values with newlines before IPC (Rust validates too, belt-and-suspenders).
+  if (value.includes('\n') || value.includes('\r')) {
+    throw new Error('writeEnv: value must not contain newline characters');
+  }
   return invoke<void>('write_env', { key, value });
 }
 
@@ -220,6 +226,8 @@ export async function readConfig(): Promise<string> {
   return invoke<string>('read_config');
 }
 
+// TODO(phase-1): callers should validate/parse YAML with js-yaml before calling writeConfig
+// to prevent injection via user-supplied fields embedded in the YAML string.
 export async function writeConfig(content: string): Promise<void> {
   if (!isTauriApp()) return;
   return invoke<void>('write_config', { content });
@@ -247,6 +255,13 @@ export async function getModelConfig(): Promise<ModelConfig> {
 
 export async function setModelConfig(provider: string, model: string, baseUrl: string): Promise<void> {
   if (!isTauriApp()) return;
+  // TODO(phase-1): replace Rust set_model_config string patching with a proper YAML parser to prevent injection.
+  // Guard: reject values that contain newlines or YAML-breaking characters before sending to Rust.
+  for (const [field, value] of [['provider', provider], ['model', model], ['baseUrl', baseUrl]] as const) {
+    if (value.includes('\n') || value.includes('\r')) {
+      throw new Error(`setModelConfig: ${field} must not contain newline characters`);
+    }
+  }
   // Tauri v2: JS must pass camelCase keys — framework converts to snake_case for Rust
   return invoke<void>('set_model_config', { provider, model, baseUrl });
 }
