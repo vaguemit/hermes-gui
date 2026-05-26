@@ -1,12 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore, Skill } from '../store';
-import { Zap, Plus, Edit2, Trash2, Play, X, Save, Copy, Check, CopyPlus, Package, Download, Tag } from 'lucide-react';
+import {
+  Wand2, Plus, Edit2, Trash2, Download, Globe,
+  CheckCircle, XCircle, Loader2, Play, Copy, Check,
+  CopyPlus, Package, X, Save,
+} from 'lucide-react';
 import { useHermesClient } from '../lib/hermes';
-import type { SkillMeta } from '../lib/hermes';
+import { listHermesSkillsDir } from '../api/desktop';
 
 const generateId = () => Math.random().toString(36).slice(2);
 
-const SKILLS_FILE = 'gui-skills.json';
+const NAME_RE = /^[a-zA-Z0-9-]+$/;
 
 const SOURCE_BADGE: Record<string, string> = {
   builtin: 'badge-info',
@@ -14,90 +18,163 @@ const SOURCE_BADGE: Record<string, string> = {
   imported: 'badge-beta',
 };
 
-// Derive a display category from a skill's name
-function deriveCategory(name: string): string {
-  if (name.startsWith('claude-mem:') || name.includes(':mem')) return 'Memory';
-  if (name.includes('gateway') || name.includes('server') || name.includes('proxy')) return 'Gateway';
-  if (name.includes('agent') || name.includes('run') || name.includes('exec')) return 'Agents';
-  if (name.includes('code') || name.includes('review') || name.includes('refactor') || name.includes('debug')) return 'Code';
-  if (name.includes('file') || name.includes('read') || name.includes('write')) return 'Files';
-  if (name.includes('graph') || name.includes('search') || name.includes('explore')) return 'Search';
-  return 'General';
+// ── Static marketplace entries ───────────────────────────────────────
+interface MarketplaceSkill {
+  name: string;
+  description: string;
 }
+
+const MARKETPLACE_SKILLS: MarketplaceSkill[] = [
+  { name: 'graphify',        description: 'Any input to knowledge graph — clustered communities and BFS/DFS query tools' },
+  { name: 'web-researcher',  description: 'Search the web, fetch pages, and synthesize research reports' },
+  { name: 'code-reviewer',   description: 'Review diffs for correctness bugs, style, and security issues' },
+  { name: 'summarizer',      description: 'Summarize any document, URL, or pasted text into concise bullet points' },
+  { name: 'translator',      description: 'Translate text between any two languages with context preservation' },
+  { name: 'data-analyst',    description: 'Load CSV/JSON data, run statistical analysis, and produce charts' },
+  { name: 'image-describer', description: 'Describe images in detail — objects, layout, text, and scene context' },
+  { name: 'shell-assistant', description: 'Convert natural language requests into safe shell commands' },
+];
 
 export default function SkillsPanel() {
   const client = useHermesClient();
   const { skills, addSkill, updateSkill, deleteSkill, setActiveSection } = useStore();
+
   const [tab, setTab] = useState<'installed' | 'browse'>('installed');
+
+  // ── Form state ───────────────────────────────────────────────────────
   const [editSkill, setEditSkill] = useState<Skill | null>(null);
   const [newSkill, setNewSkill] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', content: '' });
+  const [nameError, setNameError] = useState('');
+  const [formBusy, setFormBusy] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  // ── Misc UI state ────────────────────────────────────────────────────
+  const [query, setQuery] = useState('');
   const [invokedId, setInvokedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // ── Marketplace state ────────────────────────────────────────────────
+  const [marketBusy, setMarketBusy] = useState<string | null>(null);
+  const [marketDone, setMarketDone] = useState<Set<string>>(new Set());
+  const [marketError, setMarketError] = useState<Record<string, string>>({});
   const [browseQuery, setBrowseQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [hermesSkills, setHermesSkills] = useState<SkillMeta[]>([]);
-  const [installingSkill, setInstallingSkill] = useState<string | null>(null);
-  const [installedDone, setInstalledDone] = useState<Set<string>>(new Set());
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load persisted skills from disk on mount
+  // ── Mount: sync from disk ─────────────────────────────────────────────
   useEffect(() => {
-    client.readFile(SKILLS_FILE).then(raw => {
-      if (!raw) { setLoaded(true); return; }
-      try {
-        const parsed: Skill[] = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          useStore.setState({ skills: parsed });
+    listHermesSkillsDir().then((diskSkills) => {
+      if (diskSkills.length === 0) return;
+      const existingNames = new Set(useStore.getState().skills.map((s) => s.name));
+      diskSkills.forEach((ds) => {
+        if (!existingNames.has(ds.name)) {
+          addSkill({
+            id: generateId(),
+            name: ds.name,
+            description: ds.description,
+            content: '',
+            source: 'imported',
+          });
         }
-      } catch {
-        // ignore corrupt file
-      }
-      setLoaded(true);
-    }).catch(() => setLoaded(true));
-    client.listSkills().then(setHermesSkills).catch(() => {});
-  }, []);
+      });
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Debounced persist to disk whenever skills change
-  useEffect(() => {
-    if (!loaded) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      client.writeFile(SKILLS_FILE, JSON.stringify(skills, null, 2)).catch(() => {});
-    }, 500);
-    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [skills, loaded]);
+  // ── Helpers: form ────────────────────────────────────────────────────
+  const validateName = (val: string): string => {
+    if (!val.trim()) return 'Name is required';
+    if (!NAME_RE.test(val.trim())) return 'Letters, numbers, and hyphens only';
+    return '';
+  };
 
-  const handleSave = () => {
-    if (!form.name.trim()) return;
-    if (editSkill) {
-      updateSkill(editSkill.id, { name: form.name.trim(), description: form.description, content: form.content });
-    } else {
-      addSkill({ id: generateId(), name: form.name.trim(), description: form.description, content: form.content, source: 'user' });
+  const openNew = () => {
+    setForm({ name: '', description: '', content: '# Skill\n\nDescribe what this skill does and how Hermes should execute it.\n' });
+    setNameError('');
+    setFormError('');
+    setNewSkill(true);
+    setEditSkill(null);
+  };
+
+  const openEdit = async (s: Skill) => {
+    setFormError('');
+    setNameError('');
+    setEditSkill(s);
+    setNewSkill(false);
+    // Load content from disk if available
+    let content = s.content;
+    try {
+      const raw = await client.readFile(`skills/${s.name}/SKILL.md`);
+      if (raw) content = raw;
+    } catch {
+      // fall back to store content
     }
+    setForm({ name: s.name, description: s.description, content });
+  };
+
+  const cancelEdit = () => {
     setEditSkill(null);
     setNewSkill(false);
     setForm({ name: '', description: '', content: '' });
+    setNameError('');
+    setFormError('');
+  };
+
+  const handleSave = async () => {
+    const err = validateName(form.name);
+    if (err) { setNameError(err); return; }
+    setFormBusy(true);
+    setFormError('');
+    try {
+      const name = form.name.trim();
+      if (newSkill) {
+        // Create via CLI then write SKILL.md
+        const result = await client.runHermesCommand(['skill', 'create', name]);
+        if (!result.success) {
+          // Non-fatal — CLI may not support this command, still write file
+        }
+        await client.writeFile(`skills/${name}/SKILL.md`, form.content);
+        addSkill({ id: generateId(), name, description: form.description, content: form.content, source: 'user' });
+        // Refresh disk list to pick up the new entry
+        listHermesSkillsDir().catch(() => {});
+      } else if (editSkill) {
+        await client.writeFile(`skills/${name}/SKILL.md`, form.content);
+        updateSkill(editSkill.id, { name, description: form.description, content: form.content });
+      }
+      cancelEdit();
+    } catch (e) {
+      setFormError(String(e));
+    } finally {
+      setFormBusy(false);
+    }
   };
 
   const handleFormKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      handleSave();
-    }
-    if (e.key === 'Escape') {
-      cancelEdit();
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSave(); }
+    if (e.key === 'Escape') cancelEdit();
+  };
+
+  // ── Delete (two-step) ────────────────────────────────────────────────
+  const handleDeleteClick = (s: Skill) => {
+    if (confirmDeleteId === s.id) {
+      // Second click — proceed
+      setDeletingId(s.id);
+      setConfirmDeleteId(null);
+      client.runHermesCommand(['skill', 'delete', s.name])
+        .catch(() => {})
+        .finally(() => {
+          deleteSkill(s.id);
+          setDeletingId(null);
+          if (editSkill?.id === s.id) cancelEdit();
+        });
+    } else {
+      setConfirmDeleteId(s.id);
+      // Auto-cancel confirm after 3s
+      setTimeout(() => setConfirmDeleteId((prev) => prev === s.id ? null : prev), 3000);
     }
   };
 
-  const handleDelete = (s: Skill) => {
-    deleteSkill(s.id);
-    if (invokedId === s.id) setInvokedId(null);
-    if (editSkill?.id === s.id) { setEditSkill(null); setNewSkill(false); }
-  };
-
+  // ── Invoke ───────────────────────────────────────────────────────────
   const handleInvoke = (s: Skill) => {
     if (!s.content.trim()) return;
     setActiveSection('chat');
@@ -112,110 +189,93 @@ export default function SkillsPanel() {
       inputEl.focus();
     }, 80);
     setInvokedId(s.id);
-    setTimeout(() => setInvokedId(prev => prev === s.id ? null : prev), 1200);
-  };
-
-  const handleDuplicate = (s: Skill) => {
-    addSkill({
-      id: generateId(),
-      name: `${s.name}-copy`,
-      description: s.description,
-      content: s.content,
-      source: 'user',
-    });
+    setTimeout(() => setInvokedId((prev) => prev === s.id ? null : prev), 1200);
   };
 
   const handleCopy = (s: Skill) => {
     navigator.clipboard.writeText(s.content).then(() => {
       setCopiedId(s.id);
-      setTimeout(() => setCopiedId(prev => prev === s.id ? null : prev), 1500);
+      setTimeout(() => setCopiedId((prev) => prev === s.id ? null : prev), 1500);
     }).catch(() => {});
   };
 
-  const openEdit = (s: Skill) => {
-    setForm({ name: s.name, description: s.description, content: s.content });
-    setEditSkill(s);
-    setNewSkill(false);
+  const handleDuplicate = (s: Skill) => {
+    addSkill({ id: generateId(), name: `${s.name}-copy`, description: s.description, content: s.content, source: 'user' });
   };
 
-  const openNew = () => {
-    setForm({ name: '', description: '', content: '# Skill Name\n\nDescribe what the skill does and how Hermes should execute it.\n' });
-    setNewSkill(true);
-    setEditSkill(null);
+  // ── Marketplace install ──────────────────────────────────────────────
+  const handleMarketInstall = async (name: string) => {
+    if (marketBusy || marketDone.has(name)) return;
+    setMarketBusy(name);
+    setMarketError((prev) => { const n = { ...prev }; delete n[name]; return n; });
+    try {
+      const result = await client.runHermesCommand(['skill', 'install', name]);
+      if (result.success) {
+        setMarketDone((prev) => new Set(prev).add(name));
+        // Add to store if not already present
+        if (!useStore.getState().skills.find((s) => s.name === name)) {
+          const entry = MARKETPLACE_SKILLS.find((m) => m.name === name);
+          addSkill({ id: generateId(), name, description: entry?.description ?? '', content: '', source: 'imported' });
+        }
+      } else {
+        setMarketError((prev) => ({ ...prev, [name]: result.stderr || 'Install failed' }));
+      }
+    } catch (e) {
+      setMarketError((prev) => ({ ...prev, [name]: String(e) }));
+    } finally {
+      setMarketBusy(null);
+    }
   };
 
-  const cancelEdit = () => {
-    setEditSkill(null);
-    setNewSkill(false);
-    setForm({ name: '', description: '', content: '' });
-  };
-
-  const handleInstall = (skillName: string) => {
-    setInstallingSkill(skillName);
-    client.runHermesCommand(['skills', 'install', skillName]).then(() => {
-      setInstalledDone(prev => new Set(prev).add(skillName));
-      setTimeout(() => {
-        setInstalledDone(prev => {
-          const next = new Set(prev);
-          next.delete(skillName);
-          return next;
-        });
-        setInstallingSkill(prev => prev === skillName ? null : prev);
-      }, 2000);
-    }).catch(() => {
-      setInstallingSkill(prev => prev === skillName ? null : prev);
-    });
-  };
-
+  // ── Derived ──────────────────────────────────────────────────────────
   const isEditing = editSkill !== null || newSkill;
 
-  // Installed tab — filter by search query
   const filteredSkills = query.trim()
-    ? skills.filter(s =>
+    ? skills.filter((s) =>
         s.name.toLowerCase().includes(query.toLowerCase()) ||
         s.description.toLowerCase().includes(query.toLowerCase())
       )
     : skills;
 
-  // Group installed skills by source
   const groups: Array<{ label: string; key: string; items: Skill[] }> = [
-    { label: 'User', key: 'user', items: filteredSkills.filter(s => s.source === 'user') },
-    { label: 'Imported', key: 'imported', items: filteredSkills.filter(s => s.source === 'imported') },
-    { label: 'Builtin', key: 'builtin', items: filteredSkills.filter(s => s.source === 'builtin') },
-  ].filter(g => g.items.length > 0);
+    { label: 'User', key: 'user', items: filteredSkills.filter((s) => s.source === 'user') },
+    { label: 'Imported', key: 'imported', items: filteredSkills.filter((s) => s.source === 'imported') },
+    { label: 'Builtin', key: 'builtin', items: filteredSkills.filter((s) => s.source === 'builtin') },
+  ].filter((g) => g.items.length > 0);
 
-  // Browse tab — derive categories from hermesSkills
-  const allCategories = Array.from(new Set(hermesSkills.map(s => deriveCategory(s.name)))).sort();
+  const filteredMarket = browseQuery.trim()
+    ? MARKETPLACE_SKILLS.filter((m) =>
+        m.name.toLowerCase().includes(browseQuery.toLowerCase()) ||
+        m.description.toLowerCase().includes(browseQuery.toLowerCase())
+      )
+    : MARKETPLACE_SKILLS;
 
-  const filteredBrowse = hermesSkills.filter(s => {
-    const q = browseQuery.toLowerCase();
-    const matchesQuery = !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q);
-    const matchesCat = !selectedCategory || deriveCategory(s.name) === selectedCategory;
-    return matchesQuery && matchesCat;
-  });
-
+  // ── Render ───────────────────────────────────────────────────────────
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: '20px 24px' }}>
       <div style={{ maxWidth: 860 }}>
-        {/* Header */}
+
+        {/* ── Header ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <Zap size={20} style={{ color: 'var(--accent-green)' }} />
+          <Wand2 size={20} style={{ color: 'var(--accent-green)', flexShrink: 0 }} />
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>Skills Browser</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>Skills</div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Reusable instruction sets — invoke to pre-fill chat</div>
           </div>
-          {tab === 'installed' && (
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={openNew}
-              style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}
-            >
-              <Plus size={14} /> New Skill
-            </button>
-          )}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            {tab === 'installed' && (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={openNew}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <Plus size={13} /> New Skill
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Tab bar */}
+        {/* ── Tab bar ── */}
         <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
           <button
             className={`tab-btn${tab === 'installed' ? ' active' : ''}`}
@@ -231,15 +291,15 @@ export default function SkillsPanel() {
             onClick={() => setTab('browse')}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            <Download size={13} />
-            Browse
-            {hermesSkills.length > 0 && (
-              <span className="badge badge-muted" style={{ fontSize: 10, marginLeft: 2 }}>{hermesSkills.length}</span>
-            )}
+            <Globe size={13} />
+            Marketplace
+            <span className="badge badge-muted" style={{ fontSize: 10, marginLeft: 2 }}>{MARKETPLACE_SKILLS.length}</span>
           </button>
         </div>
 
-        {/* INSTALLED TAB */}
+        {/* ══════════════════════════════════════════
+            INSTALLED TAB
+        ══════════════════════════════════════════ */}
         {tab === 'installed' && (
           <>
             {skills.length > 3 && (
@@ -247,13 +307,14 @@ export default function SkillsPanel() {
                 className="input-field"
                 placeholder="Filter skills..."
                 value={query}
-                onChange={e => setQuery(e.target.value)}
+                onChange={(e) => setQuery(e.target.value)}
                 style={{ marginBottom: 12, fontSize: 13 }}
               />
             )}
 
             <div style={{ display: 'grid', gridTemplateColumns: isEditing ? '1fr 1fr' : '1fr', gap: 16 }}>
-              {/* Skill list with source grouping */}
+
+              {/* Skill list */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {skills.length === 0 && (
                   <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
@@ -274,180 +335,143 @@ export default function SkillsPanel() {
                       </div>
                     )}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {group.items.map((s) => (
-                        <div
-                          key={s.id}
-                          style={{
-                            background: editSkill?.id === s.id ? 'var(--accent-green-dim)' : 'var(--bg2)',
-                            border: `1px solid ${editSkill?.id === s.id ? 'var(--accent-green)' : invokedId === s.id ? 'var(--accent-amber)' : 'var(--border)'}`,
-                            borderRadius: 10,
-                            padding: '13px 16px',
-                            transition: 'border-color 0.2s, background 0.2s',
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13.5, color: 'var(--accent-green)' }}>
-                                  /{s.name}
-                                </span>
-                                <span className={`badge ${SOURCE_BADGE[s.source] ?? 'badge-muted'}`}>{s.source}</span>
-                              </div>
-                              {s.description && (
-                                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {s.description}
+                      {group.items.map((s) => {
+                        const isConfirming = confirmDeleteId === s.id;
+                        const isDeleting = deletingId === s.id;
+                        return (
+                          <div
+                            key={s.id}
+                            style={{
+                              background: editSkill?.id === s.id ? 'var(--accent-green-dim)' : 'var(--bg2)',
+                              border: `1px solid ${editSkill?.id === s.id ? 'var(--accent-green)' : invokedId === s.id ? 'var(--accent-amber)' : isConfirming ? 'var(--accent-red)' : 'var(--border)'}`,
+                              borderRadius: 10,
+                              padding: '13px 16px',
+                              transition: 'border-color 0.2s, background 0.2s',
+                              opacity: isDeleting ? 0.5 : 1,
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13.5, color: 'var(--accent-green)' }}>
+                                    /{s.name}
+                                  </span>
+                                  <span className={`badge ${SOURCE_BADGE[s.source] ?? 'badge-muted'}`}>{s.source}</span>
                                 </div>
-                              )}
+                                {s.description && (
+                                  <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {s.description}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div style={{ display: 'flex', gap: 4, flexShrink: 0, alignItems: 'center' }}>
+                                {/* Invoke */}
+                                <button
+                                  onClick={() => handleInvoke(s)}
+                                  title="Load into chat input"
+                                  className="btn btn-sm"
+                                  style={{
+                                    background: invokedId === s.id ? 'var(--accent-amber-dim)' : 'var(--accent-green-dim)',
+                                    border: `1px solid ${invokedId === s.id ? 'rgba(245,158,11,0.4)' : 'rgba(34,197,94,0.3)'}`,
+                                    color: invokedId === s.id ? 'var(--accent-amber)' : 'var(--accent-green)',
+                                    padding: '4px 9px',
+                                    fontSize: 11,
+                                    gap: 4,
+                                  }}
+                                >
+                                  <Play size={11} /> {invokedId === s.id ? 'Sent!' : 'Invoke'}
+                                </button>
+
+                                {/* Copy */}
+                                <button
+                                  onClick={() => handleCopy(s)}
+                                  title="Copy content to clipboard"
+                                  className="btn btn-icon btn-ghost btn-sm"
+                                  style={{
+                                    color: copiedId === s.id ? 'var(--accent-green)' : 'var(--text-secondary)',
+                                    borderColor: copiedId === s.id ? 'var(--accent-green)' : undefined,
+                                    padding: 5,
+                                  }}
+                                >
+                                  {copiedId === s.id ? <Check size={13} /> : <Copy size={13} />}
+                                </button>
+
+                                {/* Edit */}
+                                <button
+                                  onClick={() => openEdit(s)}
+                                  title="Edit"
+                                  className="btn btn-icon btn-ghost btn-sm"
+                                  style={{ padding: 5, color: 'var(--text-secondary)' }}
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+
+                                {/* Duplicate */}
+                                <button
+                                  onClick={() => handleDuplicate(s)}
+                                  title="Duplicate"
+                                  className="btn btn-icon btn-ghost btn-sm"
+                                  style={{ padding: 5, color: 'var(--text-secondary)' }}
+                                >
+                                  <CopyPlus size={13} />
+                                </button>
+
+                                {/* Delete (two-step) */}
+                                {isConfirming ? (
+                                  <button
+                                    onClick={() => handleDeleteClick(s)}
+                                    title="Confirm delete"
+                                    className="btn btn-danger btn-sm"
+                                    disabled={isDeleting}
+                                    style={{ padding: '4px 8px', fontSize: 11, gap: 4, flexShrink: 0 }}
+                                  >
+                                    {isDeleting
+                                      ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                                      : <><XCircle size={11} /> Confirm?</>
+                                    }
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleDeleteClick(s)}
+                                    title="Delete"
+                                    className="btn btn-icon btn-ghost btn-sm"
+                                    disabled={isDeleting}
+                                    style={{ padding: 5, color: 'var(--text-secondary)' }}
+                                  >
+                                    {isDeleting
+                                      ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                                      : <Trash2 size={13} />
+                                    }
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
-                            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                              {/* Invoke */}
-                              <button
-                                onClick={() => handleInvoke(s)}
-                                title="Load into chat input"
-                                style={{
-                                  background: invokedId === s.id ? 'var(--accent-amber-dim)' : 'var(--accent-green-dim)',
-                                  border: `1px solid ${invokedId === s.id ? 'rgba(245,158,11,0.4)' : 'rgba(34,197,94,0.3)'}`,
-                                  borderRadius: 6,
-                                  padding: '4px 9px',
-                                  cursor: 'pointer',
-                                  color: invokedId === s.id ? 'var(--accent-amber)' : 'var(--accent-green)',
-                                  fontSize: 11,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                  transition: 'all 0.2s',
-                                }}
-                              >
-                                <Play size={11} /> {invokedId === s.id ? 'Sent!' : 'Invoke'}
-                              </button>
-
-                              {/* Copy content */}
-                              <button
-                                onClick={() => handleCopy(s)}
-                                title="Copy content to clipboard"
-                                style={{
-                                  background: 'none',
-                                  border: '1px solid var(--border)',
-                                  borderRadius: 6,
-                                  padding: 5,
-                                  cursor: 'pointer',
-                                  color: copiedId === s.id ? 'var(--accent-green)' : 'var(--text-secondary)',
-                                  borderColor: copiedId === s.id ? 'var(--accent-green)' : 'var(--border)',
-                                  transition: 'color 0.15s, border-color 0.15s',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                }}
-                              >
-                                {copiedId === s.id ? <Check size={13} /> : <Copy size={13} />}
-                              </button>
-
-                              {/* Edit */}
-                              <button
-                                onClick={() => openEdit(s)}
-                                title="Edit"
-                                style={{
-                                  background: 'none',
-                                  border: '1px solid var(--border)',
-                                  borderRadius: 6,
-                                  padding: 5,
-                                  cursor: 'pointer',
-                                  color: 'var(--text-secondary)',
-                                  transition: 'color 0.15s, border-color 0.15s',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                }}
-                                onMouseEnter={e => {
-                                  (e.currentTarget as HTMLElement).style.color = 'var(--accent-green)';
-                                  (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-green)';
-                                }}
-                                onMouseLeave={e => {
-                                  (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
-                                  (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
-                                }}
-                              >
-                                <Edit2 size={13} />
-                              </button>
-
-                              {/* Duplicate */}
-                              <button
-                                onClick={() => handleDuplicate(s)}
-                                title="Duplicate skill"
-                                style={{
-                                  background: 'none',
-                                  border: '1px solid var(--border)',
-                                  borderRadius: 6,
-                                  padding: 5,
-                                  cursor: 'pointer',
-                                  color: 'var(--text-secondary)',
-                                  transition: 'color 0.15s, border-color 0.15s',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                }}
-                                onMouseEnter={e => {
-                                  (e.currentTarget as HTMLElement).style.color = 'var(--accent-green)';
-                                  (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-green)';
-                                }}
-                                onMouseLeave={e => {
-                                  (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
-                                  (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
-                                }}
-                              >
-                                <CopyPlus size={13} />
-                              </button>
-
-                              {/* Delete */}
-                              <button
-                                onClick={() => handleDelete(s)}
-                                title="Delete"
-                                style={{
-                                  background: 'none',
-                                  border: '1px solid var(--border)',
-                                  borderRadius: 6,
-                                  padding: 5,
-                                  cursor: 'pointer',
-                                  color: 'var(--text-secondary)',
-                                  transition: 'color 0.15s, border-color 0.15s',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                }}
-                                onMouseEnter={e => {
-                                  (e.currentTarget as HTMLElement).style.color = 'var(--accent-red)';
-                                  (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-red)';
-                                }}
-                                onMouseLeave={e => {
-                                  (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
-                                  (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
-                                }}
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
+                            {/* Content preview */}
+                            {s.content && (
+                              <div style={{
+                                marginTop: 8,
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: 11,
+                                color: 'var(--text-tertiary)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                paddingLeft: 2,
+                              }}>
+                                {s.content.replace(/\n/g, ' ').slice(0, 120)}
+                              </div>
+                            )}
                           </div>
-
-                          {/* Content preview */}
-                          {s.content && (
-                            <div style={{
-                              marginTop: 8,
-                              fontFamily: 'var(--font-mono)',
-                              fontSize: 11,
-                              color: 'var(--text-tertiary)',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              paddingLeft: 2,
-                            }}>
-                              {s.content.replace(/\n/g, ' ').slice(0, 120)}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Editor panel */}
+              {/* ── Editor panel ── */}
               {isEditing && (
                 <div
                   className="animate-in"
@@ -474,19 +498,33 @@ export default function SkillsPanel() {
                     </button>
                   </div>
 
+                  {/* Name */}
                   <div>
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>
                       Skill Name
                     </label>
                     <input
                       className="input-field"
-                      placeholder="summarize"
+                      placeholder="my-skill"
                       value={form.name}
-                      onChange={e => setForm({ ...form, name: e.target.value })}
-                      style={{ fontFamily: 'var(--font-mono)' }}
+                      onChange={(e) => {
+                        setForm({ ...form, name: e.target.value });
+                        setNameError(e.target.value ? validateName(e.target.value) : '');
+                      }}
+                      disabled={!newSkill}
+                      style={{ fontFamily: 'var(--font-mono)', opacity: newSkill ? 1 : 0.6 }}
                     />
+                    {nameError && (
+                      <div style={{ fontSize: 11, color: 'var(--accent-red)', marginTop: 4 }}>{nameError}</div>
+                    )}
+                    {newSkill && (
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
+                        Letters, numbers, and hyphens only
+                      </div>
+                    )}
                   </div>
 
+                  {/* Description */}
                   <div>
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>
                       Description
@@ -495,35 +533,49 @@ export default function SkillsPanel() {
                       className="input-field"
                       placeholder="What does this skill do?"
                       value={form.description}
-                      onChange={e => setForm({ ...form, description: e.target.value })}
+                      onChange={(e) => setForm({ ...form, description: e.target.value })}
                     />
                   </div>
 
+                  {/* Content */}
                   <div style={{ flex: 1 }}>
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>
-                      Content
+                      SKILL.md Content
                     </label>
                     <textarea
                       className="input-field"
                       value={form.content}
-                      onChange={e => setForm({ ...form, content: e.target.value })}
+                      onChange={(e) => setForm({ ...form, content: e.target.value })}
                       rows={12}
                       placeholder="Write the prompt or instructions for this skill..."
                       style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, resize: 'vertical' }}
                     />
                   </div>
 
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  {formError && (
+                    <div style={{ fontSize: 12, color: 'var(--accent-red)', background: 'var(--accent-red-dim)', padding: '8px 10px', borderRadius: 6 }}>
+                      {formError}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <button
                       className="btn btn-primary btn-sm"
                       onClick={handleSave}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                      disabled={formBusy || !!nameError}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: formBusy || !!nameError ? 0.6 : 1 }}
                     >
-                      <Save size={13} /> Save
+                      {formBusy
+                        ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Saving...</>
+                        : <><Save size={13} /> Save</>
+                      }
                     </button>
-                    <button className="btn btn-ghost btn-sm" onClick={cancelEdit}>
+                    <button className="btn btn-ghost btn-sm" onClick={cancelEdit} disabled={formBusy}>
                       Cancel
                     </button>
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto', fontFamily: 'var(--font-mono)' }}>
+                      Ctrl+Enter to save
+                    </span>
                   </div>
                 </div>
               )}
@@ -531,65 +583,43 @@ export default function SkillsPanel() {
           </>
         )}
 
-        {/* BROWSE TAB */}
+        {/* ══════════════════════════════════════════
+            MARKETPLACE TAB
+        ══════════════════════════════════════════ */}
         {tab === 'browse' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* Search */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8 }}>
+              <Globe size={14} style={{ color: 'var(--accent-blue)', flexShrink: 0 }} />
+              <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                Install community skills directly into your Hermes skills directory.
+              </span>
+            </div>
+
             <input
               className="input-field"
-              placeholder="Search skills..."
+              placeholder="Search marketplace..."
               value={browseQuery}
-              onChange={e => setBrowseQuery(e.target.value)}
+              onChange={(e) => setBrowseQuery(e.target.value)}
               style={{ fontSize: 13 }}
             />
 
-            {/* Category filter pills */}
-            {allCategories.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                <Tag size={13} style={{ color: 'var(--text-secondary)', alignSelf: 'center' }} />
-                {allCategories.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(prev => prev === cat ? null : cat)}
-                    className={`badge ${selectedCategory === cat ? 'badge-connected' : 'badge-muted'}`}
-                    style={{
-                      cursor: 'pointer',
-                      border: 'none',
-                      fontSize: 11,
-                      padding: '3px 9px',
-                      borderRadius: 'var(--radius-sm)',
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Skills list */}
-            {hermesSkills.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
-                No backend skills found. Make sure Hermes is running.
-              </div>
-            )}
-            {filteredBrowse.length === 0 && hermesSkills.length > 0 && (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
-                No skills match your filter.
-              </div>
-            )}
-
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {filteredBrowse.map(s => {
-                const cat = deriveCategory(s.name);
-                const isDone = installedDone.has(s.name);
-                const isInstalling = installingSkill === s.name;
+              {filteredMarket.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
+                  No skills match &ldquo;{browseQuery}&rdquo;
+                </div>
+              )}
+              {filteredMarket.map((m) => {
+                const isDone = marketDone.has(m.name);
+                const isBusy = marketBusy === m.name;
+                const errMsg = marketError[m.name];
+                const alreadyInstalled = skills.some((s) => s.name === m.name);
                 return (
                   <div
-                    key={s.name}
+                    key={m.name}
                     style={{
                       background: 'var(--bg2)',
-                      border: '1px solid var(--border)',
+                      border: `1px solid ${isDone ? 'rgba(34,197,94,0.3)' : errMsg ? 'rgba(239,68,68,0.25)' : 'var(--border)'}`,
                       borderRadius: 10,
                       padding: '13px 16px',
                       display: 'flex',
@@ -597,43 +627,45 @@ export default function SkillsPanel() {
                       gap: 14,
                       transition: 'border-color 0.2s',
                     }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-hover)'}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3 }}>
-                        {s.name}
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3, fontFamily: 'var(--font-mono)' }}>
+                        {m.name}
                       </div>
-                      {s.description && (
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {s.description}
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {m.description}
+                      </div>
+                      {errMsg && (
+                        <div style={{ fontSize: 11, color: 'var(--accent-red)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
+                          {errMsg}
                         </div>
                       )}
                     </div>
-                    <span className="badge badge-muted" style={{ fontSize: 10, flexShrink: 0 }}>
-                      {cat}
-                    </span>
+
+                    {alreadyInstalled && !isDone && (
+                      <span className="badge badge-connected" style={{ flexShrink: 0, fontSize: 10 }}>installed</span>
+                    )}
+
                     <button
-                      className="btn btn-sm btn-ghost"
-                      onClick={() => !isDone && !isInstalling && handleInstall(s.name)}
-                      disabled={isInstalling}
+                      className={`btn btn-sm ${isDone ? 'btn-success' : errMsg ? 'btn-danger' : 'btn-ghost'}`}
+                      onClick={() => handleMarketInstall(m.name)}
+                      disabled={isBusy || isDone || alreadyInstalled}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        flexShrink: 0,
-                        color: isDone ? 'var(--accent-green)' : undefined,
-                        borderColor: isDone ? 'var(--accent-green)' : undefined,
-                        opacity: isInstalling ? 0.6 : 1,
-                        cursor: isDone || isInstalling ? 'default' : 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                        opacity: isBusy ? 0.7 : 1,
+                        cursor: isDone || alreadyInstalled ? 'default' : 'pointer',
                         fontSize: 12,
                       }}
                     >
                       {isDone
-                        ? <><Check size={12} /> Installed</>
-                        : isInstalling
-                          ? 'Installing...'
-                          : <><Download size={12} /> Install</>
+                        ? <><CheckCircle size={12} /> Installed</>
+                        : isBusy
+                          ? <><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Installing...</>
+                          : errMsg
+                            ? <><XCircle size={12} /> Retry</>
+                            : alreadyInstalled
+                              ? <><CheckCircle size={12} /> Installed</>
+                              : <><Download size={12} /> Install</>
                       }
                     </button>
                   </div>
