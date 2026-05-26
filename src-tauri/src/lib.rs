@@ -2517,6 +2517,87 @@ fn set_gateway_port(port: u16) -> Result<(), String> {
     std::fs::write(desktop_config_path(), content).map_err(|e| e.to_string())
 }
 
+// ── Profile management (directory-based) ─────────────────────────────────────
+
+#[tauri::command]
+fn hermes_list_profiles() -> Result<Vec<String>, String> {
+    let home = hermes_home();
+    let profiles_dir = home.join("profiles");
+    if !profiles_dir.exists() {
+        return Ok(vec!["default".to_string()]);
+    }
+    let mut names: Vec<String> = std::fs::read_dir(&profiles_dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+    names.sort();
+    if !names.contains(&"default".to_string()) {
+        names.insert(0, "default".to_string());
+    }
+    Ok(names)
+}
+
+#[tauri::command]
+fn hermes_create_profile(name: String) -> Result<CommandResult, String> {
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains('.') {
+        return Err("Invalid profile name".to_string());
+    }
+    let home = hermes_home();
+    let profile_dir = home.join("profiles").join(&name);
+    std::fs::create_dir_all(&profile_dir).map_err(|e| e.to_string())?;
+    Ok(CommandResult {
+        success: true,
+        code: Some(0),
+        command: format!("create profile {}", name),
+        stdout: format!("Profile '{}' created", name),
+        stderr: String::new(),
+    })
+}
+
+#[tauri::command]
+fn hermes_delete_profile(name: String) -> Result<CommandResult, String> {
+    if name == "default" {
+        return Err("Cannot delete the default profile".to_string());
+    }
+    let home = hermes_home();
+    let profile_dir = home.join("profiles").join(&name);
+    if profile_dir.exists() {
+        std::fs::remove_dir_all(&profile_dir).map_err(|e| e.to_string())?;
+    }
+    Ok(CommandResult {
+        success: true,
+        code: Some(0),
+        command: format!("delete profile {}", name),
+        stdout: format!("Profile '{}' deleted", name),
+        stderr: String::new(),
+    })
+}
+
+#[tauri::command]
+fn hermes_rename_profile(old_name: String, new_name: String) -> Result<CommandResult, String> {
+    if old_name == "default" {
+        return Err("Cannot rename the default profile".to_string());
+    }
+    if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') {
+        return Err("Invalid profile name".to_string());
+    }
+    let home = hermes_home();
+    let old_dir = home.join("profiles").join(&old_name);
+    let new_dir = home.join("profiles").join(&new_name);
+    if old_dir.exists() {
+        std::fs::rename(&old_dir, &new_dir).map_err(|e| e.to_string())?;
+    }
+    Ok(CommandResult {
+        success: true,
+        code: Some(0),
+        command: format!("rename profile {} -> {}", old_name, new_name),
+        stdout: format!("Profile renamed to '{}'", new_name),
+        stderr: String::new(),
+    })
+}
+
 // ── SSH tunnel commands ───────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -2731,6 +2812,10 @@ pub fn run() {
             set_gateway_port,
             hermes_start_ssh_tunnel,
             hermes_stop_ssh_tunnel,
+            hermes_list_profiles,
+            hermes_create_profile,
+            hermes_delete_profile,
+            hermes_rename_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
