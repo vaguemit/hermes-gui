@@ -93,6 +93,23 @@ export interface ApiKeyStatus {
   providers: string[]
 }
 
+export interface DepCheck {
+  installed: boolean
+  version: string | null
+}
+
+export interface DependencyStatus {
+  python: DepCheck
+  uv: DepCheck
+  git: DepCheck
+}
+
+export interface TestResult {
+  success: boolean
+  latency_ms: number | null
+  error: string | null
+}
+
 export interface DoctorCheck {
   name: string
   passed: boolean
