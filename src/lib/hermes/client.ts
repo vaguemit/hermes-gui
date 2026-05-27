@@ -54,6 +54,10 @@ export interface HermesClient {
   getModelConfig(): Promise<ModelConfig>
   setModelConfig(provider: string, model: string, baseUrl: string): Promise<void>
 
+  // System
+  getAutostartEnabled(): Promise<boolean>
+  toggleAutostart(enabled: boolean): Promise<void>
+
   // Diagnostics
   getSystemInfo(): Promise<{ ram_gb: number; cpu_count: number }>
   detectApiKeys(): Promise<ApiKeyStatus>
