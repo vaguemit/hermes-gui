@@ -4,10 +4,17 @@ import { useStore } from '../store';
 import { useHermesClient } from '../lib/hermes';
 import type { SessionMeta } from '../lib/hermes';
 
-function groupSessions(sessions: SessionMeta[]): Record<string, SessionMeta[]> {
+type DisplaySession = SessionMeta & {
+  title?: string;
+  source?: string;
+  model?: string;
+  isDbSession?: boolean;
+};
+
+function groupSessions(sessions: DisplaySession[]): Record<string, DisplaySession[]> {
   const now = Date.now();
   const DAY = 86400000;
-  const groups: Record<string, SessionMeta[]> = { Today: [], Yesterday: [], 'This Week': [], Earlier: [] };
+  const groups: Record<string, DisplaySession[]> = { Today: [], Yesterday: [], 'This Week': [], Earlier: [] };
   for (const s of sessions) {
     const ts = Number(s.modified) * 1000;
     const age = now - ts;
@@ -56,21 +63,44 @@ export default function SessionsPanel() {
   const client = useHermesClient();
   const { sessions: storeSessions, setActiveSession, setActiveSection, setHermesSessionId, addSession } = useStore();
 
-  const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const [sessions, setSessions] = useState<DisplaySession[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [hoveredName, setHoveredName] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Record<string, boolean>>({});
 
-  const loadSessions = useCallback(() => {
+  const loadSessions = useCallback(async () => {
     setLoading(true);
-    client.listSessions()
-      .then(list => {
-        setSessions(list.sort((a, b) => Number(b.modified) - Number(a.modified)));
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    try {
+      const [dbSessions, jsonSessions] = await Promise.all([
+        client.listSessionsDb().catch(() => []),
+        client.listSessions().catch(() => []),
+      ]);
+
+      const dbAsMeta: DisplaySession[] = dbSessions.map(s => ({
+        name: s.id,
+        modified: String(s.started_at),  // Unix seconds — relativeTime() handles the conversion
+        messageCount: s.message_count,
+        title: s.title ?? undefined,
+        source: s.source,
+        model: s.model,
+        isDbSession: true,
+      }));
+
+      const dbIds = new Set(dbSessions.map(s => s.id));
+      const jsonOnly: DisplaySession[] = jsonSessions
+        .filter(s => !dbIds.has(s.name))
+        .map(s => ({ ...s, isDbSession: false }));
+
+      const merged = [...dbAsMeta, ...jsonOnly];
+      merged.sort((a, b) => Number(b.modified) - Number(a.modified));
+      setSessions(merged);
+    } catch {
+      // leave sessions empty
+    } finally {
+      setLoading(false);
+    }
   }, [client]);
 
   useEffect(() => {
@@ -82,24 +112,36 @@ export default function SessionsPanel() {
     return () => clearTimeout(t);
   }, [query]);
 
-  const filtered = sessions.filter(s =>
-    !debouncedQuery || s.name.toLowerCase().includes(debouncedQuery.toLowerCase())
-  );
+  const filtered = sessions.filter(s => {
+    if (!debouncedQuery) return true;
+    const q = debouncedQuery.toLowerCase();
+    return s.name.toLowerCase().includes(q) || (s.title ?? '').toLowerCase().includes(q);
+  });
 
-  const handleRowClick = (s: SessionMeta) => {
-    const match = storeSessions.find(ss => ss.title === s.name || ss.id === s.name);
-    if (match) {
-      setActiveSession(match.id);
+  const handleRowClick = (s: DisplaySession) => {
+    if (s.isDbSession) {
+      // state.db session: resume by setting hermesSessionId so next message continues this session
+      setHermesSessionId(s.name);
+      setActiveSection('chat');
+    } else {
+      const match = storeSessions.find(ss => ss.title === s.name || ss.id === s.name);
+      if (match) {
+        setActiveSession(match.id);
+      }
+      setHermesSessionId(s.name);
+      setActiveSection('chat');
     }
-    setHermesSessionId(s.name);
-    setActiveSection('chat');
   };
 
-  const handleDelete = async (s: SessionMeta) => {
-    if (!window.confirm(`Delete session "${s.name}"? This cannot be undone.`)) return;
+  const handleDelete = async (s: DisplaySession) => {
+    if (!window.confirm(`Delete session "${s.title ?? s.name}"? This cannot be undone.`)) return;
     setDeleting(prev => ({ ...prev, [s.name]: true }));
     try {
-      await client.deleteSession(s.name);
+      if (s.isDbSession) {
+        await client.deleteSessionDb(s.name);
+      } else {
+        await client.deleteSession(s.name);
+      }
       setSessions(prev => prev.filter(x => x.name !== s.name));
     } finally {
       setDeleting(prev => {
@@ -275,8 +317,31 @@ export default function SessionsPanel() {
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
                             }} title={s.name}>
-                              {highlightMatch(s.name, debouncedQuery)}
+                              {highlightMatch(s.title ?? s.name, debouncedQuery)}
                             </div>
+                            {(s.source || s.model) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                                {s.source && s.source !== 'desktop' && (
+                                  <span style={{
+                                    fontSize: 10,
+                                    fontFamily: 'var(--font-mono)',
+                                    color: 'var(--accent-blue)',
+                                    background: 'rgba(59,158,255,0.1)',
+                                    border: '1px solid rgba(59,158,255,0.2)',
+                                    borderRadius: 3,
+                                    padding: '1px 5px',
+                                    textTransform: 'uppercase',
+                                  }}>
+                                    {s.source}
+                                  </span>
+                                )}
+                                {s.model && (
+                                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                                    {s.model}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           {/* Message count badge */}
