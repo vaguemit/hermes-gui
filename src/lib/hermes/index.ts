@@ -1,6 +1,8 @@
+import type { HermesClient } from './client'
 import { LocalHermesClient } from './local-client'
 import { RemoteHermesClient } from './remote-client'
 import { getBaseUrl, getAuthHeaders } from '../../api/hermes'
+import { getSharedClient } from './shared'
 
 function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -9,7 +11,9 @@ function isTauri(): boolean {
 let _localClient: LocalHermesClient | null = null
 
 /** Imperative accessor — prefer useHermesClient() inside React components. */
-export function getHermesClient() {
+export function getHermesClient(): HermesClient {
+  const shared = getSharedClient()
+  if (shared) return shared
   if (isTauri()) {
     if (!_localClient) _localClient = new LocalHermesClient()
     return _localClient
@@ -21,6 +25,7 @@ export function getHermesClient() {
 }
 
 // Re-export primary surfaces so components only need one import path
+export { setSharedClient } from './shared'
 export { HermesProvider, HermesClientContext, useHermesClient, useHermesContext, useHermesMode } from './provider'
 export type { HermesContextValue } from './provider'
 export type { HermesClient } from './client'
