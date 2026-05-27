@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { Settings, X, Key, User, Brain, Folder, Eye, EyeOff, Globe, Palette, Network, Activity, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
-import { getAutostartEnabled, toggleAutostart, getHermesInstallStatus, runHermesDoctor, checkUpdate, runHermesCommand, DoctorResult, UpdateInfo } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
+import type { DoctorResult, UpdateInfo } from '../lib/hermes';
 
 const PROVIDERS_KEYS = [
   { label: 'OpenAI', key: 'OPENAI_API_KEY', hint: 'sk-...' },
@@ -201,7 +201,7 @@ export default function SettingsModal() {
       }).catch(() => {
         setWorkingDir('~/workspace');
       });
-      getAutostartEnabled().then(enabled => {
+      client.getAutostartEnabled().then(enabled => {
         setAutostartEnabled(enabled);
       }).catch(() => {
         setAutostartEnabled(false);
@@ -245,7 +245,7 @@ export default function SettingsModal() {
   const handleAutostartToggle = async (enabled: boolean) => {
     setAutostartLoading(true);
     try {
-      await toggleAutostart(enabled);
+      await client.toggleAutostart(enabled);
       setAutostartEnabled(enabled);
     } catch {
       /* non-fatal */
@@ -289,7 +289,7 @@ export default function SettingsModal() {
   useEffect(() => {
     if (settingsOpen && tab === 'diagnostics' && diagVersion === null && !diagVersionLoading) {
       setDiagVersionLoading(true);
-      getHermesInstallStatus().then(status => {
+      client.getInstallStatus().then(status => {
         setDiagVersion(status.version ?? 'Not installed');
       }).catch(() => {
         setDiagVersion('Not installed');
@@ -303,7 +303,7 @@ export default function SettingsModal() {
     setUpdateChecking(true);
     setUpdateInfo(null);
     try {
-      const info = await checkUpdate();
+      const info = await client.checkUpdate();
       setUpdateInfo(info);
     } catch {
       setUpdateInfo({ current_version: null, latest_version: null, update_available: false, release_url: null });
@@ -317,7 +317,7 @@ export default function SettingsModal() {
     setDoctorResult(null);
     setDoctorRawOpen(false);
     try {
-      const result = await runHermesDoctor();
+      const result = await client.runDoctor();
       setDoctorResult(result);
     } catch {
       setDoctorResult({ ok: false, checks: [], raw: 'Failed to run hermes doctor.' });
@@ -330,7 +330,7 @@ export default function SettingsModal() {
     setQuickCmdRunning(prev => ({ ...prev, [key]: true }));
     setQuickCmdOutput(prev => ({ ...prev, [key]: '' }));
     try {
-      const result = await runHermesCommand(args);
+      const result = await client.runHermesCommand(args);
       const out = [result.stdout, result.stderr].filter(Boolean).join('\n').trim() || '(no output)';
       setQuickCmdOutput(prev => ({ ...prev, [key]: out }));
     } catch (e) {
