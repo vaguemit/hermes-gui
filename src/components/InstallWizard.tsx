@@ -530,6 +530,9 @@ export default function InstallWizard({ onComplete }: Props) {
   const [modelSaving, setModelSaving] = useState(false);
   const [modelSaveError, setModelSaveError] = useState('');
 
+  const [gatewayChecking, setGatewayChecking] = useState(false);
+  const [gatewayReady, setGatewayReady] = useState<boolean | null>(null);
+
   async function handleModelSave() {
     setModelSaving(true);
     setModelSaveError('');
@@ -545,6 +548,38 @@ export default function InstallWizard({ onComplete }: Props) {
       setModelSaving(false);
     }
   }
+
+  // ── Step 6: verify gateway when 'done' step is reached ───────────────────
+  useEffect(() => {
+    if (step !== 'done') return;
+    let cancelled = false;
+
+    async function verifyGateway() {
+      setGatewayChecking(true);
+      setGatewayReady(null);
+      try {
+        const running = await client.getGatewayStatus();
+        if (!running) {
+          await client.startGateway();
+        }
+        let found = false;
+        for (let i = 0; i < 15; i++) {
+          if (cancelled) return;
+          const ok = await client.getGatewayStatus();
+          if (ok) { found = true; break; }
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        if (!cancelled) setGatewayReady(found);
+      } catch {
+        if (!cancelled) setGatewayReady(false);
+      } finally {
+        if (!cancelled) setGatewayChecking(false);
+      }
+    }
+
+    verifyGateway();
+    return () => { cancelled = true; };
+  }, [step]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -941,8 +976,28 @@ export default function InstallWizard({ onComplete }: Props) {
           <div style={{ textAlign: 'center' }}>
             <CheckCircle2 size={48} style={{ color: 'var(--accent-green)', margin: '0 auto 16px' }} />
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Hermes is ready!</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
               Your provider and model have been saved. Start the Gateway from the Gateway tab, then head to Chat.
+            </div>
+
+            {/* Gateway verification */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontSize: 13, marginBottom: 20 }}>
+              {gatewayChecking ? (
+                <>
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite', color: 'var(--text-tertiary)' }} />
+                  <span style={{ color: 'var(--text-secondary)' }}>Starting gateway…</span>
+                </>
+              ) : gatewayReady === true ? (
+                <>
+                  <CheckCircle2 size={14} style={{ color: 'var(--accent-green)', flexShrink: 0 }} />
+                  <span style={{ color: 'var(--accent-green)' }}>Gateway is running</span>
+                </>
+              ) : gatewayReady === false ? (
+                <>
+                  <span style={{ color: 'var(--accent-amber)', fontSize: 14, lineHeight: 1 }}>⚠</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>Gateway offline — start it from the Gateway tab</span>
+                </>
+              ) : null}
             </div>
 
             {/* Setup summary */}
