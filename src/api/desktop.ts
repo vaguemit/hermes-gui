@@ -613,3 +613,97 @@ export async function setBrowserHeadedMode(headed: boolean): Promise<void> {
     writeEnv('PLAYWRIGHT_BROWSERS_PATH', '0'),
   ]);
 }
+
+// ── Office / Claw3D ──────────────────────────────────────────────────────────
+
+export interface Claw3dStatus {
+  installed: boolean;
+  running: boolean;
+  port: number;
+  portInUse: boolean;
+  wsUrl: string;
+  error?: string;
+  remoteUrl?: string;
+}
+
+export interface Claw3dSetupProgress {
+  step: number;
+  totalSteps: number;
+  title: string;
+  detail: string;
+  log: string;
+}
+
+export async function claw3dStatus(): Promise<Claw3dStatus> {
+  if (!isTauriApp()) return { installed: false, running: false, port: 3000, portInUse: false, wsUrl: 'ws://localhost:18789' };
+  return invoke<Claw3dStatus>('claw3d_status');
+}
+
+export async function claw3dSetup(): Promise<{ success: boolean; error?: string }> {
+  if (!isTauriApp()) return { success: false, error: 'Not in Tauri context' };
+  return invoke('claw3d_setup');
+}
+
+export function onClaw3dSetupProgress(cb: (p: Claw3dSetupProgress) => void): () => void {
+  if (!isTauriApp()) return () => {};
+  let unlisten: (() => void) | null = null;
+  import('@tauri-apps/api/event').then(({ listen }) => {
+    listen<Claw3dSetupProgress>('claw3d-setup-progress', (e) => cb(e.payload)).then((fn) => { unlisten = fn; });
+  });
+  return () => { unlisten?.(); };
+}
+
+export async function claw3dStartAll(profile?: string): Promise<{ success: boolean; error?: string }> {
+  if (!isTauriApp()) return { success: false, error: 'Not in Tauri context' };
+  return invoke('claw3d_start_all', { profile });
+}
+
+export async function claw3dStopAll(): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke('claw3d_stop_all');
+}
+
+export async function claw3dStartDev(): Promise<{ success: boolean; error?: string }> {
+  if (!isTauriApp()) return { success: false, error: 'Not in Tauri context' };
+  return invoke('claw3d_start_dev');
+}
+
+export async function claw3dStopDev(): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke('claw3d_stop_dev');
+}
+
+export async function claw3dStartAdapter(): Promise<{ success: boolean; error?: string }> {
+  if (!isTauriApp()) return { success: false, error: 'Not in Tauri context' };
+  return invoke('claw3d_start_adapter');
+}
+
+export async function claw3dStopAdapter(): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke('claw3d_stop_adapter');
+}
+
+export async function claw3dGetLogs(): Promise<string> {
+  if (!isTauriApp()) return '';
+  return invoke<string>('claw3d_get_logs');
+}
+
+export async function claw3dGetPort(): Promise<number> {
+  if (!isTauriApp()) return 3000;
+  return invoke<number>('claw3d_get_port');
+}
+
+export async function claw3dSetPort(port: number): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke('claw3d_set_port', { port });
+}
+
+export async function claw3dGetWsUrl(): Promise<string> {
+  if (!isTauriApp()) return 'ws://localhost:18789';
+  return invoke<string>('claw3d_get_ws_url');
+}
+
+export async function claw3dSetWsUrl(url: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke('claw3d_set_ws_url', { url });
+}
