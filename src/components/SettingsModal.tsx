@@ -85,7 +85,7 @@ const THEMES = [
 
 type SettingsTab = typeof TABS[number]['id'];
 
-export default function SettingsModal() {
+export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () => void } = {}) {
   const { settingsOpen, setSettingsOpen, cronDefaultMode, setCronDefaultMode, theme, setTheme } = useStore();
   const client = useHermesClient();
   const [tab, setTab] = useState<SettingsTab>('api-keys');
@@ -930,6 +930,23 @@ export default function SettingsModal() {
                     </div>
                   )}
                 </div>
+
+                {/* Setup Wizard */}
+                {onRerunWizard && (
+                  <div style={{ marginBottom: 24, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                    <div className="section-label" style={{ marginBottom: 12 }}>Setup Wizard</div>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => { setSettingsOpen(false); onRerunWizard(); }}
+                      style={{ fontSize: 12 }}
+                    >
+                      Relaunch Setup Wizard
+                    </button>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 6 }}>
+                      Re-run the first-time setup wizard to change your provider, model, or API keys.
+                    </div>
+                  </div>
+                )}
 
                 {/* Quick Commands section */}
                 <div>
