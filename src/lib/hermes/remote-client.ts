@@ -153,7 +153,9 @@ export class RemoteHermesClient implements HermesClient {
   getInstallStatus(): Promise<HermesInstallStatus> { return this.unsupported('getInstallStatus') }
   startGateway(): Promise<CommandResult> { return this.unsupported('startGateway') }
   stopGateway(): Promise<CommandResult> { return this.unsupported('stopGateway') }
+  getSystemInfo(): Promise<{ ram_gb: number; cpu_count: number }> { return this.unsupported('getSystemInfo') }
   listSessions(): Promise<SessionMeta[]> { return this.unsupported('listSessions') }
+  searchSessions(_q: string): Promise<SessionMeta[]> { return this.unsupported('searchSessions') }
   readSession(_n: string): Promise<string> { return this.unsupported('readSession') }
   writeSession(_n: string, _c: string): Promise<void> { return this.unsupported('writeSession') }
   deleteSession(_n: string): Promise<void> { return this.unsupported('deleteSession') }
@@ -183,6 +185,11 @@ export class RemoteHermesClient implements HermesClient {
   deleteMemoryFile(_n: string): Promise<void> { return this.unsupported('deleteMemoryFile') }
   listSkills(): Promise<SkillMeta[]> { return this.unsupported('listSkills') }
   listCronJobs(): Promise<CronJobMeta[]> { return this.unsupported('listCronJobs') }
+  createCronJob(_j: Omit<CronJobMeta, 'id'>): Promise<CronJobMeta> { return this.unsupported('createCronJob') }
+  updateCronJob(_id: string, _p: Partial<Omit<CronJobMeta, 'id'>>): Promise<void> { return this.unsupported('updateCronJob') }
+  deleteCronJob(_id: string): Promise<void> { return this.unsupported('deleteCronJob') }
+  enableCronJob(_id: string): Promise<void> { return this.unsupported('enableCronJob') }
+  disableCronJob(_id: string): Promise<void> { return this.unsupported('disableCronJob') }
   getConnectionConfig(): Promise<ConnectionConfig> { return this.unsupported('getConnectionConfig') }
   setConnectionConfig(_m: string, _u: string, _k?: string): Promise<void> { return this.unsupported('setConnectionConfig') }
 
