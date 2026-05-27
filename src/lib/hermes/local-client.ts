@@ -9,13 +9,14 @@ import {
   startGateway as ipcStartGateway,
   stopGateway as ipcStopGateway,
   getGatewayStatus as ipcGetGatewayStatus,
-  listSessionsDisk, readSessionDisk, writeSessionDisk, deleteSessionDisk, clearAllSessionsDisk,
+  listSessionsDisk, searchSessionsDisk, readSessionDisk, writeSessionDisk, deleteSessionDisk, clearAllSessionsDisk,
   listProfiles as ipcListProfiles, readProfile as ipcReadProfile,
   writeProfile as ipcWriteProfile, deleteProfile as ipcDeleteProfile,
   readFile as ipcReadFile, writeFile as ipcWriteFile,
   readConfig as ipcReadConfig, writeConfig as ipcWriteConfig,
   readEnv as ipcReadEnv, writeEnv as ipcWriteEnv,
   getModelConfig as ipcGetModelConfig, setModelConfig as ipcSetModelConfig,
+  getSystemInfo as ipcGetSystemInfo,
   detectApiKeys as ipcDetectApiKeys, runHermesDoctor, checkUpdate as ipcCheckUpdate,
   runHermesCommand as ipcRunHermesCommand,
   streamHermesCommand as ipcStreamHermesCommand,
@@ -88,6 +89,7 @@ export class LocalHermesClient implements HermesClient {
   }
 
   async listSessions(): Promise<SessionMeta[]> { return listSessionsDisk() }
+  async searchSessions(query: string): Promise<SessionMeta[]> { return searchSessionsDisk(query) }
   async readSession(name: string): Promise<string> { return readSessionDisk(name) }
   async writeSession(name: string, content: string): Promise<void> { return writeSessionDisk(name, content) }
   async deleteSession(name: string): Promise<void> { return deleteSessionDisk(name) }
@@ -109,6 +111,10 @@ export class LocalHermesClient implements HermesClient {
   async getModelConfig(): Promise<ModelConfig> { return ipcGetModelConfig() }
   async setModelConfig(provider: string, model: string, baseUrl: string): Promise<void> {
     return ipcSetModelConfig(provider, model, baseUrl)
+  }
+
+  async getSystemInfo(): Promise<{ ram_gb: number; cpu_count: number }> {
+    return ipcGetSystemInfo()
   }
 
   async detectApiKeys(): Promise<ApiKeyStatus> { return ipcDetectApiKeys() }
@@ -150,10 +156,40 @@ export class LocalHermesClient implements HermesClient {
     return raw.map(s => ({ name: s.name, description: s.description, has_skill_md: s.has_skill_md }))
   }
 
-  async listCronJobs(): Promise<CronJobMeta[]> {
-    // Cron jobs are stored in gui-state via store; no IPC command yet — return empty
-    return []
+  private async _readCronJobs(): Promise<CronJobMeta[]> {
+    try {
+      const raw = await ipcReadFile('cron/jobs.json')
+      return JSON.parse(raw) as CronJobMeta[]
+    } catch {
+      return []
+    }
   }
+
+  private async _writeCronJobs(jobs: CronJobMeta[]): Promise<void> {
+    await ipcWriteFile('cron/jobs.json', JSON.stringify(jobs, null, 2))
+  }
+
+  async listCronJobs(): Promise<CronJobMeta[]> { return this._readCronJobs() }
+
+  async createCronJob(job: Omit<CronJobMeta, 'id'>): Promise<CronJobMeta> {
+    const jobs = await this._readCronJobs()
+    const newJob: CronJobMeta = { id: `cron-${Date.now()}`, ...job }
+    await this._writeCronJobs([...jobs, newJob])
+    return newJob
+  }
+
+  async updateCronJob(id: string, patch: Partial<Omit<CronJobMeta, 'id'>>): Promise<void> {
+    const jobs = await this._readCronJobs()
+    await this._writeCronJobs(jobs.map(j => j.id === id ? { ...j, ...patch } : j))
+  }
+
+  async deleteCronJob(id: string): Promise<void> {
+    const jobs = await this._readCronJobs()
+    await this._writeCronJobs(jobs.filter(j => j.id !== id))
+  }
+
+  async enableCronJob(id: string): Promise<void> { return this.updateCronJob(id, { enabled: true }) }
+  async disableCronJob(id: string): Promise<void> { return this.updateCronJob(id, { enabled: false }) }
 
   async getConnectionConfig(): Promise<ConnectionConfig> {
     const raw = await ipcGetConnectionConfig()
