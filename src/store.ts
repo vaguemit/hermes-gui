@@ -8,7 +8,7 @@ export interface Toast {
   message: string;
   type: ToastType;
 }
-export type NavSection = 'chat' | 'install' | 'commands' | 'agents' | 'gateway' | 'crons' | 'skills' | 'soul' | 'settings' | 'dashboard' | 'profiles' | 'sessions' | 'models' | 'terminal' | 'kanban' | 'providers' | 'memory';
+export type NavSection = 'chat' | 'install' | 'commands' | 'agents' | 'gateway' | 'crons' | 'skills' | 'soul' | 'settings' | 'dashboard' | 'profiles' | 'sessions' | 'models' | 'terminal' | 'kanban' | 'providers' | 'memory' | 'office';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageType = 'prose' | 'tool_call' | 'tool_output' | 'error' | 'info' | 'reasoning' | 'system';
 
