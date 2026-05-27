@@ -3,7 +3,7 @@ import type {
   HealthStatus, HermesInstallStatus, CommandResult, ChatMessage, StreamEvent,
   SessionMeta, ProfileMeta, ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
   SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
-  DependencyStatus, TestResult,
+  DependencyStatus, TestResult, StateDbSession, StateDbMessage,
 } from './types'
 import { UnsupportedCapabilityError } from './errors'
 
@@ -177,6 +177,10 @@ export class RemoteHermesClient implements HermesClient {
   writeSession(_n: string, _c: string): Promise<void> { return this.unsupported('writeSession') }
   deleteSession(_n: string): Promise<void> { return this.unsupported('deleteSession') }
   clearAllSessions(): Promise<number> { return this.unsupported('clearAllSessions') }
+  listSessionsDb(_l?: number, _o?: number): Promise<StateDbSession[]> { return this.unsupported('listSessionsDb') }
+  readSessionDb(_id: string): Promise<StateDbMessage[]> { return this.unsupported('readSessionDb') }
+  searchSessionsDb(_q: string): Promise<StateDbSession[]> { return this.unsupported('searchSessionsDb') }
+  deleteSessionDb(_id: string): Promise<void> { return this.unsupported('deleteSessionDb') }
   listProfiles(): Promise<ProfileMeta[]> { return this.unsupported('listProfiles') }
   listProfileNames(): Promise<string[]> { return this.unsupported('listProfileNames') }
   readProfile(_n: string): Promise<string> { return this.unsupported('readProfile') }
