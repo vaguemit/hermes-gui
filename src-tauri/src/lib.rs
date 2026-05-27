@@ -456,6 +456,40 @@ fn validate_subpath(rel: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+struct DepCheck {
+    installed: bool,
+    version: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct DepsStatus {
+    python: DepCheck,
+    uv: DepCheck,
+    git: DepCheck,
+}
+
+fn probe_tool(names: &[&str]) -> DepCheck {
+    for name in names {
+        if let Ok(out) = std::process::Command::new(name).arg("--version").output() {
+            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            let version = if !stdout.is_empty() { stdout } else { stderr };
+            return DepCheck { installed: true, version: Some(version) };
+        }
+    }
+    DepCheck { installed: false, version: None }
+}
+
+#[tauri::command]
+async fn check_dependencies() -> Result<DepsStatus, String> {
+    Ok(DepsStatus {
+        python: probe_tool(&["python3", "python"]),
+        uv: probe_tool(&["uv"]),
+        git: probe_tool(&["git"]),
+    })
+}
+
 fn run_command(program: PathBuf, args: &[String], timeout_secs: u64) -> Result<CommandResult, String> {
     let command_text = std::iter::once(program.to_string_lossy().to_string())
         .chain(args.iter().cloned())
@@ -3175,6 +3209,7 @@ pub fn run() {
             claw3d_set_port,
             claw3d_get_ws_url,
             claw3d_set_ws_url,
+            check_dependencies,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
