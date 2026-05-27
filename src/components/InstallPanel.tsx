@@ -15,9 +15,8 @@ import {
   Terminal,
   XCircle,
 } from 'lucide-react';
-import type { CommandResult } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
-import type { HermesInstallStatus, DoctorResult, UpdateInfo } from '../lib/hermes';
+import type { CommandResult, HermesInstallStatus, DoctorResult, UpdateInfo } from '../lib/hermes';
 import { CLI_COMMANDS } from '../data/hermesCatalog';
 
 // ─── StatusPill ─────────────────────────────────────────────────────────────
