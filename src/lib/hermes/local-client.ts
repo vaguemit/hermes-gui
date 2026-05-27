@@ -116,6 +116,16 @@ export class LocalHermesClient implements HermesClient {
     return ipcSetModelConfig(provider, model, baseUrl)
   }
 
+  async getAutostartEnabled(): Promise<boolean> {
+    const { getAutostartEnabled: ipcGetAutostart } = await import('../../api/desktop')
+    return ipcGetAutostart()
+  }
+
+  async toggleAutostart(enabled: boolean): Promise<void> {
+    const { toggleAutostart: ipcToggleAutostart } = await import('../../api/desktop')
+    return ipcToggleAutostart(enabled)
+  }
+
   async getSystemInfo(): Promise<{ ram_gb: number; cpu_count: number }> {
     return ipcGetSystemInfo()
   }

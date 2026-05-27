@@ -153,6 +153,8 @@ export class RemoteHermesClient implements HermesClient {
   getInstallStatus(): Promise<HermesInstallStatus> { return this.unsupported('getInstallStatus') }
   startGateway(): Promise<CommandResult> { return this.unsupported('startGateway') }
   stopGateway(): Promise<CommandResult> { return this.unsupported('stopGateway') }
+  getAutostartEnabled(): Promise<boolean> { return this.unsupported('getAutostartEnabled') }
+  toggleAutostart(_e: boolean): Promise<void> { return this.unsupported('toggleAutostart') }
   getSystemInfo(): Promise<{ ram_gb: number; cpu_count: number }> { return this.unsupported('getSystemInfo') }
   listSessions(): Promise<SessionMeta[]> { return this.unsupported('listSessions') }
   searchSessions(_q: string): Promise<SessionMeta[]> { return this.unsupported('searchSessions') }
