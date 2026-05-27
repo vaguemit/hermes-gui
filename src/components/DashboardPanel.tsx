@@ -4,7 +4,6 @@ import {
   Clock, Radio, History, Brain, Key,
 } from 'lucide-react';
 import { useStore } from '../store';
-import { getSystemInfo, getHermesInstallStatus } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import type { ModelConfig } from '../lib/hermes';
 
@@ -83,9 +82,9 @@ export default function DashboardPanel() {
   // Load model config, system info, and gateway port on mount
   useEffect(() => {
     client.getModelConfig().then(setModelConfig).catch(() => null);
-    getSystemInfo().then(setSysInfo).catch(() => null);
+    client.getSystemInfo().then(setSysInfo).catch(() => null);
     client.getGatewayPort().then(setGatewayPort).catch(() => null);
-    getHermesInstallStatus().then(info => {
+    client.getInstallStatus().then(info => {
       setExtSysInfo({
         platform: info.platform || '',
         version: info.version || '',
