@@ -3,12 +3,15 @@ import type {
   ChatMessage, StreamEvent, SessionMeta, ProfileMeta,
   ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
   SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
+  DependencyStatus, TestResult,
 } from './types'
 
 export interface HermesClient {
   // Health & install
   getHealth(): Promise<HealthStatus>
   getInstallStatus(): Promise<HermesInstallStatus>
+  checkDependencies(): Promise<DependencyStatus>
+  testGateway(): Promise<TestResult>
 
   // Gateway lifecycle
   startGateway(): Promise<CommandResult>
