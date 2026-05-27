@@ -3,12 +3,6 @@ import { User, Users, Brain, Plus, Trash2, Edit2, X, Eye, Copy, Download, Check 
 import { useHermesClient } from '../lib/hermes';
 import type { ProfileMeta, MemoryFileMeta } from '../lib/hermes';
 import { useStore } from '../store';
-import {
-  listProfilesDisk,
-  createProfileDisk,
-  deleteProfileDisk,
-  renameProfileDisk,
-} from '../api/desktop';
 
 const DEFAULT_PROFILE_CONTENT = `# Profile
 
@@ -66,18 +60,14 @@ export default function ProfilesPanel() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [memConfirmDelete, setMemConfirmDelete] = useState<string | null>(null);
 
-  // ── Load profiles — disk IPC first, fall back to client ──
   const loadProfiles = useCallback(async () => {
     setProfilesLoading(true);
     setProfilesError(null);
     try {
-      // Try disk IPC first — gives us real on-disk list
-      const diskNames = await listProfilesDisk();
-      // Build ProfileMeta from disk names; try to get modified times from client
+      const diskNames = await client.listProfileNames();
       let enriched: ProfileMeta[] = [];
       try {
         const clientData = await client.listProfiles();
-        // Merge: disk names are authoritative, client data fills in metadata
         const clientMap = new Map(clientData.map((p) => [p.name, p]));
         enriched = diskNames.map((name) => clientMap.get(name) ?? { name, modified: '' });
       } catch {
@@ -85,13 +75,11 @@ export default function ProfilesPanel() {
       }
       setProfiles(enriched);
     } catch {
-      // Disk IPC failed — fall back entirely to client
       try {
-        const data = await client.listProfiles();
-        setProfiles(data);
+        setProfiles(await client.listProfiles());
       } catch {
         setProfiles([]);
-        setProfilesError('Failed to load profiles from disk.');
+        setProfilesError('Failed to load profiles.');
       }
     } finally {
       setProfilesLoading(false);
@@ -131,7 +119,7 @@ export default function ProfilesPanel() {
     setCreating(true);
     setCreateError(null);
     try {
-      const result = await createProfileDisk(name);
+      const result = await client.createProfile(name);
       if (!result.success) {
         setCreateError(result.stderr || `Failed to create profile "${name}"`);
         setCreating(false);
@@ -180,12 +168,7 @@ export default function ProfilesPanel() {
     // Second click — confirmed, proceed
     setDeleteError(null);
     try {
-      const result = await deleteProfileDisk(name);
-      if (!result.success) {
-        setDeleteError(`Delete failed: ${result.stderr || 'unknown error'}`);
-        setDeleteConfirm(null);
-        return;
-      }
+      await client.deleteProfile(name);
       setDeleteConfirm(null);
       await loadProfiles();
       if (editingName === name) { setEditingName(null); setEditContent(''); }
@@ -211,7 +194,7 @@ export default function ProfilesPanel() {
     }
     setRenameError(null);
     try {
-      const result = await renameProfileDisk(renamingProfile, newNameTrimmed);
+      const result = await client.renameProfile(renamingProfile, newNameTrimmed);
       if (!result.success) {
         setRenameError(`Rename failed: ${result.stderr || 'unknown error'}`);
         return;
