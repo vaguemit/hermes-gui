@@ -1,7 +1,7 @@
 use portable_pty::MasterPty;
 use serde::Serialize;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     env,
     ffi::OsString,
     io::{BufRead, BufReader},
@@ -2714,6 +2714,296 @@ fn list_cron_tasks() -> Result<Vec<serde_json::Value>, String> {
     }
 }
 
+// ── Office / Claw3D state and commands ───────────────────────────────────────
+
+struct OfficeState {
+    dev_process: Mutex<Option<std::process::Child>>,
+    adapter_process: Mutex<Option<std::process::Child>>,
+    logs: Mutex<VecDeque<String>>,
+    port: Mutex<u16>,
+    ws_url: Mutex<String>,
+}
+
+impl Default for OfficeState {
+    fn default() -> Self {
+        let (port, ws_url) = load_office_settings();
+        OfficeState {
+            dev_process: Mutex::new(None),
+            adapter_process: Mutex::new(None),
+            logs: Mutex::new(VecDeque::new()),
+            port: Mutex::new(port),
+            ws_url: Mutex::new(ws_url),
+        }
+    }
+}
+
+fn office_settings_path() -> PathBuf {
+    hermes_home().join("office-settings.json")
+}
+
+fn load_office_settings() -> (u16, String) {
+    let path = office_settings_path();
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            let port = val["port"].as_u64().unwrap_or(3000) as u16;
+            let ws_url = val["wsUrl"].as_str().unwrap_or("ws://localhost:18789").to_string();
+            return (port, ws_url);
+        }
+    }
+    (3000, "ws://localhost:18789".to_string())
+}
+
+fn save_office_settings(port: u16, ws_url: &str) {
+    let path = office_settings_path();
+    let json = serde_json::json!({ "port": port, "wsUrl": ws_url });
+    let _ = std::fs::write(&path, json.to_string());
+}
+
+fn find_npm() -> Option<PathBuf> {
+    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+        let home = PathBuf::from(home);
+        // nvm
+        let nvm_dir = home.join(".nvm").join("versions").join("node");
+        if nvm_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
+                for entry in entries.flatten() {
+                    let candidate = entry.path().join("bin").join("npm");
+                    if candidate.exists() { return Some(candidate); }
+                }
+            }
+        }
+        // volta
+        let volta = home.join(".volta").join("bin").join("npm");
+        if volta.exists() { return Some(volta); }
+        // fnm
+        let fnm_dir = home.join(".fnm");
+        if fnm_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(&fnm_dir) {
+                for entry in entries.flatten() {
+                    let candidate = entry.path().join("bin").join("npm");
+                    if candidate.exists() { return Some(candidate); }
+                }
+            }
+        }
+    }
+    #[cfg(windows)]
+    { Some(PathBuf::from("npm.cmd")) }
+    #[cfg(not(windows))]
+    { Some(PathBuf::from("npm")) }
+}
+
+fn claw3d_dir() -> PathBuf {
+    hermes_home().join("office").join("claw3d")
+}
+
+fn office_log(state: &tauri::State<OfficeState>, line: &str) {
+    let mut logs = state.logs.lock().unwrap();
+    if logs.len() >= 1000 { logs.pop_front(); }
+    logs.push_back(line.to_string());
+}
+
+#[derive(serde::Serialize)]
+struct Claw3dStatus {
+    installed: bool,
+    running: bool,
+    port: u16,
+    port_in_use: bool,
+    ws_url: String,
+    error: Option<String>,
+    remote_url: Option<String>,
+}
+
+#[tauri::command]
+fn claw3d_status(state: tauri::State<OfficeState>) -> Claw3dStatus {
+    let port = *state.port.lock().unwrap();
+    let ws_url = state.ws_url.lock().unwrap().clone();
+    let installed = claw3d_dir().join("package.json").exists();
+    let running = state.dev_process.lock().unwrap().is_some();
+    let port_in_use = std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).is_err();
+    Claw3dStatus { installed, running, port, port_in_use, ws_url, error: None, remote_url: None }
+}
+
+#[tauri::command]
+async fn claw3d_setup(app_handle: tauri::AppHandle, state: tauri::State<'_, OfficeState>) -> Result<CommandResult, String> {
+    let dir = claw3d_dir();
+    let parent = dir.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(&parent).map_err(|e| e.to_string())?;
+
+    if !dir.join("package.json").exists() {
+        let _ = app_handle.emit("claw3d-setup-progress", serde_json::json!({
+            "step": 1, "totalSteps": 2, "title": "Cloning Claw3D", "detail": "git clone", "log": "Cloning from GitHub..."
+        }));
+        let result = run_command(
+            PathBuf::from("git"),
+            &["clone".to_string(), "https://github.com/iamlukethedev/Claw3D".to_string(), dir.to_string_lossy().to_string()],
+            120,
+        ).map_err(|e| e.to_string())?;
+        if !result.success {
+            return Ok(result);
+        }
+    }
+
+    let npm = find_npm().ok_or("npm not found")?;
+    let _ = app_handle.emit("claw3d-setup-progress", serde_json::json!({
+        "step": 2, "totalSteps": 2, "title": "Installing dependencies", "detail": "npm install", "log": "Running npm install..."
+    }));
+    office_log(&state, "Running npm install...");
+    let result = run_command(npm, &["install".to_string()], 300);
+    match result {
+        Ok(r) => Ok(r),
+        Err(e) => Ok(CommandResult { success: false, code: None, command: String::new(), stdout: String::new(), stderr: e }),
+    }
+}
+
+#[tauri::command]
+fn claw3d_start_dev(state: tauri::State<OfficeState>) -> Result<CommandResult, String> {
+    let npm = find_npm().ok_or("npm not found")?;
+    let dir = claw3d_dir();
+    let port = *state.port.lock().unwrap();
+    let mut cmd = std::process::Command::new(&npm);
+    cmd.args(["run", "dev"])
+        .current_dir(&dir)
+        .env("PORT", port.to_string())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    { use std::os::windows::process::CommandExt; cmd.creation_flags(0x08000000); }
+    match cmd.spawn() {
+        Ok(child) => {
+            office_log(&state, &format!("Claw3D dev server started on port {}", port));
+            *state.dev_process.lock().unwrap() = Some(child);
+            Ok(CommandResult { success: true, code: None, command: "npm run dev".to_string(), stdout: String::new(), stderr: String::new() })
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn claw3d_stop_dev(state: tauri::State<OfficeState>) -> Result<(), String> {
+    if let Some(mut child) = state.dev_process.lock().unwrap().take() {
+        let _ = child.kill();
+        office_log(&state, "Claw3D dev server stopped");
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn claw3d_start_adapter(state: tauri::State<OfficeState>) -> Result<CommandResult, String> {
+    let npm = find_npm().ok_or("npm not found")?;
+    let dir = claw3d_dir();
+    let ws_url = state.ws_url.lock().unwrap().clone();
+    let mut cmd = std::process::Command::new(&npm);
+    cmd.args(["run", "adapter"])
+        .current_dir(&dir)
+        .env("HERMES_WS_URL", &ws_url)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    { use std::os::windows::process::CommandExt; cmd.creation_flags(0x08000000); }
+    match cmd.spawn() {
+        Ok(child) => {
+            office_log(&state, &format!("Claw3D adapter started (ws: {})", ws_url));
+            *state.adapter_process.lock().unwrap() = Some(child);
+            Ok(CommandResult { success: true, code: None, command: "npm run adapter".to_string(), stdout: String::new(), stderr: String::new() })
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn claw3d_stop_adapter(state: tauri::State<OfficeState>) -> Result<(), String> {
+    if let Some(mut child) = state.adapter_process.lock().unwrap().take() {
+        let _ = child.kill();
+        office_log(&state, "Claw3D adapter stopped");
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn claw3d_start_all(state: tauri::State<OfficeState>) -> Result<CommandResult, String> {
+    // Start dev
+    let npm = find_npm().ok_or("npm not found")?;
+    let dir = claw3d_dir();
+    let port = *state.port.lock().unwrap();
+    let ws_url = state.ws_url.lock().unwrap().clone();
+
+    let mut dev_cmd = std::process::Command::new(&npm);
+    dev_cmd.args(["run", "dev"])
+        .current_dir(&dir)
+        .env("PORT", port.to_string())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    { use std::os::windows::process::CommandExt; dev_cmd.creation_flags(0x08000000); }
+    let dev_child = dev_cmd.spawn().map_err(|e| e.to_string())?;
+    office_log(&state, &format!("Claw3D dev server started on port {}", port));
+    *state.dev_process.lock().unwrap() = Some(dev_child);
+
+    // Start adapter
+    let mut adp_cmd = std::process::Command::new(&npm);
+    adp_cmd.args(["run", "adapter"])
+        .current_dir(&dir)
+        .env("HERMES_WS_URL", &ws_url)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    { use std::os::windows::process::CommandExt; adp_cmd.creation_flags(0x08000000); }
+    let adp_child = adp_cmd.spawn().map_err(|e| e.to_string())?;
+    office_log(&state, &format!("Claw3D adapter started (ws: {})", ws_url));
+    *state.adapter_process.lock().unwrap() = Some(adp_child);
+
+    Ok(CommandResult { success: true, code: None, command: "claw3d start-all".to_string(), stdout: String::new(), stderr: String::new() })
+}
+
+#[tauri::command]
+fn claw3d_stop_all(state: tauri::State<OfficeState>) -> Result<(), String> {
+    if let Some(mut child) = state.dev_process.lock().unwrap().take() {
+        let _ = child.kill();
+    }
+    if let Some(mut child) = state.adapter_process.lock().unwrap().take() {
+        let _ = child.kill();
+    }
+    office_log(&state, "Claw3D stopped");
+    Ok(())
+}
+
+#[tauri::command]
+fn claw3d_get_logs(state: tauri::State<OfficeState>) -> String {
+    state.logs.lock().unwrap().iter().cloned().collect::<Vec<_>>().join("\n")
+}
+
+#[tauri::command]
+fn claw3d_get_port(state: tauri::State<OfficeState>) -> u16 {
+    *state.port.lock().unwrap()
+}
+
+#[tauri::command]
+fn claw3d_set_port(port: u16, state: tauri::State<OfficeState>) -> Result<(), String> {
+    if port < 1024 {
+        return Err("Port must be between 1024 and 65535".to_string());
+    }
+    *state.port.lock().unwrap() = port;
+    let ws_url = state.ws_url.lock().unwrap().clone();
+    save_office_settings(port, &ws_url);
+    Ok(())
+}
+
+#[tauri::command]
+fn claw3d_get_ws_url(state: tauri::State<OfficeState>) -> String {
+    state.ws_url.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn claw3d_set_ws_url(url: String, state: tauri::State<OfficeState>) -> Result<(), String> {
+    if !url.starts_with("ws://") && !url.starts_with("wss://") {
+        return Err("WebSocket URL must start with ws:// or wss://".to_string());
+    }
+    *state.ws_url.lock().unwrap() = url.clone();
+    let port = *state.port.lock().unwrap();
+    save_office_settings(port, &url);
+    Ok(())
+}
+
 // ── App entry point ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2729,6 +3019,7 @@ pub fn run() {
         .manage(SshState(Mutex::new(None)))
         .manage(PtyState(Mutex::new(HashMap::new())))
         .manage(HermesChatState(Mutex::new(HashMap::new())))
+        .manage(OfficeState::default())
         .setup(|app| {
             // System tray
             let open_item = MenuItem::with_id(app, "open", "Open Hermes", true, None::<&str>)?;
@@ -2784,6 +3075,19 @@ pub fn run() {
             })?;
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                let app = window.app_handle();
+                if let Some(office) = app.try_state::<OfficeState>() {
+                    if let Some(mut child) = office.dev_process.lock().unwrap().take() {
+                        let _ = child.kill();
+                    }
+                    if let Some(mut child) = office.adapter_process.lock().unwrap().take() {
+                        let _ = child.kill();
+                    }
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             hermes_install_status,
@@ -2858,6 +3162,19 @@ pub fn run() {
             hermes_rename_profile,
             read_env_var,
             list_cron_tasks,
+            claw3d_status,
+            claw3d_setup,
+            claw3d_start_dev,
+            claw3d_stop_dev,
+            claw3d_start_adapter,
+            claw3d_stop_adapter,
+            claw3d_start_all,
+            claw3d_stop_all,
+            claw3d_get_logs,
+            claw3d_get_port,
+            claw3d_set_port,
+            claw3d_get_ws_url,
+            claw3d_set_ws_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
