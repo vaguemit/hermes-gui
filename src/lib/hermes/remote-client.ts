@@ -148,8 +148,6 @@ export class RemoteHermesClient implements HermesClient {
     }
   }
 
-  async listOllamaModels(): Promise<string[]> { return this.unsupported('listOllamaModels') }
-
   // IPC-only methods — not available in remote mode
   private unsupported(cap: string): never { throw new UnsupportedCapabilityError(cap, 'remote') }
   getInstallStatus(): Promise<HermesInstallStatus> { return this.unsupported('getInstallStatus') }
@@ -189,6 +187,7 @@ export class RemoteHermesClient implements HermesClient {
   readMemoryFile(_n: string): Promise<string> { return this.unsupported('readMemoryFile') }
   deleteMemoryFile(_n: string): Promise<void> { return this.unsupported('deleteMemoryFile') }
   listSkills(): Promise<SkillMeta[]> { return this.unsupported('listSkills') }
+  listOllamaModels(): Promise<string[]> { return this.unsupported('listOllamaModels') }
   listCronJobs(): Promise<CronJobMeta[]> { return this.unsupported('listCronJobs') }
   createCronJob(_j: Omit<CronJobMeta, 'id'>): Promise<CronJobMeta> { return this.unsupported('createCronJob') }
   updateCronJob(_id: string, _p: Partial<Omit<CronJobMeta, 'id'>>): Promise<void> { return this.unsupported('updateCronJob') }
