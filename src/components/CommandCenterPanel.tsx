@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, CheckCircle2, Clock, Copy, Play, Search, Star, Terminal, X, XCircle } from 'lucide-react';
-import type { CommandResult } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
+import type { CommandResult } from '../lib/hermes';
 import { CLI_COMMANDS, CliCommand } from '../data/hermesCatalog';
 
 // Commands that start an interactive prompt_toolkit session.
