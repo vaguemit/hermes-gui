@@ -26,6 +26,7 @@ import SoulPanel from './components/SoulPanel';
 import KanbanPanel from './components/KanbanPanel';
 import ProvidersPanel from './components/ProvidersPanel';
 import MemoryPanel from './components/MemoryPanel';
+import OfficePanel from './components/OfficePanel';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import SplashScreen from './components/SplashScreen';
@@ -309,7 +310,7 @@ function AppInner() {
   const ALL_SECTIONS = [
     'chat', 'install', 'commands', 'agents', 'gateway', 'crons', 'skills',
     'dashboard', 'profiles', 'models', 'sessions', 'terminal', 'soul',
-    'kanban', 'providers', 'memory',
+    'kanban', 'providers', 'memory', 'office',
   ] as const;
 
   const showRightPanel = activeSection === 'chat';
@@ -383,6 +384,7 @@ function AppInner() {
             {activeSection === 'kanban' && 'Kanban'}
             {activeSection === 'providers' && 'Providers'}
             {activeSection === 'memory' && 'Memory'}
+            {activeSection === 'office' && 'Office'}
           </span>
 
           {/* Active profile badge */}
@@ -454,6 +456,7 @@ function AppInner() {
                   {section === 'kanban' && <KanbanPanel />}
                   {section === 'providers' && <ProvidersPanel />}
                   {section === 'memory' && <MemoryPanel />}
+                  {section === 'office' && <OfficePanel profile={activeProfile} visible={activeSection === 'office'} />}
                 </ErrorBoundary>
               </div>
             ))}
