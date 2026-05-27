@@ -469,7 +469,7 @@ export default function ConversationPanel() {
           if (isTuiSlashCommand) {
             chatCli(eventId, effectiveContent, hermesSessionId).catch(reject);
           } else {
-            chatStream(eventId, history, activeModel).catch(reject);
+            chatStream(eventId, history, activeModel, hermesSessionId).catch(reject);
           }
         }).catch(reject);
       });
