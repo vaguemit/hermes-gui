@@ -131,6 +131,25 @@ struct SessionMeta {
     message_count: Option<usize>,
 }
 
+#[derive(serde::Serialize, Debug)]
+struct StateDbSession {
+    id: String,
+    source: String,
+    started_at: i64,
+    ended_at: Option<i64>,
+    message_count: i64,
+    model: String,
+    title: Option<String>,
+}
+
+#[derive(serde::Serialize, Debug)]
+struct StateDbMessage {
+    id: i64,
+    role: String,
+    content: String,
+    timestamp: i64,
+}
+
 fn env_path(name: &str) -> Option<PathBuf> {
     env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from)
 }
@@ -154,6 +173,10 @@ fn hermes_home() -> PathBuf {
     }
 
     home_dir().join(".hermes")
+}
+
+fn state_db_path() -> std::path::PathBuf {
+    hermes_home().join("state.db")
 }
 
 fn ensure_pt_patch() -> std::path::PathBuf {
@@ -925,15 +948,22 @@ fn chat_stream(
     event_id: String,
     messages: Vec<serde_json::Value>,
     model: String,
+    session_id: Option<String>,
 ) -> Result<(), String> {
     let eid = event_id.clone();
     thread::spawn(move || {
         let url = "http://127.0.0.1:8642/v1/chat/completions";
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": model,
             "messages": messages,
             "stream": true,
+            "stream_options": { "include_usage": true },
         });
+        if let Some(sid) = &session_id {
+            if !sid.is_empty() {
+                body["session_id"] = serde_json::Value::String(sid.clone());
+            }
+        }
 
         let emit_error = |msg: String| {
             let _ = app_handle.emit(&format!("chat-error-{}", eid), msg);
@@ -959,6 +989,12 @@ fn chat_stream(
                 return;
             }
         };
+
+        // Capture session ID from response header
+        if let Some(sid) = response.header("x-hermes-session-id") {
+            let session_event = format!("chat-session-{}", eid);
+            let _ = app_handle.emit(&session_event, sid.to_string());
+        }
 
         let reader = BufReader::new(response.into_reader());
         let mut current_event_type = String::new();
@@ -1892,6 +1928,152 @@ fn search_sessions_disk(query: String) -> Vec<SessionMeta> {
                 .unwrap_or(false)
         })
         .collect()
+}
+
+#[tauri::command]
+fn list_sessions_statedb(limit: Option<i64>, offset: Option<i64>) -> Result<Vec<StateDbSession>, String> {
+    let db_path = state_db_path();
+    if !db_path.exists() {
+        return Ok(vec![]);
+    }
+    let conn = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ).map_err(|e| e.to_string())?;
+    let limit = limit.unwrap_or(100);
+    let offset = offset.unwrap_or(0);
+    let mut stmt = conn.prepare(
+        "SELECT id, COALESCE(source,''), started_at, ended_at, COALESCE(message_count,0), COALESCE(model,''), title \
+         FROM sessions ORDER BY started_at DESC LIMIT ?1 OFFSET ?2"
+    ).map_err(|e| e.to_string())?;
+    let sessions = stmt.query_map(rusqlite::params![limit, offset], |row| {
+        Ok(StateDbSession {
+            id: row.get(0)?,
+            source: row.get(1)?,
+            started_at: row.get(2)?,
+            ended_at: row.get(3)?,
+            message_count: row.get(4)?,
+            model: row.get(5)?,
+            title: row.get(6)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+    Ok(sessions)
+}
+
+#[tauri::command]
+fn read_session_statedb(session_id: String) -> Result<Vec<StateDbMessage>, String> {
+    let db_path = state_db_path();
+    if !db_path.exists() {
+        return Ok(vec![]);
+    }
+    let conn = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(
+        "SELECT id, role, COALESCE(content,''), COALESCE(timestamp,0) FROM messages \
+         WHERE session_id = ?1 AND role IN ('user','assistant') ORDER BY timestamp, id"
+    ).map_err(|e| e.to_string())?;
+    let msgs = stmt.query_map(rusqlite::params![session_id], |row| {
+        Ok(StateDbMessage {
+            id: row.get(0)?,
+            role: row.get(1)?,
+            content: row.get(2)?,
+            timestamp: row.get(3)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+    Ok(msgs)
+}
+
+#[tauri::command]
+fn search_sessions_statedb(query: String) -> Result<Vec<StateDbSession>, String> {
+    let db_path = state_db_path();
+    if !db_path.exists() {
+        return Ok(vec![]);
+    }
+    if query.trim().is_empty() {
+        return list_sessions_statedb(Some(50), Some(0));
+    }
+    let conn = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ).map_err(|e| e.to_string())?;
+    // Check if FTS table exists
+    let has_fts: bool = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages_fts'",
+        [],
+        |r| r.get::<_, i64>(0),
+    ).unwrap_or(0) > 0;
+    let sessions: Vec<StateDbSession> = if has_fts {
+        // Sanitize query for FTS5: wrap each word in quotes with prefix wildcard
+        let fts_query = query.split_whitespace()
+            .map(|w| format!("\"{}\"*", w.replace('"', "")))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT s.id, COALESCE(s.source,''), s.started_at, s.ended_at, \
+             COALESCE(s.message_count,0), COALESCE(s.model,''), s.title \
+             FROM messages_fts \
+             JOIN messages m ON m.id = messages_fts.rowid \
+             JOIN sessions s ON s.id = m.session_id \
+             WHERE messages_fts MATCH ?1 ORDER BY rank LIMIT 50"
+        ).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(rusqlite::params![fts_query], |row| {
+            Ok(StateDbSession {
+                id: row.get(0)?,
+                source: row.get(1)?,
+                started_at: row.get(2)?,
+                ended_at: row.get(3)?,
+                message_count: row.get(4)?,
+                model: row.get(5)?,
+                title: row.get(6)?,
+            })
+        }).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect::<Vec<_>>();
+        rows
+    } else {
+        // Fallback: title search only
+        let q = format!("%{}%", query.to_lowercase());
+        let mut stmt = conn.prepare(
+            "SELECT id, COALESCE(source,''), started_at, ended_at, COALESCE(message_count,0), \
+             COALESCE(model,''), title FROM sessions WHERE LOWER(COALESCE(title,'')) LIKE ?1 \
+             ORDER BY started_at DESC LIMIT 50"
+        ).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(rusqlite::params![q], |row| {
+            Ok(StateDbSession {
+                id: row.get(0)?,
+                source: row.get(1)?,
+                started_at: row.get(2)?,
+                ended_at: row.get(3)?,
+                message_count: row.get(4)?,
+                model: row.get(5)?,
+                title: row.get(6)?,
+            })
+        }).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect::<Vec<_>>();
+        rows
+    };
+    Ok(sessions)
+}
+
+#[tauri::command]
+fn delete_session_statedb(session_id: String) -> Result<(), String> {
+    let db_path = state_db_path();
+    if !db_path.exists() {
+        return Ok(());
+    }
+    let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM messages WHERE session_id = ?1", rusqlite::params![session_id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM sessions WHERE id = ?1", rusqlite::params![session_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -3210,6 +3392,10 @@ pub fn run() {
             claw3d_get_ws_url,
             claw3d_set_ws_url,
             check_dependencies,
+            list_sessions_statedb,
+            read_session_statedb,
+            search_sessions_statedb,
+            delete_session_statedb,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
