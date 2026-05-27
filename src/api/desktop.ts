@@ -482,6 +482,26 @@ export async function searchSessionsDisk(query: string): Promise<SessionMeta[]> 
   return invoke<SessionMeta[]>('search_sessions_disk', { query });
 }
 
+export async function listSessionsStateDb(limit?: number, offset?: number): Promise<import('../lib/hermes/types').StateDbSession[]> {
+  if (!isTauriApp()) return [];
+  return invoke('list_sessions_statedb', { limit: limit ?? 100, offset: offset ?? 0 });
+}
+
+export async function readSessionStateDb(sessionId: string): Promise<import('../lib/hermes/types').StateDbMessage[]> {
+  if (!isTauriApp()) return [];
+  return invoke('read_session_statedb', { sessionId });
+}
+
+export async function searchSessionsStateDb(query: string): Promise<import('../lib/hermes/types').StateDbSession[]> {
+  if (!isTauriApp()) return [];
+  return invoke('search_sessions_statedb', { query });
+}
+
+export async function deleteSessionStateDb(sessionId: string): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke('delete_session_statedb', { sessionId });
+}
+
 export async function ptySpawn(
   program: string,
   args: string[],

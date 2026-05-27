@@ -36,6 +36,7 @@ export interface Session {
   title: string;
   timestamp: number;
   messages: Message[];
+  hermesSessionId?: string;  // session ID assigned by Hermes agent
 }
 
 export interface Platform {
@@ -183,7 +184,12 @@ export const useStore = create<AppState>((set, get) => ({
   setGatewayStatus: (s) => set({ gatewayStatus: s }),
   setAgentState: (s) => set({ agentState: s }),
   setActiveModel: (m) => set({ activeModel: m }),
-  setHermesSessionId: (id) => set({ hermesSessionId: id }),
+  setHermesSessionId: (id) => set(state => {
+    const sessions = id && state.activeSessionId
+      ? state.sessions.map(s => s.id === state.activeSessionId ? { ...s, hermesSessionId: id } : s)
+      : state.sessions;
+    return { hermesSessionId: id, sessions };
+  }),
   localBrowserUrl: null,
   setLocalBrowserUrl: (url) => set({ localBrowserUrl: url }),
   browserConnected: false,
@@ -227,7 +233,10 @@ export const useStore = create<AppState>((set, get) => ({
     }));
     get().clearToolCalls();
   },
-  setActiveSession: (id) => set({ activeSessionId: id }),
+  setActiveSession: (id) => set(state => {
+    const session = state.sessions.find(s => s.id === id);
+    return { activeSessionId: id, hermesSessionId: session?.hermesSessionId ?? null };
+  }),
   deleteSession: (id) =>
     set((state) => {
       const remaining = state.sessions.filter((s) => s.id !== id);

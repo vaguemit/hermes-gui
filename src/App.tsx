@@ -55,6 +55,12 @@ function useSessionPersistence() {
             sessions: loaded,
             activeSessionId: loaded[0]?.id ?? state.activeSessionId,
           }));
+          // Restore hermesSessionId for the active session if available
+          const activeId = useStore.getState().activeSessionId;
+          const activeSess = loaded.find((s: { id: string; hermesSessionId?: string }) => s.id === activeId);
+          if (activeSess?.hermesSessionId) {
+            useStore.getState().setHermesSessionId(activeSess.hermesSessionId);
+          }
         }
       });
     }).catch(() => {});
