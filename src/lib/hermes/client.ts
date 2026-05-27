@@ -33,9 +33,12 @@ export interface HermesClient {
 
   // Profiles
   listProfiles(): Promise<ProfileMeta[]>
+  listProfileNames(): Promise<string[]>
   readProfile(name: string): Promise<string>
   writeProfile(name: string, content: string): Promise<void>
+  createProfile(name: string): Promise<CommandResult>
   deleteProfile(name: string): Promise<void>
+  renameProfile(oldName: string, newName: string): Promise<CommandResult>
 
   // Arbitrary file access (relative to hermes home)
   readFile(path: string): Promise<string>
