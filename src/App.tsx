@@ -474,7 +474,7 @@ function AppInner() {
       {/* Overlays */}
       <CommandPalette />
       <ModelSwitcher />
-      <SettingsModal />
+      <SettingsModal onRerunWizard={() => { setWizardDone(false); setShowWizard(true); }} />
       {showOnboarding && <WelcomePanel onDone={() => setOnboardingDone(true)} />}
 
       {/* Toast notifications */}
