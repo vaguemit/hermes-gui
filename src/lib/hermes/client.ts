@@ -3,7 +3,7 @@ import type {
   ChatMessage, StreamEvent, SessionMeta, ProfileMeta,
   ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
   SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
-  DependencyStatus, TestResult,
+  DependencyStatus, TestResult, StateDbSession, StateDbMessage,
 } from './types'
 
 export interface HermesClient {
@@ -33,6 +33,12 @@ export interface HermesClient {
   writeSession(name: string, content: string): Promise<void>
   deleteSession(name: string): Promise<void>
   clearAllSessions(): Promise<number>
+
+  // State DB sessions (read from ~/.hermes/state.db — shared with CLI and Desktop)
+  listSessionsDb(limit?: number, offset?: number): Promise<StateDbSession[]>
+  readSessionDb(sessionId: string): Promise<StateDbMessage[]>
+  searchSessionsDb(query: string): Promise<StateDbSession[]>
+  deleteSessionDb(sessionId: string): Promise<void>
 
   // Profiles
   listProfiles(): Promise<ProfileMeta[]>
