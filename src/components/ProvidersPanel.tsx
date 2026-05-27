@@ -3,7 +3,6 @@ import {
   Key, Eye, EyeOff, Check, ChevronDown, ChevronUp,
   Cpu, RefreshCw, Plus, Trash2,
 } from 'lucide-react';
-import { listOllamaModels } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import type { ModelConfig } from '../lib/hermes';
 
@@ -110,7 +109,7 @@ export default function ProvidersPanel() {
     setOllamaFetching(true);
     setOllamaFetchError(null);
     try {
-      const models = await listOllamaModels();
+      const models = await client.listOllamaModels();
       setOllamaModels(models);
       if (models.length === 0) setOllamaFetchError('No models found. Is Ollama running?');
     } catch {
