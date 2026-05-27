@@ -3,7 +3,7 @@ import type {
   HealthStatus, HermesInstallStatus, CommandResult, ChatMessage, StreamEvent,
   SessionMeta, ProfileMeta, ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
   SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
-  DependencyStatus, TestResult,
+  DependencyStatus, TestResult, StateDbSession, StateDbMessage,
 } from './types'
 import { UnsupportedCapabilityError } from './errors'
 import {
@@ -27,6 +27,7 @@ import {
   listHermesSkillsDir,
   getConnectionConfig as ipcGetConnectionConfig, setConnectionConfig as ipcSetConnectionConfig,
   getGatewayPort as ipcGetGatewayPort, setGatewayPort as ipcSetGatewayPort,
+  listSessionsStateDb, readSessionStateDb, searchSessionsStateDb, deleteSessionStateDb,
 } from '../../api/desktop'
 
 // CLI mode: delegates file/config ops to IPC like LocalHermesClient,
@@ -85,6 +86,11 @@ export class CliHermesClient implements HermesClient {
   async writeSession(name: string, content: string): Promise<void> { return writeSessionDisk(name, content) }
   async deleteSession(name: string): Promise<void> { return deleteSessionDisk(name) }
   async clearAllSessions(): Promise<number> { return clearAllSessionsDisk() }
+
+  async listSessionsDb(limit?: number, offset?: number): Promise<StateDbSession[]> { return listSessionsStateDb(limit, offset) }
+  async readSessionDb(sessionId: string): Promise<StateDbMessage[]> { return readSessionStateDb(sessionId) }
+  async searchSessionsDb(query: string): Promise<StateDbSession[]> { return searchSessionsStateDb(query) }
+  async deleteSessionDb(sessionId: string): Promise<void> { return deleteSessionStateDb(sessionId) }
 
   async listProfiles(): Promise<ProfileMeta[]> { return ipcListProfiles() }
   async listProfileNames(): Promise<string[]> { return listProfilesDisk() }
