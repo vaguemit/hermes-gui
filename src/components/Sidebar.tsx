@@ -6,7 +6,7 @@ import ProfileChip from './ProfileChip';
 import {
   MessageSquare, Radio, Clock, Zap, Settings, Plus,
   ChevronDown, ChevronRight, Cpu, Download, Terminal, Bot, LayoutDashboard, Users, History, SquareTerminal, Brain, KanbanSquare, Key, BookMarked,
-  Search, X, Trash2
+  Search, X, Trash2, Building2
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { id: 'models', label: 'Models', icon: Cpu },
   { id: 'terminal', label: 'Terminal', icon: SquareTerminal },
   { id: 'kanban', label: 'Kanban', icon: KanbanSquare },
+  { id: 'office', label: 'Office', icon: Building2 },
 ] as const;
 
 export default function Sidebar() {
