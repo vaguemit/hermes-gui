@@ -117,6 +117,11 @@ export class CliHermesClient implements HermesClient {
 
   async getGatewayLatency(): Promise<number | null> { return null }
 
+  async listOllamaModels(): Promise<string[]> {
+    const { listOllamaModels: ipcListOllamaModels } = await import('../../api/desktop')
+    return ipcListOllamaModels()
+  }
+
   async fetchModels(): Promise<string[]> {
     const result = await ipcRunHermesCommand(['models', 'list', '--json'], 10).catch(() => null)
     if (!result?.success) return []

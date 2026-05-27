@@ -133,6 +133,11 @@ export class LocalHermesClient implements HermesClient {
     return gatewayFetchModels()
   }
 
+  async listOllamaModels(): Promise<string[]> {
+    const { listOllamaModels: ipcListOllamaModels } = await import('../../api/desktop')
+    return ipcListOllamaModels()
+  }
+
   private withProfile(args: string[]): string[] {
     const profile = useStore.getState().activeProfile
     return profile && profile !== 'default' ? ['--profile', profile, ...args] : args

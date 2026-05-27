@@ -63,6 +63,7 @@ export interface HermesClient {
   // Gateway metrics
   getGatewayLatency(): Promise<number | null>
   fetchModels(): Promise<string[]>
+  listOllamaModels(): Promise<string[]>
 
   // CLI command execution
   runHermesCommand(args: string[], timeoutSecs?: number): Promise<CommandResult>
