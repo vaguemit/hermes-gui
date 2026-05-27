@@ -49,6 +49,23 @@ export interface SessionMeta {
   messageCount?: number
 }
 
+export interface StateDbSession {
+  id: string;
+  source: string;
+  started_at: number;      // Unix seconds
+  ended_at: number | null;
+  message_count: number;
+  model: string;
+  title: string | null;
+}
+
+export interface StateDbMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;       // Unix seconds
+}
+
 export interface ProfileMeta {
   name: string
   modified: string
