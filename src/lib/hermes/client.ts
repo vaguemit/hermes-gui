@@ -25,6 +25,7 @@ export interface HermesClient {
 
   // Sessions
   listSessions(): Promise<SessionMeta[]>
+  searchSessions(query: string): Promise<SessionMeta[]>
   readSession(name: string): Promise<string>
   writeSession(name: string, content: string): Promise<void>
   deleteSession(name: string): Promise<void>
@@ -51,6 +52,7 @@ export interface HermesClient {
   setModelConfig(provider: string, model: string, baseUrl: string): Promise<void>
 
   // Diagnostics
+  getSystemInfo(): Promise<{ ram_gb: number; cpu_count: number }>
   detectApiKeys(): Promise<ApiKeyStatus>
   runDoctor(): Promise<DoctorResult>
   checkUpdate(): Promise<UpdateInfo>
@@ -74,6 +76,11 @@ export interface HermesClient {
 
   // Cron jobs
   listCronJobs(): Promise<CronJobMeta[]>
+  createCronJob(job: Omit<CronJobMeta, 'id'>): Promise<CronJobMeta>
+  updateCronJob(id: string, patch: Partial<Omit<CronJobMeta, 'id'>>): Promise<void>
+  deleteCronJob(id: string): Promise<void>
+  enableCronJob(id: string): Promise<void>
+  disableCronJob(id: string): Promise<void>
 
   // Connection config
   getConnectionConfig(): Promise<ConnectionConfig>
