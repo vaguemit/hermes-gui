@@ -4,25 +4,25 @@ import { RemoteHermesClient } from '../remote-client'
 
 const client = new RemoteHermesClient('http://localhost:8642', '')
 
-test('RemoteHermesClient.listProfileNames throws UnsupportedCapabilityError', async () => {
-  await expect(client.listProfileNames()).rejects.toBeInstanceOf(UnsupportedCapabilityError)
+test('RemoteHermesClient.listProfileNames throws UnsupportedCapabilityError', () => {
+  expect(() => client.listProfileNames()).toThrow(UnsupportedCapabilityError)
 })
 
-test('RemoteHermesClient.createProfile throws UnsupportedCapabilityError', async () => {
-  await expect(client.createProfile('work')).rejects.toBeInstanceOf(UnsupportedCapabilityError)
+test('RemoteHermesClient.createProfile throws UnsupportedCapabilityError', () => {
+  expect(() => client.createProfile('work')).toThrow(UnsupportedCapabilityError)
 })
 
-test('RemoteHermesClient.renameProfile throws UnsupportedCapabilityError', async () => {
-  await expect(client.renameProfile('old', 'new')).rejects.toBeInstanceOf(UnsupportedCapabilityError)
+test('RemoteHermesClient.renameProfile throws UnsupportedCapabilityError', () => {
+  expect(() => client.renameProfile('old', 'new')).toThrow(UnsupportedCapabilityError)
 })
 
-test('RemoteHermesClient.deleteProfile throws UnsupportedCapabilityError', async () => {
-  await expect(client.deleteProfile('work')).rejects.toBeInstanceOf(UnsupportedCapabilityError)
+test('RemoteHermesClient.deleteProfile throws UnsupportedCapabilityError', () => {
+  expect(() => client.deleteProfile('work')).toThrow(UnsupportedCapabilityError)
 })
 
-test('createProfile UnsupportedCapabilityError carries correct capability name', async () => {
+test('createProfile UnsupportedCapabilityError carries correct capability name', () => {
   try {
-    await client.createProfile('test')
+    client.createProfile('test')
   } catch (e) {
     expect(e).toBeInstanceOf(UnsupportedCapabilityError)
     expect((e as UnsupportedCapabilityError).capability).toBe('createProfile')
@@ -30,9 +30,9 @@ test('createProfile UnsupportedCapabilityError carries correct capability name',
   }
 })
 
-test('renameProfile UnsupportedCapabilityError carries correct capability name', async () => {
+test('renameProfile UnsupportedCapabilityError carries correct capability name', () => {
   try {
-    await client.renameProfile('a', 'b')
+    client.renameProfile('a', 'b')
   } catch (e) {
     expect(e).toBeInstanceOf(UnsupportedCapabilityError)
     expect((e as UnsupportedCapabilityError).capability).toBe('renameProfile')
