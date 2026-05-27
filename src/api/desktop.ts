@@ -181,9 +181,10 @@ export async function chatStream(
   eventId: string,
   messages: Array<{ role: string; content: string }>,
   model: string,
+  sessionId?: string | null,
 ): Promise<void> {
   if (!isTauriApp()) throw new Error('Tauri not available');
-  return invoke<void>('chat_stream', { eventId, messages, model });
+  return invoke<void>('chat_stream', { eventId, messages, model, sessionId: sessionId ?? null });
 }
 
 /**
