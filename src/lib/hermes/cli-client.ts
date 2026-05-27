@@ -10,7 +10,7 @@ import {
   startGateway as ipcStartGateway,
   stopGateway as ipcStopGateway,
   getGatewayStatus as ipcGetGatewayStatus,
-  listSessionsDisk, readSessionDisk, writeSessionDisk, deleteSessionDisk, clearAllSessionsDisk,
+  listSessionsDisk, searchSessionsDisk, readSessionDisk, writeSessionDisk, deleteSessionDisk, clearAllSessionsDisk,
   listProfiles as ipcListProfiles, readProfile as ipcReadProfile,
   writeProfile as ipcWriteProfile, deleteProfile as ipcDeleteProfile,
   readFile as ipcReadFile, writeFile as ipcWriteFile,
@@ -79,6 +79,7 @@ export class CliHermesClient implements HermesClient {
   }
 
   async listSessions(): Promise<SessionMeta[]> { return listSessionsDisk() }
+  async searchSessions(query: string): Promise<SessionMeta[]> { return searchSessionsDisk(query) }
   async readSession(name: string): Promise<string> { return readSessionDisk(name) }
   async writeSession(name: string, content: string): Promise<void> { return writeSessionDisk(name, content) }
   async deleteSession(name: string): Promise<void> { return deleteSessionDisk(name) }
@@ -100,6 +101,11 @@ export class CliHermesClient implements HermesClient {
   async getModelConfig(): Promise<ModelConfig> { return ipcGetModelConfig() }
   async setModelConfig(provider: string, model: string, baseUrl: string): Promise<void> {
     return ipcSetModelConfig(provider, model, baseUrl)
+  }
+
+  async getSystemInfo(): Promise<{ ram_gb: number; cpu_count: number }> {
+    const { getSystemInfo: ipcGetSystemInfo } = await import('../../api/desktop')
+    return ipcGetSystemInfo()
   }
 
   async detectApiKeys(): Promise<ApiKeyStatus> { return ipcDetectApiKeys() }
@@ -140,7 +146,32 @@ export class CliHermesClient implements HermesClient {
     return raw.map(s => ({ name: s.name, description: s.description, has_skill_md: s.has_skill_md }))
   }
 
-  async listCronJobs(): Promise<CronJobMeta[]> { return [] }
+  async listCronJobs(): Promise<CronJobMeta[]> {
+    try {
+      const raw = await ipcReadFile('cron/jobs.json')
+      return JSON.parse(raw) as CronJobMeta[]
+    } catch { return [] }
+  }
+
+  async createCronJob(job: Omit<CronJobMeta, 'id'>): Promise<CronJobMeta> {
+    const jobs = await this.listCronJobs()
+    const newJob: CronJobMeta = { id: `cron-${Date.now()}`, ...job }
+    await ipcWriteFile('cron/jobs.json', JSON.stringify([...jobs, newJob], null, 2))
+    return newJob
+  }
+
+  async updateCronJob(id: string, patch: Partial<Omit<CronJobMeta, 'id'>>): Promise<void> {
+    const jobs = await this.listCronJobs()
+    await ipcWriteFile('cron/jobs.json', JSON.stringify(jobs.map(j => j.id === id ? { ...j, ...patch } : j), null, 2))
+  }
+
+  async deleteCronJob(id: string): Promise<void> {
+    const jobs = await this.listCronJobs()
+    await ipcWriteFile('cron/jobs.json', JSON.stringify(jobs.filter(j => j.id !== id), null, 2))
+  }
+
+  async enableCronJob(id: string): Promise<void> { return this.updateCronJob(id, { enabled: true }) }
+  async disableCronJob(id: string): Promise<void> { return this.updateCronJob(id, { enabled: false }) }
 
   async getConnectionConfig(): Promise<ConnectionConfig> {
     const raw = await ipcGetConnectionConfig()
