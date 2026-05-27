@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Zap, CheckCircle, ArrowRight, ArrowLeft, Globe, Monitor, Key, Bot } from 'lucide-react';
 import { useStore } from '../store';
-import { detectApiKeys, writeEnv, setModelConfig, setConnectionConfig } from '../api/desktop';
-import type { ApiKeyStatus } from '../api/desktop';
+import { useHermesClient } from '../lib/hermes';
+import type { ApiKeyStatus } from '../lib/hermes';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -218,13 +218,14 @@ function StepApiKeys({
   onNext: () => void;
   onBack: () => void;
 }) {
+  const client = useHermesClient();
   const [detected, setDetected] = useState<ApiKeyStatus | null>(null);
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    detectApiKeys().then(setDetected).catch(() => setDetected({ has_keys: false, providers: [] }));
-  }, []);
+    client.detectApiKeys().then(setDetected).catch(() => setDetected({ has_keys: false, providers: [] }));
+  }, [client]);
 
   function hasProvider(provider: ApiProvider) {
     if (!detected) return false;
@@ -238,7 +239,7 @@ function StepApiKeys({
       await Promise.allSettled(
         Object.entries(keys)
           .filter(([, v]) => v.trim())
-          .map(([k, v]) => writeEnv(k, v.trim()))
+          .map(([k, v]) => client.writeEnv(k, v.trim()))
       );
     } finally {
       setSaving(false);
@@ -314,6 +315,7 @@ function StepModelSelection({
   onNext: () => void;
   onBack: () => void;
 }) {
+  const client = useHermesClient();
   const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -323,7 +325,7 @@ function StepModelSelection({
     try {
       const opt = MODEL_OPTIONS.find(m => m.provider === selected);
       if (opt) {
-        await setModelConfig(opt.provider, opt.model, opt.baseUrl);
+        await client.setModelConfig(opt.provider, opt.model, opt.baseUrl);
       }
     } catch { /* ignore */ } finally {
       setSaving(false);
@@ -484,6 +486,7 @@ interface WelcomePanelProps {
 }
 
 export default function WelcomePanel({ onDone }: WelcomePanelProps) {
+  const client = useHermesClient();
   const [step, setStep] = useState(1);
   const { setActiveSection } = useStore();
 
@@ -492,7 +495,7 @@ export default function WelcomePanel({ onDone }: WelcomePanelProps) {
 
   async function handleConnectionNext(mode: ConnectionMode, remoteUrl: string, remoteKey: string) {
     try {
-      await setConnectionConfig(mode, remoteUrl, remoteKey || undefined);
+      await client.setConnectionConfig(mode, remoteUrl, remoteKey || undefined);
     } catch { /* ignore */ }
     next();
   }
