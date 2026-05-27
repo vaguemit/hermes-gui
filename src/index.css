@@ -732,3 +732,96 @@
 }
 .code-copy-btn:hover { color: var(--text-primary); border-color: var(--border-hover); }
 pre:hover .code-copy-btn { opacity: 1; }
+
+/* Office / Claw3D Panel */
+.office-ready {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.office-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.office-toolbar-left { display: flex; align-items: center; gap: 8px; }
+.office-toolbar-right { display: flex; align-items: center; gap: 6px; }
+.office-toolbar-title { margin: 0; font-size: 16px; font-weight: 600; }
+.office-toolbar-btn { padding: 4px 8px; }
+.office-status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.office-status-dot.running { background: #22c55e; }
+.office-status-dot.stopped { background: #6b7280; }
+.office-status-label { font-size: 12px; color: var(--text-secondary); }
+.office-settings-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.office-setting { display: flex; align-items: center; gap: 6px; }
+.office-setting-label { font-size: 12px; color: var(--text-secondary); }
+.office-port-input { width: 80px; }
+.office-ws-input { width: 220px; }
+.office-warning-bar {
+  background: #78350f; color: #fde68a;
+  padding: 6px 16px; font-size: 12px; flex-shrink: 0;
+}
+.office-error-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #7f1d1d; color: #fca5a5;
+  padding: 6px 16px; font-size: 12px; flex-shrink: 0;
+}
+.office-error-actions { display: flex; gap: 6px; }
+.office-logs-panel {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+}
+.office-logs-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 16px; border-bottom: 1px solid var(--border);
+  font-size: 12px; font-weight: 600; flex-shrink: 0;
+}
+.office-logs-content {
+  flex: 1; overflow-y: auto; padding: 8px 16px;
+  font-family: monospace; font-size: 11px; white-space: pre-wrap;
+  background: var(--bg1);
+}
+.office-content { flex: 1; overflow: hidden; position: relative; }
+.office-center {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 100%; gap: 12px;
+}
+.office-muted { color: var(--text-secondary); font-size: 14px; }
+.office-spinner {
+  width: 24px; height: 24px; border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-blue);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.office-setup-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 24px; max-width: 420px; text-align: center;
+}
+.office-setup-title { margin: 0 0 8px; font-size: 18px; }
+.office-setup-desc { font-size: 13px; color: var(--text-secondary); margin: 4px 0; }
+.office-setup-actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+.office-error { color: #fca5a5; font-size: 12px; margin: 8px 0; }
+.office-installing { padding: 24px; max-width: 480px; margin: 40px auto; }
+.office-install-title { margin: 0 0 16px; font-size: 18px; }
+.install-progress-container { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.install-progress-bar { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.install-progress-fill { height: 100%; background: var(--accent-blue); transition: width 0.3s; }
+.install-percent { font-size: 12px; color: var(--text-secondary); width: 32px; text-align: right; }
+.install-step-info { margin-bottom: 8px; }
+.install-step-title { font-size: 13px; font-weight: 600; }
+.install-step-detail { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.install-log {
+  font-family: monospace; font-size: 11px; white-space: pre-wrap;
+  background: var(--bg1); border: 1px solid var(--border);
+  border-radius: 4px; padding: 8px; max-height: 160px; overflow-y: auto;
+}
