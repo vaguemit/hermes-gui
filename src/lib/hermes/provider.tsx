@@ -5,6 +5,7 @@ import { LocalHermesClient } from './local-client'
 import { RemoteHermesClient } from './remote-client'
 import { CliHermesClient } from './cli-client'
 import { getBaseUrl, getAuthHeaders, setInMemoryConnectionConfig } from '../../api/hermes'
+import { setSharedClient } from './shared'
 
 function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -60,8 +61,9 @@ export function HermesProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const client = useMemo<HermesClient>(() => {
-    if (mode === 'local' && isTauri()) return getLocalSingleton()
-    return makeClient(mode, remoteUrl, apiKey)
+    const c = (mode === 'local' && isTauri()) ? getLocalSingleton() : makeClient(mode, remoteUrl, apiKey)
+    setSharedClient(c)
+    return c
   }, [mode, remoteUrl, apiKey])
 
   const setMode = useCallback((newMode: HermesMode, newRemoteUrl = '', newApiKey = '') => {
