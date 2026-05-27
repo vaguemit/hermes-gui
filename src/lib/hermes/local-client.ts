@@ -10,8 +10,8 @@ import {
   stopGateway as ipcStopGateway,
   getGatewayStatus as ipcGetGatewayStatus,
   listSessionsDisk, searchSessionsDisk, readSessionDisk, writeSessionDisk, deleteSessionDisk, clearAllSessionsDisk,
-  listProfiles as ipcListProfiles, readProfile as ipcReadProfile,
-  writeProfile as ipcWriteProfile, deleteProfile as ipcDeleteProfile,
+  listProfiles as ipcListProfiles, listProfilesDisk, readProfile as ipcReadProfile,
+  writeProfile as ipcWriteProfile, createProfileDisk, deleteProfile as ipcDeleteProfile, renameProfileDisk,
   readFile as ipcReadFile, writeFile as ipcWriteFile,
   readConfig as ipcReadConfig, writeConfig as ipcWriteConfig,
   readEnv as ipcReadEnv, writeEnv as ipcWriteEnv,
@@ -96,9 +96,12 @@ export class LocalHermesClient implements HermesClient {
   async clearAllSessions(): Promise<number> { return clearAllSessionsDisk() }
 
   async listProfiles(): Promise<ProfileMeta[]> { return ipcListProfiles() }
+  async listProfileNames(): Promise<string[]> { return listProfilesDisk() }
   async readProfile(name: string): Promise<string> { return ipcReadProfile(name) }
   async writeProfile(name: string, content: string): Promise<void> { return ipcWriteProfile(name, content) }
+  async createProfile(name: string): Promise<CommandResult> { return createProfileDisk(name) }
   async deleteProfile(name: string): Promise<void> { return ipcDeleteProfile(name) }
+  async renameProfile(oldName: string, newName: string): Promise<CommandResult> { return renameProfileDisk(oldName, newName) }
 
   async readFile(path: string): Promise<string> { return ipcReadFile(path) }
   async writeFile(path: string, content: string): Promise<void> { return ipcWriteFile(path, content) }
