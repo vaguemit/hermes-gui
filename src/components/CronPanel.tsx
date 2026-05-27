@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, CronJob } from '../store';
-import { isTauriApp } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
+
+const isTauriApp = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 import { Clock, Plus, Trash2, Play, Search, X } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).slice(2);
