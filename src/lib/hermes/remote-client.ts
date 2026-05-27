@@ -3,6 +3,7 @@ import type {
   HealthStatus, HermesInstallStatus, CommandResult, ChatMessage, StreamEvent,
   SessionMeta, ProfileMeta, ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
   SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
+  DependencyStatus, TestResult,
 } from './types'
 import { UnsupportedCapabilityError } from './errors'
 
@@ -145,6 +146,20 @@ export class RemoteHermesClient implements HermesClient {
       return (data.data || []).map((m: { id: string }) => m.id)
     } catch {
       return []
+    }
+  }
+
+  checkDependencies(): Promise<DependencyStatus> {
+    throw new UnsupportedCapabilityError('checkDependencies', 'remote')
+  }
+
+  async testGateway(): Promise<TestResult> {
+    const t0 = Date.now()
+    try {
+      const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(3000), headers: this.authHeaders() })
+      return { success: res.ok, latency_ms: Date.now() - t0, error: res.ok ? null : `HTTP ${res.status}` }
+    } catch (e) {
+      return { success: false, latency_ms: null, error: (e as Error).message }
     }
   }
 
