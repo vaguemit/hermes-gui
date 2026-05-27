@@ -6,7 +6,6 @@ import {
   CopyPlus, Package, X, Save,
 } from 'lucide-react';
 import { useHermesClient } from '../lib/hermes';
-import { listHermesSkillsDir } from '../api/desktop';
 
 const generateId = () => Math.random().toString(36).slice(2);
 
@@ -64,7 +63,7 @@ export default function SkillsPanel() {
 
   // ── Mount: sync from disk ─────────────────────────────────────────────
   useEffect(() => {
-    listHermesSkillsDir().then((diskSkills) => {
+    client.listSkills().then((diskSkills) => {
       if (diskSkills.length === 0) return;
       const existingNames = new Set(useStore.getState().skills.map((s) => s.name));
       diskSkills.forEach((ds) => {
@@ -79,7 +78,7 @@ export default function SkillsPanel() {
         }
       });
     }).catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [client, addSkill]);
 
   // ── Helpers: form ────────────────────────────────────────────────────
   const validateName = (val: string): string => {
@@ -136,7 +135,7 @@ export default function SkillsPanel() {
         await client.writeFile(`skills/${name}/SKILL.md`, form.content);
         addSkill({ id: generateId(), name, description: form.description, content: form.content, source: 'user' });
         // Refresh disk list to pick up the new entry
-        listHermesSkillsDir().catch(() => {});
+        client.listSkills().catch(() => {});
       } else if (editSkill) {
         await client.writeFile(`skills/${name}/SKILL.md`, form.content);
         updateSkill(editSkill.id, { name, description: form.description, content: form.content });
