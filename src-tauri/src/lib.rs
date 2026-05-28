@@ -1790,6 +1790,57 @@ fn delete_profile(name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_active_profile() -> Result<String, String> {
+    let config_path = hermes_home().join("config.yaml");
+    if !config_path.exists() {
+        return Ok("default".to_string());
+    }
+    let content = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+    for line in content.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("profile:") {
+            let val = rest.trim().trim_matches('"').trim_matches('\'');
+            if !val.is_empty() {
+                return Ok(val.to_string());
+            }
+        }
+    }
+    Ok("default".to_string())
+}
+
+#[tauri::command]
+fn set_active_profile(name: String) -> Result<(), String> {
+    if name.is_empty()
+        || name.len() > 64
+        || !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(format!("Invalid profile name: {}", name));
+    }
+    let config_path = hermes_home().join("config.yaml");
+    let content = if config_path.exists() {
+        std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?
+    } else {
+        String::new()
+    };
+    let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
+    let mut found = false;
+    for line in &mut lines {
+        if line.trim_start().starts_with("profile:") {
+            *line = format!("profile: {}", name);
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        lines.push(format!("profile: {}", name));
+    }
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&config_path, lines.join("\n") + "\n").map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn list_memory_files() -> Vec<MemoryFileMeta> {
     let dir = hermes_home().join("memory");
     let mut out = Vec::new();
@@ -3337,6 +3388,8 @@ pub fn run() {
             read_profile,
             write_profile,
             delete_profile,
+            get_active_profile,
+            set_active_profile,
             list_memory_files,
             read_memory_file,
             delete_memory_file,
