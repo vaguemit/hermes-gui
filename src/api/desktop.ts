@@ -609,6 +609,18 @@ export async function renameProfileDisk(oldName: string, newName: string): Promi
   return invoke<CommandResult>('hermes_rename_profile', { oldName, newName });
 }
 
+export async function getActiveProfile(): Promise<string> {
+  if (!isTauriApp()) return 'default';
+  const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+  return tauriInvoke<string>('get_active_profile');
+}
+
+export async function setActiveProfile(name: string): Promise<void> {
+  if (!isTauriApp()) return;
+  const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+  return tauriInvoke('set_active_profile', { name });
+}
+
 /** Read a single key from the hermes .env file. Throws if key not found. */
 export async function readEnvVar(key: string): Promise<string> {
   if (!isTauriApp()) throw new Error('Tauri not available');
