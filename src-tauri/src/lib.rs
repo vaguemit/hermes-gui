@@ -1791,53 +1791,29 @@ fn delete_profile(name: String) -> Result<(), String> {
 
 #[tauri::command]
 fn get_active_profile() -> Result<String, String> {
-    let config_path = hermes_home().join("config.yaml");
-    if !config_path.exists() {
+    let active_file = hermes_home().join("active_profile");
+    if !active_file.exists() {
         return Ok("default".to_string());
     }
-    let content = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
-    for line in content.lines() {
-        let line = line.trim();
-        if let Some(rest) = line.strip_prefix("profile:") {
-            let val = rest.trim().trim_matches('"').trim_matches('\'');
-            if !val.is_empty() {
-                return Ok(val.to_string());
-            }
-        }
-    }
-    Ok("default".to_string())
+    let name = std::fs::read_to_string(&active_file)
+        .map_err(|e| e.to_string())?
+        .trim()
+        .to_string();
+    if name.is_empty() { Ok("default".to_string()) } else { Ok(name) }
 }
 
 #[tauri::command]
 fn set_active_profile(name: String) -> Result<(), String> {
-    if name.is_empty()
-        || name.len() > 64
-        || !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(format!("Invalid profile name: {}", name));
+    // Matches Desktop: lowercase alphanumeric, dash, underscore; cannot start with dash
+    let valid = !name.is_empty()
+        && name.len() <= 64
+        && name.chars().next().map(|c| c != '-').unwrap_or(false)
+        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_');
+    if name != "default" && !valid {
+        return Err("Profile names may contain lowercase letters, numbers, underscores, and hyphens, and cannot start with a hyphen.".to_string());
     }
-    let config_path = hermes_home().join("config.yaml");
-    let content = if config_path.exists() {
-        std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?
-    } else {
-        String::new()
-    };
-    let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
-    let mut found = false;
-    for line in &mut lines {
-        if line.trim_start().starts_with("profile:") {
-            *line = format!("profile: {}", name);
-            found = true;
-            break;
-        }
-    }
-    if !found {
-        lines.push(format!("profile: {}", name));
-    }
-    if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&config_path, lines.join("\n") + "\n").map_err(|e| e.to_string())
+    let active_file = hermes_home().join("active_profile");
+    std::fs::write(&active_file, format!("{}\n", name)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
