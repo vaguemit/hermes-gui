@@ -69,6 +69,7 @@ export interface StateDbMessage {
 export interface ProfileMeta {
   name: string
   modified: string
+  active?: boolean
 }
 
 export interface MemoryFileMeta {
