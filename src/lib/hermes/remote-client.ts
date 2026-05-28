@@ -188,6 +188,8 @@ export class RemoteHermesClient implements HermesClient {
   createProfile(_n: string): Promise<CommandResult> { return this.unsupported('createProfile') }
   deleteProfile(_n: string): Promise<void> { return this.unsupported('deleteProfile') }
   renameProfile(_o: string, _n: string): Promise<CommandResult> { return this.unsupported('renameProfile') }
+  async getActiveProfile(): Promise<string> { return 'default' }
+  setActiveProfile(_name: string): Promise<void> { return this.unsupported('setActiveProfile') }
   readFile(_p: string): Promise<string> { return this.unsupported('readFile') }
   writeFile(_p: string, _c: string): Promise<void> { return this.unsupported('writeFile') }
   readConfig(): Promise<string> { return this.unsupported('readConfig') }
