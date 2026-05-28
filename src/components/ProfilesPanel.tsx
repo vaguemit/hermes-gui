@@ -102,7 +102,8 @@ export default function ProfilesPanel() {
   useEffect(() => {
     loadProfiles();
     loadMemFiles();
-  }, [loadProfiles, loadMemFiles]);
+    client.getActiveProfile().then(setActiveProfile).catch(() => {});
+  }, [loadProfiles, loadMemFiles, client, setActiveProfile]);
 
   // Focus rename input when it appears
   useEffect(() => {
@@ -201,6 +202,7 @@ export default function ProfilesPanel() {
       }
       // Update active profile reference if this was the active one
       if (activeProfile === renamingProfile) {
+        await client.setActiveProfile(newNameTrimmed).catch(() => {});
         setActiveProfile(newNameTrimmed);
       }
       setRenamingProfile(null);
@@ -483,7 +485,7 @@ export default function ProfilesPanel() {
                       ) : (
                         <button
                           className="btn btn-ghost btn-sm"
-                          onClick={() => setActiveProfile(p.name)}
+                          onClick={() => client.setActiveProfile(p.name).then(() => setActiveProfile(p.name)).catch(() => setActiveProfile(p.name))}
                           style={{ display: 'flex', alignItems: 'center', gap: 5 }}
                           title="Set as active profile"
                         >
