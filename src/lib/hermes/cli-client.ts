@@ -100,6 +100,16 @@ export class CliHermesClient implements HermesClient {
   async deleteProfile(name: string): Promise<void> { return ipcDeleteProfile(name) }
   async renameProfile(oldName: string, newName: string): Promise<CommandResult> { return renameProfileDisk(oldName, newName) }
 
+  async getActiveProfile(): Promise<string> {
+    const { getActiveProfile: ipcGetActiveProfile } = await import('../../api/desktop')
+    return ipcGetActiveProfile()
+  }
+
+  async setActiveProfile(name: string): Promise<void> {
+    const { setActiveProfile: ipcSetActiveProfile } = await import('../../api/desktop')
+    return ipcSetActiveProfile(name)
+  }
+
   async readFile(path: string): Promise<string> { return ipcReadFile(path) }
   async writeFile(path: string, content: string): Promise<void> { return ipcWriteFile(path, content) }
 
