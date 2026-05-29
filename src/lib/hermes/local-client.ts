@@ -29,6 +29,7 @@ import {
   listHermesSkillsDir,
   getConnectionConfig as ipcGetConnectionConfig, setConnectionConfig as ipcSetConnectionConfig,
   getGatewayPort as ipcGetGatewayPort, setGatewayPort as ipcSetGatewayPort,
+  readCronJobsIpc, writeCronJobsIpc, runCronJobNowIpc,
 } from '../../api/desktop'
 import { checkHealth, checkGatewayHealth, fetchModels as gatewayFetchModels, streamChat as gatewayStreamChat, setInMemoryGatewayPort, getBaseUrl, getAuthHeaders } from '../../api/hermes'
 import { useStore } from '../../store'
@@ -201,9 +202,14 @@ export class LocalHermesClient implements HermesClient {
     return raw.map(s => ({ name: s.name, description: s.description, has_skill_md: s.has_skill_md }))
   }
 
+  private get _profile(): string | null {
+    const p = useStore.getState().activeProfile
+    return p && p !== 'default' ? p : null
+  }
+
   private async _readCronJobs(): Promise<CronJobMeta[]> {
     try {
-      const raw = await ipcReadFile('cron/jobs.json')
+      const raw = await readCronJobsIpc(this._profile)
       return JSON.parse(raw) as CronJobMeta[]
     } catch {
       return []
@@ -211,7 +217,7 @@ export class LocalHermesClient implements HermesClient {
   }
 
   private async _writeCronJobs(jobs: CronJobMeta[]): Promise<void> {
-    await ipcWriteFile('cron/jobs.json', JSON.stringify(jobs, null, 2))
+    await writeCronJobsIpc(JSON.stringify(jobs, null, 2), this._profile)
   }
 
   async listCronJobs(): Promise<CronJobMeta[]> { return this._readCronJobs() }
@@ -235,6 +241,10 @@ export class LocalHermesClient implements HermesClient {
 
   async enableCronJob(id: string): Promise<void> { return this.updateCronJob(id, { enabled: true }) }
   async disableCronJob(id: string): Promise<void> { return this.updateCronJob(id, { enabled: false }) }
+
+  async runCronJob(id: string): Promise<CommandResult> {
+    return runCronJobNowIpc(id, this._profile)
+  }
 
   async getConnectionConfig(): Promise<ConnectionConfig> {
     const raw = await ipcGetConnectionConfig()
