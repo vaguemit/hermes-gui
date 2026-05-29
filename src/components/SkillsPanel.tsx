@@ -208,7 +208,7 @@ export default function SkillsPanel() {
     setMarketBusy(name);
     setMarketError((prev) => { const n = { ...prev }; delete n[name]; return n; });
     try {
-      const result = await client.runHermesCommand(['skill', 'install', name]);
+      const result = await client.installSkill(name);
       if (result.success) {
         setMarketDone((prev) => new Set(prev).add(name));
         // Add to store if not already present
