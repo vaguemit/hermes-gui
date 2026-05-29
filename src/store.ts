@@ -340,10 +340,7 @@ export const useStore = create<AppState>((set, get) => ({
     })),
 
   // Crons
-  crons: [
-    { id: '1', schedule: 'Daily at 09:00', description: 'Morning briefing digest', platform: 'Telegram', lastRun: '2026-05-12', active: true },
-    { id: '2', schedule: 'Every Monday', description: 'Weekly goals review', platform: 'Discord', lastRun: '2026-05-11', active: false },
-  ],
+  crons: [],
   addCron: (c) => set((state) => ({ crons: [...state.crons, c] })),
   toggleCron: (id) =>
     set((state) => ({
