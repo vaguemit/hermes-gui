@@ -107,6 +107,15 @@ export interface CommandResult {
   stderr: string
 }
 
+export interface SavedModel {
+  id: string
+  name: string
+  provider: string
+  model: string
+  baseUrl: string
+  createdAt: number
+}
+
 export interface ApiKeyStatus {
   has_keys: boolean
   providers: string[]
