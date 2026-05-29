@@ -92,6 +92,12 @@ export interface HermesClient {
 
   // Skills
   listSkills(): Promise<SkillMeta[]>
+  getSkillDetail(name: string): Promise<string>
+  installSkill(nameOrUrl: string): Promise<CommandResult>
+  uninstallSkill(name: string): Promise<CommandResult>
+
+  // Memory search
+  searchMemory(query: string): Promise<MemoryFileMeta[]>
 
   // Cron jobs
   listCronJobs(): Promise<CronJobMeta[]>
