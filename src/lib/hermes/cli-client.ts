@@ -28,6 +28,7 @@ import {
   getConnectionConfig as ipcGetConnectionConfig, setConnectionConfig as ipcSetConnectionConfig,
   getGatewayPort as ipcGetGatewayPort, setGatewayPort as ipcSetGatewayPort,
   listSessionsStateDb, readSessionStateDb, searchSessionsStateDb, deleteSessionStateDb,
+  readCronJobsIpc, writeCronJobsIpc, runCronJobNowIpc,
 } from '../../api/desktop'
 
 // CLI mode: delegates file/config ops to IPC like LocalHermesClient,
@@ -200,7 +201,7 @@ export class CliHermesClient implements HermesClient {
 
   async listCronJobs(): Promise<CronJobMeta[]> {
     try {
-      const raw = await ipcReadFile('cron/jobs.json')
+      const raw = await readCronJobsIpc()
       return JSON.parse(raw) as CronJobMeta[]
     } catch { return [] }
   }
@@ -208,22 +209,26 @@ export class CliHermesClient implements HermesClient {
   async createCronJob(job: Omit<CronJobMeta, 'id'>): Promise<CronJobMeta> {
     const jobs = await this.listCronJobs()
     const newJob: CronJobMeta = { id: `cron-${Date.now()}`, ...job }
-    await ipcWriteFile('cron/jobs.json', JSON.stringify([...jobs, newJob], null, 2))
+    await writeCronJobsIpc(JSON.stringify([...jobs, newJob], null, 2))
     return newJob
   }
 
   async updateCronJob(id: string, patch: Partial<Omit<CronJobMeta, 'id'>>): Promise<void> {
     const jobs = await this.listCronJobs()
-    await ipcWriteFile('cron/jobs.json', JSON.stringify(jobs.map(j => j.id === id ? { ...j, ...patch } : j), null, 2))
+    await writeCronJobsIpc(JSON.stringify(jobs.map(j => j.id === id ? { ...j, ...patch } : j), null, 2))
   }
 
   async deleteCronJob(id: string): Promise<void> {
     const jobs = await this.listCronJobs()
-    await ipcWriteFile('cron/jobs.json', JSON.stringify(jobs.filter(j => j.id !== id), null, 2))
+    await writeCronJobsIpc(JSON.stringify(jobs.filter(j => j.id !== id), null, 2))
   }
 
   async enableCronJob(id: string): Promise<void> { return this.updateCronJob(id, { enabled: true }) }
   async disableCronJob(id: string): Promise<void> { return this.updateCronJob(id, { enabled: false }) }
+
+  async runCronJob(id: string): Promise<CommandResult> {
+    return runCronJobNowIpc(id)
+  }
 
   async getConnectionConfig(): Promise<ConnectionConfig> {
     const raw = await ipcGetConnectionConfig()

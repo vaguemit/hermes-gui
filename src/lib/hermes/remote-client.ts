@@ -217,6 +217,7 @@ export class RemoteHermesClient implements HermesClient {
   deleteCronJob(_id: string): Promise<void> { return this.unsupported('deleteCronJob') }
   enableCronJob(_id: string): Promise<void> { return this.unsupported('enableCronJob') }
   disableCronJob(_id: string): Promise<void> { return this.unsupported('disableCronJob') }
+  runCronJob(_id: string): Promise<CommandResult> { return this.unsupported('runCronJob') }
   getConnectionConfig(): Promise<ConnectionConfig> { return this.unsupported('getConnectionConfig') }
   setConnectionConfig(_m: string, _u: string, _k?: string): Promise<void> { return this.unsupported('setConnectionConfig') }
 
