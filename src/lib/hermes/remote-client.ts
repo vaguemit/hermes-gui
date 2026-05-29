@@ -210,6 +210,10 @@ export class RemoteHermesClient implements HermesClient {
   readMemoryFile(_n: string): Promise<string> { return this.unsupported('readMemoryFile') }
   deleteMemoryFile(_n: string): Promise<void> { return this.unsupported('deleteMemoryFile') }
   listSkills(): Promise<SkillMeta[]> { return this.unsupported('listSkills') }
+  getSkillDetail(_n: string): Promise<string> { return this.unsupported('getSkillDetail') }
+  installSkill(_n: string): Promise<CommandResult> { return this.unsupported('installSkill') }
+  uninstallSkill(_n: string): Promise<CommandResult> { return this.unsupported('uninstallSkill') }
+  searchMemory(_q: string): Promise<MemoryFileMeta[]> { return this.unsupported('searchMemory') }
   listOllamaModels(): Promise<string[]> { return this.unsupported('listOllamaModels') }
   listCronJobs(): Promise<CronJobMeta[]> { return this.unsupported('listCronJobs') }
   createCronJob(_j: Omit<CronJobMeta, 'id'>): Promise<CronJobMeta> { return this.unsupported('createCronJob') }
