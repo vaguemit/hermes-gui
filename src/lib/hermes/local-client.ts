@@ -197,9 +197,27 @@ export class LocalHermesClient implements HermesClient {
   async readMemoryFile(name: string): Promise<string> { return ipcReadMemoryFile(name) }
   async deleteMemoryFile(name: string): Promise<void> { return ipcDeleteMemoryFile(name) }
 
+  async searchMemory(query: string): Promise<MemoryFileMeta[]> {
+    const all = await this.listMemoryFiles()
+    const q = query.toLowerCase()
+    return all.filter(f => f.name.toLowerCase().includes(q))
+  }
+
   async listSkills(): Promise<SkillMeta[]> {
     const raw = await listHermesSkillsDir()
     return raw.map(s => ({ name: s.name, description: s.description, has_skill_md: s.has_skill_md }))
+  }
+
+  async getSkillDetail(name: string): Promise<string> {
+    return ipcReadFile(`skills/${name}/SKILL.md`)
+  }
+
+  async installSkill(nameOrUrl: string): Promise<CommandResult> {
+    return ipcRunHermesCommand(this.withProfile(['skill', 'install', nameOrUrl]), 120)
+  }
+
+  async uninstallSkill(name: string): Promise<CommandResult> {
+    return ipcRunHermesCommand(this.withProfile(['skill', 'uninstall', name]), 60)
   }
 
   private get _profile(): string | null {
