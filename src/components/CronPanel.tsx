@@ -227,8 +227,9 @@ export default function CronPanel() {
     toggleCron(c.id);
   };
 
-  const handleDelete = (id: string) => {
-    deleteCron(id);
+  const handleDelete = async (id: string) => {
+    deleteCron(id); // optimistic
+    await client.deleteCronJob(id).catch(() => loadCrons()); // revert on failure
   };
 
   const handleAdd = async () => {
