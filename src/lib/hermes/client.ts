@@ -4,6 +4,7 @@ import type {
   ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
   SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
   DependencyStatus, TestResult, StateDbSession, StateDbMessage,
+  SavedModel,
 } from './types'
 
 export interface HermesClient {
@@ -64,6 +65,14 @@ export interface HermesClient {
   // Model
   getModelConfig(): Promise<ModelConfig>
   setModelConfig(provider: string, model: string, baseUrl: string): Promise<void>
+  listSavedModels(): Promise<SavedModel[]>
+  addSavedModel(m: Omit<SavedModel, 'id' | 'createdAt'>): Promise<SavedModel>
+  removeSavedModel(id: string): Promise<void>
+  updateSavedModel(id: string, patch: Partial<Omit<SavedModel, 'id' | 'createdAt'>>): Promise<void>
+
+  // Toolsets
+  getEnabledToolsets(): Promise<string[]>
+  setEnabledToolsets(toolsets: string[]): Promise<void>
 
   // System
   getAutostartEnabled(): Promise<boolean>
