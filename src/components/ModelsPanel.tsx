@@ -2,13 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Cpu, Plus, Trash2, Check, ChevronDown, RefreshCw, Zap, Search, X } from 'lucide-react';
 import { useStore } from '../store';
 import { useHermesClient } from '../lib/hermes';
-
-interface SavedModel {
-  name: string;
-  provider: string;
-  model: string;
-  baseUrl: string;
-}
+import type { SavedModel } from '../lib/hermes';
 
 const PROVIDERS = ['auto', 'openrouter', 'openai', 'anthropic', 'groq', 'ollama', 'custom'];
 
@@ -89,20 +83,11 @@ export default function ModelsPanel() {
   const loadSaved = useCallback(async () => {
     setSavedLoading(true);
     try {
-      const [raw, cfg] = await Promise.allSettled([
-        client.readFile('models.json'),
+      const [models, cfg] = await Promise.allSettled([
+        client.listSavedModels(),
         client.getModelConfig(),
       ]);
-
-      if (raw.status === 'fulfilled' && raw.value && raw.value.trim()) {
-        try {
-          const parsed = JSON.parse(raw.value);
-          if (Array.isArray(parsed)) setSavedModels(parsed);
-        } catch {
-          // treat as empty
-        }
-      }
-
+      if (models.status === 'fulfilled') setSavedModels(models.value);
       if (cfg.status === 'fulfilled' && cfg.value.model) {
         setActiveModelId(`${cfg.value.provider}::${cfg.value.model}`);
       }
@@ -129,10 +114,6 @@ export default function ModelsPanel() {
     loadGatewayModels();
   }, [loadSaved, loadGatewayModels]);
 
-  const persist = async (updated: SavedModel[]) => {
-    await client.writeFile('models.json', JSON.stringify(updated, null, 2)).catch(() => {});
-  };
-
   const handleActivateSaved = async (m: SavedModel) => {
     await client.setModelConfig(m.provider, m.model, m.baseUrl).catch(() => {});
     setActiveModel(m.model);
@@ -148,9 +129,9 @@ export default function ModelsPanel() {
   };
 
   const handleDelete = async (idx: number) => {
-    const updated = savedModels.filter((_, i) => i !== idx);
-    setSavedModels(updated);
-    await persist(updated);
+    const m = savedModels[idx];
+    setSavedModels(prev => prev.filter((_, i) => i !== idx)); // optimistic
+    await client.removeSavedModel(m.id).catch(() => loadSaved());
   };
 
   const handleAdd = async () => {
@@ -158,20 +139,19 @@ export default function ModelsPanel() {
     if (!form.name.trim()) { setFormError('Name is required.'); return; }
     if (!form.model.trim()) { setFormError('Model ID is required.'); return; }
     setSaving(true);
-    const entry: SavedModel = {
-      name: form.name.trim(),
-      provider: form.provider,
-      model: form.model.trim(),
-      baseUrl: form.baseUrl.trim(),
-    };
-    const updated = [...savedModels, entry];
-    setSavedModels(updated);
-    await persist(updated);
-    setForm(EMPTY_FORM);
-    setFormOpen(false);
-    setSaving(false);
-    setProviderTouched(false);
-    setProviderAutoDetected(false);
+    try {
+      const entry = await client.addSavedModel({
+        name: form.name.trim(), provider: form.provider,
+        model: form.model.trim(), baseUrl: form.baseUrl.trim(),
+      });
+      setSavedModels(prev => [...prev, entry]);
+      setForm(EMPTY_FORM);
+      setFormOpen(false);
+    } finally {
+      setSaving(false);
+      setProviderTouched(false);
+      setProviderAutoDetected(false);
+    }
   };
 
   const isSavedActive = (m: SavedModel) => activeModelId === `${m.provider}::${m.model}`;
