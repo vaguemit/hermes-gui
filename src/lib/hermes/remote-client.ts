@@ -3,7 +3,7 @@ import type {
   HealthStatus, HermesInstallStatus, CommandResult, ChatMessage, StreamEvent,
   SessionMeta, ProfileMeta, ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
   SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
-  DependencyStatus, TestResult, StateDbSession, StateDbMessage,
+  DependencyStatus, TestResult, StateDbSession, StateDbMessage, SavedModel,
 } from './types'
 import { UnsupportedCapabilityError } from './errors'
 
@@ -198,6 +198,12 @@ export class RemoteHermesClient implements HermesClient {
   writeEnv(_k: string, _v: string): Promise<void> { return this.unsupported('writeEnv') }
   getModelConfig(): Promise<ModelConfig> { return this.unsupported('getModelConfig') }
   setModelConfig(_p: string, _m: string, _b: string): Promise<void> { return this.unsupported('setModelConfig') }
+  listSavedModels(): Promise<SavedModel[]> { return this.unsupported('listSavedModels') }
+  addSavedModel(_m: Omit<SavedModel, 'id' | 'createdAt'>): Promise<SavedModel> { return this.unsupported('addSavedModel') }
+  removeSavedModel(_id: string): Promise<void> { return this.unsupported('removeSavedModel') }
+  updateSavedModel(_id: string, _p: Partial<Omit<SavedModel, 'id' | 'createdAt'>>): Promise<void> { return this.unsupported('updateSavedModel') }
+  getEnabledToolsets(): Promise<string[]> { return this.unsupported('getEnabledToolsets') }
+  setEnabledToolsets(_t: string[]): Promise<void> { return this.unsupported('setEnabledToolsets') }
   detectApiKeys(): Promise<ApiKeyStatus> { return this.unsupported('detectApiKeys') }
   runDoctor(): Promise<DoctorResult> { return this.unsupported('runDoctor') }
   checkUpdate(): Promise<UpdateInfo> { return this.unsupported('checkUpdate') }
