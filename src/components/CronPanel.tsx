@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore, CronJob } from '../store';
 import { useHermesClient } from '../lib/hermes';
 
@@ -140,26 +140,6 @@ export default function CronPanel() {
     loadCrons();
   }, [loadCrons]);
 
-  // Persist crons to disk in hermes-native format so hermes scheduler can execute them
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!isTauriApp()) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      const nativeCrons = crons.map(c => ({
-        id: c.id,
-        prompt: c.description,
-        name: c.description,
-        schedule_display: c.schedule,
-        schedule: c.schedule,
-        deliver: [c.platform],
-        enabled: c.active,
-        state: c.active ? 'idle' : 'paused',
-        last_run_at: c.lastRun ?? null,
-      }));
-      client.writeFile('cron/jobs.json', JSON.stringify(nativeCrons, null, 2)).catch(() => {});
-    }, 800);
-  }, [crons]);
 
   // Dispatch routing: 'auto' tries gateway first and falls back to PTY if the gateway
   // is not connected. 'gateway' and 'pty' force a specific path. PTY runs hermes CLI
