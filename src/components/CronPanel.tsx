@@ -120,40 +120,25 @@ export default function CronPanel() {
   // Per-row run state: id -> 'running' | 'done' | 'error'
   const [rowRunState, setRowRunState] = useState<Record<string, 'running' | 'done' | 'error'>>({});
 
-  // Load crons from disk on mount
-  useEffect(() => {
-    if (!isTauriApp()) return;
-
-    // Load cron jobs from hermes-native cron/jobs.json
-    client.readFile('cron/jobs.json').then(raw => {
-      const nativeJobs = JSON.parse(raw);
-      if (!Array.isArray(nativeJobs)) return;
-      const mapped: CronJob[] = nativeJobs.map((j: {
-        id?: string;
-        prompt?: string;
-        name?: string;
-        schedule_display?: string;
-        schedule?: string;
-        deliver?: string | string[];
-        enabled?: boolean;
-        state?: string;
-        last_run_at?: string;
-      }) => ({
-        id: j.id || generateId(),
-        description: j.prompt || j.name || 'Unnamed',
-        schedule: j.schedule_display || formatSchedule(j.schedule) || 'Unknown',
-        platform: Array.isArray(j.deliver) ? j.deliver[0] : (j.deliver || 'local'),
-        active: j.enabled !== false && j.state !== 'paused',
-        lastRun: j.last_run_at ? new Date(j.last_run_at).toISOString().slice(0, 10) : undefined,
+  const loadCrons = React.useCallback(() => {
+    client.listCronJobs().then(jobs => {
+      const mapped: CronJob[] = jobs.map(j => ({
+        id: j.id,
+        description: j.description,
+        schedule: j.schedule,
+        platform: 'local',
+        active: j.enabled,
+        lastRun: j.lastRun,
         source: 'hermes' as const,
       }));
-      useStore.setState(state => {
-        const existingIds = new Set(state.crons.map(c => c.id));
-        const newJobs = mapped.filter(j => !existingIds.has(j.id));
-        return { crons: [...state.crons, ...newJobs] };
-      });
-    }).catch(() => {}); // file may not exist
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+      useStore.setState({ crons: mapped });
+    }).catch(() => {});
+  }, [client]);
+
+  // Load crons from real Hermes storage on mount
+  useEffect(() => {
+    loadCrons();
+  }, [loadCrons]);
 
   // Persist crons to disk in hermes-native format so hermes scheduler can execute them
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
