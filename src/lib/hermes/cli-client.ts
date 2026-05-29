@@ -3,7 +3,7 @@ import type {
   HealthStatus, HermesInstallStatus, CommandResult, ChatMessage, StreamEvent,
   SessionMeta, ProfileMeta, ModelConfig, ApiKeyStatus, DoctorResult, UpdateInfo,
   SkillMeta, CronJobMeta, ConnectionConfig, MemoryFileMeta,
-  DependencyStatus, TestResult, StateDbSession, StateDbMessage,
+  DependencyStatus, TestResult, StateDbSession, StateDbMessage, SavedModel,
 } from './types'
 import { UnsupportedCapabilityError } from './errors'
 import {
@@ -29,6 +29,8 @@ import {
   getGatewayPort as ipcGetGatewayPort, setGatewayPort as ipcSetGatewayPort,
   listSessionsStateDb, readSessionStateDb, searchSessionsStateDb, deleteSessionStateDb,
   readCronJobsIpc, writeCronJobsIpc, runCronJobNowIpc,
+  getEnabledToolsets as ipcGetEnabledToolsets, setEnabledToolsets as ipcSetEnabledToolsets,
+  readModelsJson, writeModelsJson,
 } from '../../api/desktop'
 
 // CLI mode: delegates file/config ops to IPC like LocalHermesClient,
@@ -123,6 +125,28 @@ export class CliHermesClient implements HermesClient {
   async setModelConfig(provider: string, model: string, baseUrl: string): Promise<void> {
     return ipcSetModelConfig(provider, model, baseUrl)
   }
+
+  async listSavedModels(): Promise<SavedModel[]> {
+    const raw = await readModelsJson()
+    try { return JSON.parse(raw) as SavedModel[] } catch { return [] }
+  }
+  async addSavedModel(m: Omit<SavedModel, 'id' | 'createdAt'>): Promise<SavedModel> {
+    const list = await this.listSavedModels()
+    const entry: SavedModel = { ...m, id: `model-${Date.now()}`, createdAt: Date.now() }
+    await writeModelsJson(JSON.stringify([...list, entry], null, 2))
+    return entry
+  }
+  async removeSavedModel(id: string): Promise<void> {
+    const list = await this.listSavedModels()
+    await writeModelsJson(JSON.stringify(list.filter(m => m.id !== id), null, 2))
+  }
+  async updateSavedModel(id: string, patch: Partial<Omit<SavedModel, 'id' | 'createdAt'>>): Promise<void> {
+    const list = await this.listSavedModels()
+    await writeModelsJson(JSON.stringify(list.map(m => m.id === id ? { ...m, ...patch } : m), null, 2))
+  }
+
+  async getEnabledToolsets(): Promise<string[]> { return ipcGetEnabledToolsets() }
+  async setEnabledToolsets(toolsets: string[]): Promise<void> { return ipcSetEnabledToolsets(toolsets) }
 
   async getAutostartEnabled(): Promise<boolean> {
     const { getAutostartEnabled: ipcGetAutostart } = await import('../../api/desktop')
