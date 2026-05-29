@@ -2957,6 +2957,52 @@ fn list_cron_tasks() -> Result<Vec<serde_json::Value>, String> {
     }
 }
 
+fn cron_jobs_path(profile: Option<&str>) -> PathBuf {
+    let home = hermes_home();
+    match profile {
+        Some(p) if !p.is_empty() && p != "default" => {
+            home.join("profiles").join(p).join("cron").join("jobs.json")
+        }
+        _ => home.join("cron").join("jobs.json"),
+    }
+}
+
+#[tauri::command]
+fn read_cron_jobs(profile: Option<String>) -> Result<String, String> {
+    let path = cron_jobs_path(profile.as_deref());
+    if !path.exists() {
+        return Ok("[]".to_string());
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_cron_jobs(content: String, profile: Option<String>) -> Result<(), String> {
+    serde_json::from_str::<serde_json::Value>(&content)
+        .map_err(|e| format!("Invalid JSON: {e}"))?;
+    let path = cron_jobs_path(profile.as_deref());
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn run_cron_job_now(id: String, profile: Option<String>) -> Result<CommandResult, String> {
+    let mut args = vec![
+        String::from("cron"),
+        String::from("run"),
+        id,
+    ];
+    if let Some(p) = profile.as_deref() {
+        if !p.is_empty() && p != "default" {
+            args.push(String::from("-p"));
+            args.push(p.to_string());
+        }
+    }
+    run_command(command_program(), &args, 30)
+}
+
 // ── Office / Claw3D state and commands ───────────────────────────────────────
 
 struct OfficeState {
@@ -3407,6 +3453,9 @@ pub fn run() {
             hermes_rename_profile,
             read_env_var,
             list_cron_tasks,
+            read_cron_jobs,
+            write_cron_jobs,
+            run_cron_job_now,
             claw3d_status,
             claw3d_setup,
             claw3d_start_dev,
