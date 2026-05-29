@@ -251,7 +251,7 @@ export default function CronPanel() {
     if (rowRunState[cron.id] === 'running') return;
     setRowRunState(prev => ({ ...prev, [cron.id]: 'running' }));
     try {
-      const result = await client.runHermesCommand(['cron', 'run', cron.id]);
+      const result = await client.runCronJob(cron.id);
       if (result.success) {
         setRowRunState(prev => ({ ...prev, [cron.id]: 'done' }));
         addToast(`Cron "${cron.description.slice(0, 40)}" triggered`, 'success');
