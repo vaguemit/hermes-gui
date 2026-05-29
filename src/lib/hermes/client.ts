@@ -100,6 +100,7 @@ export interface HermesClient {
   deleteCronJob(id: string): Promise<void>
   enableCronJob(id: string): Promise<void>
   disableCronJob(id: string): Promise<void>
+  runCronJob(id: string): Promise<CommandResult>
 
   // Connection config
   getConnectionConfig(): Promise<ConnectionConfig>

@@ -22,6 +22,7 @@ export interface CronJobMeta {
   schedule: string
   enabled: boolean
   lastRun?: string
+  nextRun?: string
 }
 
 export type GatewayStatus = 'unchecked' | 'connecting' | 'connected' | 'disconnected' | 'error'
