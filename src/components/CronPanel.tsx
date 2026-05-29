@@ -223,8 +223,10 @@ export default function CronPanel() {
     return () => clearInterval(id);
   }, [updateCronLastRun]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleToggle = (c: CronJob) => {
-    toggleCron(c.id);
+  const handleToggle = async (c: CronJob) => {
+    toggleCron(c.id); // optimistic
+    const op = c.active ? client.disableCronJob(c.id) : client.enableCronJob(c.id);
+    await op.catch(() => loadCrons()); // revert on failure
   };
 
   const handleDelete = async (id: string) => {
