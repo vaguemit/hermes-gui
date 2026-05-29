@@ -103,7 +103,7 @@ export default function SkillsPanel() {
     // Load content from disk if available
     let content = s.content;
     try {
-      const raw = await client.readFile(`skills/${s.name}/SKILL.md`);
+      const raw = await client.getSkillDetail(s.name);
       if (raw) content = raw;
     } catch {
       // fall back to store content
