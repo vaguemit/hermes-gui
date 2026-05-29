@@ -2597,6 +2597,78 @@ fn write_config_yaml(content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
+fn config_path_for(profile: Option<&str>) -> std::path::PathBuf {
+    let home = hermes_home();
+    match profile {
+        Some(p) if !p.is_empty() && p != "default" => home.join("profiles").join(p).join("config.yaml"),
+        _ => home.join("config.yaml"),
+    }
+}
+
+#[tauri::command]
+fn get_enabled_toolsets(profile: Option<String>) -> Vec<String> {
+    let path = config_path_for(profile.as_deref());
+    let Ok(content) = std::fs::read_to_string(&path) else { return vec![]; };
+    // Parse platform_toolsets.cli list from config.yaml manually
+    let mut in_toolsets = false;
+    let mut in_cli = false;
+    let mut tools = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("platform_toolsets:") { in_toolsets = true; in_cli = false; continue; }
+        if in_toolsets && trimmed.starts_with("cli:") { in_cli = true; continue; }
+        if in_toolsets && in_cli {
+            if trimmed.starts_with("- ") {
+                tools.push(trimmed[2..].trim().to_string());
+            } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                // Indented key signals end of cli list
+                if !trimmed.starts_with(' ') || trimmed.contains(':') { break; }
+            }
+        }
+        if in_toolsets && !in_cli && !trimmed.is_empty() && !trimmed.starts_with(' ') && !trimmed.starts_with('-') { in_toolsets = false; }
+    }
+    tools
+}
+
+#[tauri::command]
+fn set_enabled_toolsets(toolsets: Vec<String>, profile: Option<String>) -> Result<(), String> {
+    let path = config_path_for(profile.as_deref());
+    let content = if path.exists() { std::fs::read_to_string(&path).map_err(|e| e.to_string())? } else { String::new() };
+    let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
+    // Build replacement block
+    let mut cli_lines: Vec<String> = vec!["platform_toolsets:".to_string(), "  cli:".to_string()];
+    for t in &toolsets { cli_lines.push(format!("    - {}", t)); }
+    // Remove old platform_toolsets block and insert new one
+    let mut out: Vec<String> = Vec::new();
+    let mut skip = false;
+    let mut inserted = false;
+    for line in &lines {
+        let trimmed = line.trim();
+        if trimmed.starts_with("platform_toolsets:") { skip = true; out.extend(cli_lines.iter().cloned()); inserted = true; continue; }
+        if skip {
+            if !trimmed.is_empty() && !trimmed.starts_with(' ') && !trimmed.starts_with('-') && !trimmed.starts_with('#') { skip = false; } else { continue; }
+        }
+        out.push(line.clone());
+    }
+    if !inserted { out.extend(cli_lines); }
+    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
+    std::fs::write(&path, out.join("\n") + "\n").map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn read_models_json() -> Result<String, String> {
+    let path = hermes_home().join("models.json");
+    if !path.exists() { return Ok("[]".to_string()); }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_models_json(content: String) -> Result<(), String> {
+    serde_json::from_str::<serde_json::Value>(&content).map_err(|e| format!("Invalid JSON: {e}"))?;
+    let path = hermes_home().join("models.json");
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn hermes_doctor_raw() -> Result<String, String> {
     let result = run_command(command_program(), &[String::from("doctor")], 30)?;
@@ -3436,6 +3508,10 @@ pub fn run() {
             read_env_vars,
             read_config_yaml,
             write_config_yaml,
+            get_enabled_toolsets,
+            set_enabled_toolsets,
+            read_models_json,
+            write_models_json,
             hermes_doctor_raw,
             check_hermes_update,
             list_hermes_tools,
