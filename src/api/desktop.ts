@@ -755,3 +755,23 @@ export async function claw3dSetWsUrl(url: string): Promise<void> {
   if (!isTauriApp()) return;
   return invoke('claw3d_set_ws_url', { url });
 }
+
+export async function getEnabledToolsets(profile?: string): Promise<string[]> {
+  if (!isTauriApp()) return []
+  return invoke<string[]>('get_enabled_toolsets', { profile: profile ?? null })
+}
+
+export async function setEnabledToolsets(toolsets: string[], profile?: string): Promise<void> {
+  if (!isTauriApp()) return
+  return invoke('set_enabled_toolsets', { toolsets, profile: profile ?? null })
+}
+
+export async function readModelsJson(): Promise<string> {
+  if (!isTauriApp()) return '[]'
+  return invoke<string>('read_models_json')
+}
+
+export async function writeModelsJson(content: string): Promise<void> {
+  if (!isTauriApp()) return
+  return invoke('write_models_json', { content })
+}
