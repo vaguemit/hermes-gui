@@ -637,6 +637,21 @@ export async function listCronTasks(): Promise<unknown[]> {
   }
 }
 
+export async function readCronJobsIpc(profile?: string | null): Promise<string> {
+  if (!isTauriApp()) return '[]';
+  return invoke<string>('read_cron_jobs', { profile: profile ?? null });
+}
+
+export async function writeCronJobsIpc(content: string, profile?: string | null): Promise<void> {
+  if (!isTauriApp()) return;
+  return invoke<void>('write_cron_jobs', { content, profile: profile ?? null });
+}
+
+export async function runCronJobNowIpc(id: string, profile?: string | null): Promise<CommandResult> {
+  if (!isTauriApp()) return { success: false, code: null, command: `cron run ${id}`, stdout: '', stderr: 'Not in Tauri' };
+  return invoke<CommandResult>('run_cron_job_now', { id, profile: profile ?? null });
+}
+
 /** Set all Playwright/browser headed-mode env vars in one call. */
 export async function setBrowserHeadedMode(headed: boolean): Promise<void> {
   const val = headed ? 'false' : 'true'; // PLAYWRIGHT_HEADLESS=false means headed
