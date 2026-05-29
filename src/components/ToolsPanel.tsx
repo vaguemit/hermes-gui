@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronRight, ChevronDown, CheckCircle2, XCircle, Loader2, Wrench, Save, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useHermesClient } from '../lib/hermes';
 
@@ -81,15 +81,27 @@ const TOOL_CATALOG = [
 
 export default function ToolsPanel() {
   const client = useHermesClient();
-  const [enabledTools, setEnabledTools] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem('hermes-enabled-tools') || '{}'); } catch { return {}; }
-  });
+  // null = not yet loaded (all enabled by default per Hermes); empty config means all enabled
+  const [enabledTools, setEnabledTools] = useState<Record<string, boolean> | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const isEnabled = (key: string) => enabledTools[key] !== false;
+  useEffect(() => {
+    client.getEnabledToolsets().then(keys => {
+      if (keys.length === 0) {
+        // Empty list means all enabled (Hermes default)
+        setEnabledTools({});
+      } else {
+        const map: Record<string, boolean> = {};
+        TOOL_CATALOG.forEach(t => { map[t.key] = keys.includes(t.key); });
+        setEnabledTools(map);
+      }
+    }).catch(() => setEnabledTools({}));
+  }, [client]);
+
+  const isEnabled = (key: string) => !enabledTools || enabledTools[key] !== false;
 
   const toggle = (key: string) => {
-    setEnabledTools(prev => ({ ...prev, [key]: !isEnabled(key) }));
+    setEnabledTools(prev => ({ ...(prev ?? {}), [key]: !isEnabled(key) }));
   };
 
   const enableAll = () => {
@@ -104,10 +116,9 @@ export default function ToolsPanel() {
     setEnabledTools(all);
   };
 
-  const applyChanges = () => {
-    localStorage.setItem('hermes-enabled-tools', JSON.stringify(enabledTools));
-    const activeKeys = TOOL_CATALOG.map(t => t.key).filter(k => isEnabled(k)).join(',');
-    client.runHermesCommand(['config', 'set', 'enabled_tools', activeKeys]).catch(() => {});
+  const applyChanges = async () => {
+    const activeKeys = TOOL_CATALOG.map(t => t.key).filter(k => isEnabled(k));
+    await client.setEnabledToolsets(activeKeys).catch(() => {});
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
