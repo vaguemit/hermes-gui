@@ -231,14 +231,17 @@ export default function CronPanel() {
     deleteCron(id);
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const schedule = buildSchedule();
     if (!schedule || !form.description) return;
-    const id = generateId();
-    addCron({ id, schedule, description: form.description, platform: form.platform, active: true, ...(form.mode !== 'auto' ? { mode: form.mode } : {}) } as CronJob);
+    await client.createCronJob({ description: form.description, schedule, enabled: true }).catch(() => {
+      // fallback: add to store directly so UI is not left empty
+      addCron({ id: generateId(), schedule, description: form.description, platform: form.platform, active: true, ...(form.mode !== 'auto' ? { mode: form.mode } : {}) } as CronJob);
+    });
     setForm({ description: '', platform: 'Telegram', mode: 'auto' });
     setFreqCustom('');
     setShowForm(false);
+    loadCrons();
   };
 
   const handleRunNow = async (cron: CronJobWithMode) => {
