@@ -31,7 +31,8 @@ const _streamChatArgs: Parameters<_streamChatSig> = [
   [] as ChatMessage[],
   'model-id',
   () => {},
-  new AbortController().signal, // optional, should compile
+  null, // optional sessionId
+  new AbortController().signal, // optional signal
 ]
 
 // Verify runHermesCommand accepts optional timeout
