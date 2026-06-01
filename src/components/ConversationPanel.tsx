@@ -493,6 +493,7 @@ export default function ConversationPanel() {
     const fileBlock = attachedFiles.map(f => `\`\`\`${f.name}\n${f.content}\n\`\`\``).join('\n\n');
     const fullContent = attachedFiles.length > 0 ? (userContent ? `${userContent}\n\n${fileBlock}` : fileBlock) : userContent;
     setInput('');
+    setSlashMenuOpen(false);
     setAttachedFiles([]);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     if (userContent.trim()) {
@@ -925,6 +926,7 @@ export default function ConversationPanel() {
               setSlashMenuOpen(val.startsWith('/') && !val.includes(' '));
             }}
             onKeyDown={(e) => {
+              if (e.key === 'Escape' && slashMenuOpen) { e.preventDefault(); setSlashMenuOpen(false); return; }
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); return; }
               if (e.key === 'ArrowUp' && !e.shiftKey) {
                 const history = inputHistoryRef.current;
