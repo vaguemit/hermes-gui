@@ -411,6 +411,7 @@ export default function ConversationPanel() {
     ];
 
     let accumulated = '';
+    let reasoningAccum = '';
     let aborted = false;
     const abort = new AbortController();
 
@@ -421,6 +422,8 @@ export default function ConversationPanel() {
       if (event.type === 'delta') {
         accumulated += event.content;
         updateLastMessage({ content: accumulated, isStreaming: true });
+      } else if (event.type === 'reasoning') {
+        reasoningAccum += event.content;
       } else if (event.type === 'tool_call') {
         addToolCall({ id: event.id, name: event.name, input: event.input, status: 'running', timestamp: Date.now() });
         setAgentState('running_tool');
@@ -432,6 +435,9 @@ export default function ConversationPanel() {
       } else if (event.type === 'session_id') {
         setHermesSessionId(event.id);
       } else if (event.type === 'done') {
+        if (reasoningAccum) {
+          addMessage({ id: generateId(), role: 'assistant', type: 'reasoning', content: reasoningAccum, timestamp: Date.now() });
+        }
         useStore.getState().activeToolCalls.forEach(tc => updateToolCallGlobal(tc.id, { status: 'done' }));
         updateLastMessage({ isStreaming: false });
         setAgentState('idle');
