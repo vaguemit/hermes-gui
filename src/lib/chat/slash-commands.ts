@@ -40,6 +40,12 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { name: '/agents', description: 'Switch to agents panel', category: 'navigation', local: true },
   { name: '/gateway', description: 'Switch to gateway settings', category: 'navigation', local: true },
   { name: '/terminal', description: 'Switch to terminal panel', category: 'navigation', local: true },
+  // Agent mode commands (sent to backend)
+  { name: '/fast', description: 'Toggle fast mode for priority processing', category: 'agent', local: false },
+  { name: '/goal', description: 'Set or show the current agent goal', category: 'agent', local: false, args: '[goal text]' },
+  { name: '/debug', description: 'Show agent debug information', category: 'agent', local: false },
+  { name: '/soul', description: 'Show or set agent persona/soul', category: 'agent', local: false },
+  { name: '/kanban', description: 'Show active tasks on the kanban board', category: 'agent', local: false },
 ]
 
 /** Parse the command name from a slash-prefixed input string. */
