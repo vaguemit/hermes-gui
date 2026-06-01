@@ -57,6 +57,10 @@ export class RemoteHermesClient implements HermesClient {
       signal,
     });
 
+    // Emit session ID from response header if present
+    const sid = res.headers.get('x-hermes-session-id');
+    if (sid) onEvent({ type: 'session_id', id: sid });
+
     if (!res.ok) {
       const text = await res.text();
       try {
