@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore, Message, ToolCall } from '../store';
-import { chatStream, chatCli, launchChrome } from '../api/desktop';
+import { launchChrome } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
+import type { StreamEvent } from '../lib/hermes/types';
 import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy, Check, MessageSquare,
