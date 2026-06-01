@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { chatReducer, appendUserMessage, appendAssistantMessage, isAnyStreaming, getLastSessionId } from '../../lib/chat/reducer'
+import { chatReducer, appendUserMessage, appendAssistantMessage, isAnyStreaming, getLastSessionId, buildChatHistory } from '../../lib/chat/reducer'
 import type { AccumulatedMessage } from '../../lib/chat/types'
 
 const empty: AccumulatedMessage[] = []
@@ -108,6 +108,24 @@ describe('isAnyStreaming', () => {
       { role: 'assistant', content: 'hello', toolCalls: [], isStreaming: false },
     ]
     expect(isAnyStreaming(msgs)).toBe(false)
+  })
+})
+
+describe('buildChatHistory', () => {
+  it('returns empty array for empty messages', () => {
+    expect(buildChatHistory([])).toHaveLength(0)
+  })
+
+  it('filters to user and assistant with content', () => {
+    const msgs: AccumulatedMessage[] = [
+      { role: 'user', content: 'hello', toolCalls: [], isStreaming: false },
+      { role: 'assistant', content: 'hi', toolCalls: [], isStreaming: false },
+      { role: 'assistant', content: '', toolCalls: [], isStreaming: true }, // empty, filtered
+    ]
+    const history = buildChatHistory(msgs)
+    expect(history).toHaveLength(2)
+    expect(history[0]).toEqual({ role: 'user', content: 'hello' })
+    expect(history[1]).toEqual({ role: 'assistant', content: 'hi' })
   })
 })
 
