@@ -118,3 +118,10 @@ export function getLastSessionId(messages: AccumulatedMessage[]): string | undef
   }
   return undefined
 }
+
+/** Build the chat history array suitable for sending to the API. */
+export function buildChatHistory(messages: AccumulatedMessage[]): Array<{ role: 'user' | 'assistant'; content: string }> {
+  return messages
+    .filter(m => m.content && (m.role === 'user' || m.role === 'assistant'))
+    .map(m => ({ role: m.role, content: m.content }))
+}
