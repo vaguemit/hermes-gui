@@ -47,4 +47,12 @@ export interface AccumulatedMessage {
   sessionId?: string
   usage?: UsageInfo
   error?: string
+  timestamp?: number
+}
+
+export interface ConversationMeta {
+  title?: string
+  sessionId?: string
+  startedAt: number
+  messageCount: number
 }
