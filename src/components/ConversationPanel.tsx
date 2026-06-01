@@ -3,6 +3,8 @@ import { useStore, Message, ToolCall } from '../store';
 import { launchChrome } from '../api/desktop';
 import { useHermesClient } from '../lib/hermes';
 import type { StreamEvent } from '../lib/hermes/types';
+import { SlashCommandMenu } from './chat/SlashCommandMenu';
+import type { SlashCommandDef } from '../lib/chat/slash-commands';
 import { renderMarkdown, formatTimestamp } from '../utils/parser';
 import {
   Send, Square, Paperclip, Copy, Check, MessageSquare,
@@ -329,6 +331,7 @@ export default function ConversationPanel() {
   const client = useHermesClient();
   const { sessions, activeSessionId, addMessage, updateLastMessage, activeModel, contextWindow, tokensUsed, setTokenUsage, agentState, setAgentState, clearToolCalls, addToolCall, updateToolCallGlobal, gatewayStatus, setGatewayStatus, clearActiveSession, setPaletteOpen, setActiveSection, setModelSwitcherOpen, hermesSessionId, setHermesSessionId, localBrowserUrl, setLocalBrowserUrl, setPtySessionId, setPtyEventId, addToast } = useStore();
   const [input, setInput] = useState('');
+  const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string; size: number }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -886,7 +889,14 @@ export default function ConversationPanel() {
           style={{ display: 'none' }}
           onChange={handleFileAttach}
         />
-        <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, position: 'relative' }}>
+          {slashMenuOpen && (
+            <SlashCommandMenu
+              prefix={input}
+              onSelect={(cmd: SlashCommandDef) => { setInput(cmd.name + (cmd.args ? ' ' : '')); setSlashMenuOpen(false); textareaRef.current?.focus(); }}
+              onClose={() => setSlashMenuOpen(false)}
+            />
+          )}
           {attachedFiles.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 14px 0' }}>
               {attachedFiles.map((f, i) => (
@@ -907,10 +917,12 @@ export default function ConversationPanel() {
             id="chat-input"
             value={input}
             onChange={(e) => {
-              setInput(e.target.value);
+              const val = e.target.value;
+              setInput(val);
               historyIndexRef.current = -1;
               const ta = e.target; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px';
-              if (e.target.value === '/') setPaletteOpen(true);
+              if (val === '/') setPaletteOpen(true);
+              setSlashMenuOpen(val.startsWith('/') && !val.includes(' '));
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); return; }
