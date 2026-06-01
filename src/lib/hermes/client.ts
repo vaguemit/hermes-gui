@@ -24,6 +24,7 @@ export interface HermesClient {
     messages: ChatMessage[],
     model: string,
     onEvent: (event: StreamEvent) => void,
+    sessionId?: string | null,
     signal?: AbortSignal
   ): Promise<void>
 
