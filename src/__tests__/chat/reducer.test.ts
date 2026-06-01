@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { chatReducer, appendUserMessage } from '../../lib/chat/reducer'
+import { chatReducer, appendUserMessage, appendAssistantMessage, isAnyStreaming, getLastSessionId } from '../../lib/chat/reducer'
 import type { AccumulatedMessage } from '../../lib/chat/types'
 
 const empty: AccumulatedMessage[] = []
@@ -78,5 +78,49 @@ describe('appendUserMessage', () => {
     expect(state[0].role).toBe('user')
     expect(state[0].content).toBe('hello')
     expect(state[0].isStreaming).toBe(false)
+  })
+})
+
+describe('appendAssistantMessage', () => {
+  it('adds a non-streaming assistant message', () => {
+    const state = appendAssistantMessage(empty, 'response')
+    expect(state[0].role).toBe('assistant')
+    expect(state[0].isStreaming).toBe(false)
+    expect(state[0].content).toBe('response')
+  })
+})
+
+describe('isAnyStreaming', () => {
+  it('returns false for empty list', () => {
+    expect(isAnyStreaming([])).toBe(false)
+  })
+
+  it('returns true if any message is streaming', () => {
+    const msgs: AccumulatedMessage[] = [
+      { role: 'assistant', content: '', toolCalls: [], isStreaming: true },
+    ]
+    expect(isAnyStreaming(msgs)).toBe(true)
+  })
+
+  it('returns false if no message is streaming', () => {
+    const msgs: AccumulatedMessage[] = [
+      { role: 'user', content: 'hi', toolCalls: [], isStreaming: false },
+      { role: 'assistant', content: 'hello', toolCalls: [], isStreaming: false },
+    ]
+    expect(isAnyStreaming(msgs)).toBe(false)
+  })
+})
+
+describe('getLastSessionId', () => {
+  it('returns undefined for empty list', () => {
+    expect(getLastSessionId([])).toBeUndefined()
+  })
+
+  it('returns the last session ID', () => {
+    const msgs: AccumulatedMessage[] = [
+      { role: 'assistant', content: 'a', toolCalls: [], isStreaming: false, sessionId: 'sess-1' },
+      { role: 'assistant', content: 'b', toolCalls: [], isStreaming: false, sessionId: 'sess-2' },
+    ]
+    expect(getLastSessionId(msgs)).toBe('sess-2')
   })
 })
