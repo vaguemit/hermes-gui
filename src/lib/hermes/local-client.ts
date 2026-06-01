@@ -33,7 +33,7 @@ import {
   getEnabledToolsets as ipcGetEnabledToolsets, setEnabledToolsets as ipcSetEnabledToolsets,
   readModelsJson, writeModelsJson,
 } from '../../api/desktop'
-import { checkHealth, checkGatewayHealth, fetchModels as gatewayFetchModels, streamChat as gatewayStreamChat, setInMemoryGatewayPort, getBaseUrl, getAuthHeaders } from '../../api/hermes'
+import { checkHealth, checkGatewayHealth, fetchModels as gatewayFetchModels, setInMemoryGatewayPort, getBaseUrl, getAuthHeaders } from '../../api/hermes'
 import { useStore } from '../../store'
 
 export class LocalHermesClient implements HermesClient {
@@ -80,35 +80,33 @@ export class LocalHermesClient implements HermesClient {
     messages: ChatMessage[],
     model: string,
     onEvent: (event: StreamEvent) => void,
+    sessionId?: string | null,
     signal?: AbortSignal
   ): Promise<void> {
-    const gen = gatewayStreamChat(
-      messages,
-      model,
-      (msg) => {
-        if (msg.type === 'delta' && msg.content) {
-          onEvent({ type: 'delta', content: msg.content })
-        } else if (msg.type === 'tool_call') {
-          onEvent({ type: 'tool_call', id: msg.toolCallId ?? '', name: msg.toolName ?? '', input: msg.toolInput ?? '' })
-        } else if (msg.type === 'tool_result') {
-          onEvent({ type: 'tool_result', id: msg.toolCallId ?? '', output: msg.toolOutput ?? '' })
-        } else if (msg.type === 'done') {
-          onEvent({
-            type: 'done',
-            usage: msg.usage ? {
-              promptTokens: msg.usage.prompt_tokens,
-              completionTokens: msg.usage.completion_tokens,
-              totalTokens: msg.usage.total_tokens,
-            } : undefined,
-          })
-        } else if (msg.type === 'error') {
-          onEvent({ type: 'error', message: msg.error ?? 'Unknown error' })
-        }
-      },
-      signal
-    )
-    // Drain the generator — side effects happen via the onEvent callback above
-    for await (const _ of gen) { /* consumed */ }
+    const { chatStream } = await import('../../api/desktop')
+    const { listen } = await import('@tauri-apps/api/event')
+    const eventId = `local-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+    await new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) { reject(new Error('Aborted')); return }
+
+      let cleanupFns: Array<() => void> = []
+      const cleanup = () => { cleanupFns.forEach(fn => fn()); cleanupFns = [] }
+      signal?.addEventListener('abort', () => { cleanup(); reject(new Error('Aborted')) })
+
+      Promise.all([
+        listen<string>(`chat-chunk-${eventId}`, ev => onEvent({ type: 'delta', content: ev.payload })),
+        listen<string>(`chat-done-${eventId}`, () => { cleanup(); onEvent({ type: 'done' }); resolve() }),
+        listen<string>(`chat-error-${eventId}`, ev => { cleanup(); onEvent({ type: 'error', message: ev.payload }); reject(new Error(ev.payload)) }),
+        listen<string>(`chat-session-${eventId}`, ev => { if (ev.payload) onEvent({ type: 'session_id', id: ev.payload }) }),
+        listen<string>(`tool-progress-${eventId}`, ev => onEvent({ type: 'tool_progress', tool: ev.payload })),
+        listen<{ id: string; name: string; input: string }>(`tool-call-${eventId}`, ev => onEvent({ type: 'tool_call', id: ev.payload.id, name: ev.payload.name, input: ev.payload.input })),
+      ]).then(unlisteners => {
+        cleanupFns = unlisteners
+        if (signal?.aborted) { cleanup(); reject(new Error('Aborted')); return }
+        chatStream(eventId, messages, model, sessionId).catch(e => { cleanup(); reject(e) })
+      }).catch(reject)
+    })
   }
 
   async listSessions(): Promise<SessionMeta[]> { return listSessionsDisk() }
