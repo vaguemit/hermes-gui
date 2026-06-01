@@ -119,6 +119,11 @@ export interface SavedModel {
   createdAt: number
 }
 
+export interface ChatStreamOptions {
+  sessionId?: string | null
+  signal?: AbortSignal
+}
+
 export interface ApiKeyStatus {
   has_keys: boolean
   providers: string[]
