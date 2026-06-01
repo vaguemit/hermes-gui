@@ -50,7 +50,8 @@ export class CliHermesClient implements HermesClient {
     messages: ChatMessage[],
     _model: string,
     onEvent: (e: StreamEvent) => void,
-    _signal?: AbortSignal,
+    sessionId?: string | null,
+    signal?: AbortSignal,
   ): Promise<void> {
     // CLI mode sends the last user message through `hermes chat -q`.
     // Multi-turn context is limited to the final message for now.
@@ -62,23 +63,21 @@ export class CliHermesClient implements HermesClient {
     const { chatCli } = await import('../../api/desktop')
 
     await new Promise<void>((resolve, reject) => {
-      listen<string>(`chat-chunk-${eventId}`, ev => {
-        onEvent({ type: 'delta', content: ev.payload })
-      }).then(unlistenChunk => {
-        listen<string>(`chat-done-${eventId}`, () => {
-          unlistenChunk()
-          onEvent({ type: 'done' })
-          resolve()
-        }).then(unlistenDone => {
-          listen<string>(`chat-error-${eventId}`, ev => {
-            unlistenChunk()
-            unlistenDone()
-            onEvent({ type: 'error', message: ev.payload })
-            reject(new Error(ev.payload))
-          }).then(() => {
-            chatCli(eventId, last.content, null).catch(reject)
-          }).catch(reject)
-        }).catch(reject)
+      if (signal?.aborted) { reject(new Error('Aborted')); return }
+
+      let cleanupFns: Array<() => void> = []
+      const cleanup = () => { cleanupFns.forEach(fn => fn()); cleanupFns = [] }
+      signal?.addEventListener('abort', () => { cleanup(); reject(new Error('Aborted')) })
+
+      Promise.all([
+        listen<string>(`chat-chunk-${eventId}`, ev => onEvent({ type: 'delta', content: ev.payload })),
+        listen<string>(`chat-done-${eventId}`, () => { cleanup(); onEvent({ type: 'done' }); resolve() }),
+        listen<string>(`chat-error-${eventId}`, ev => { cleanup(); onEvent({ type: 'error', message: ev.payload }); reject(new Error(ev.payload)) }),
+        listen<string>(`chat-session-${eventId}`, ev => { if (ev.payload) onEvent({ type: 'session_id', id: ev.payload }) }),
+      ]).then(unlisteners => {
+        cleanupFns = unlisteners
+        if (signal?.aborted) { cleanup(); reject(new Error('Aborted')); return }
+        chatCli(eventId, last.content, sessionId ?? null).catch(e => { cleanup(); reject(e) })
       }).catch(reject)
     })
   }
