@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest'
 import { chatReducer, appendUserMessage } from '../../lib/chat/reducer'
 import type { AccumulatedMessage } from '../../lib/chat/types'
 
