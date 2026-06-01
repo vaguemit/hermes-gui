@@ -13,6 +13,15 @@ function formatToolCall(id: string, name: string, input: string, output?: string
   return block
 }
 
+/** Serialize an accumulated conversation to a JSON string. */
+export function exportToJson(messages: AccumulatedMessage[], title?: string): string {
+  return JSON.stringify(
+    { title: title ?? 'Exported conversation', exportedAt: new Date().toISOString(), messages },
+    null,
+    2,
+  )
+}
+
 /** Render an accumulated conversation to a Markdown string. */
 export function exportToMarkdown(messages: AccumulatedMessage[], title?: string): string {
   const lines: string[] = []
