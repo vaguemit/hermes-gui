@@ -100,3 +100,21 @@ export function chatReducer(
 export function appendUserMessage(messages: AccumulatedMessage[], content: string): AccumulatedMessage[] {
   return [...messages, { role: 'user', content, toolCalls: [], isStreaming: false }]
 }
+
+/** Append a finalized (non-streaming) assistant message. */
+export function appendAssistantMessage(messages: AccumulatedMessage[], content: string): AccumulatedMessage[] {
+  return [...messages, { role: 'assistant', content, toolCalls: [], isStreaming: false }]
+}
+
+/** Returns true if any message in the list is still streaming. */
+export function isAnyStreaming(messages: AccumulatedMessage[]): boolean {
+  return messages.some(m => m.isStreaming)
+}
+
+/** Extract the last session ID from an accumulated message list. */
+export function getLastSessionId(messages: AccumulatedMessage[]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].sessionId) return messages[i].sessionId
+  }
+  return undefined
+}
