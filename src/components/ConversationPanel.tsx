@@ -405,78 +405,62 @@ export default function ConversationPanel() {
     addMessage({ id: generateId(), role: 'assistant', type: 'prose', content: '', timestamp: Date.now(), isStreaming: true });
 
     const currentMessages = useStore.getState().sessions.find(s => s.id === useStore.getState().activeSessionId)?.messages ?? [];
-    const history = historyOverride ?? [
-      ...currentMessages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.type === 'prose').map(m => ({ role: m.role, content: m.content })),
-      { role: 'user', content: effectiveContent },
+    const history: import('../lib/hermes/types').ChatMessage[] = historyOverride as import('../lib/hermes/types').ChatMessage[] ?? [
+      ...currentMessages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.type === 'prose').map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+      { role: 'user' as const, content: effectiveContent },
     ];
 
-    const eventId = Math.random().toString(36).slice(2);
-    const cleanupRef = { fn: null as (() => void) | null };
-    const cleanup = () => { if (cleanupRef.fn) { cleanupRef.fn(); cleanupRef.fn = null; } };
-    let aborted = false;
-
-    const abort = new AbortController();
-    abortRef.current = { abort: () => { aborted = true; abort.abort(); cleanup(); setIsRunning(false); setAgentState('idle'); updateLastMessage({ isStreaming: false }); } };
-
     let accumulated = '';
+    let aborted = false;
+    const abort = new AbortController();
+
+    abortRef.current = { abort: () => { aborted = true; abort.abort(); setIsRunning(false); setAgentState('idle'); updateLastMessage({ isStreaming: false }); } };
+
+    const onEvent = (event: StreamEvent) => {
+      if (aborted) return;
+      if (event.type === 'delta') {
+        accumulated += event.content;
+        updateLastMessage({ content: accumulated, isStreaming: true });
+      } else if (event.type === 'tool_call') {
+        addToolCall({ id: event.id, name: event.name, input: event.input, status: 'running', timestamp: Date.now() });
+        setAgentState('running_tool');
+      } else if (event.type === 'tool_result') {
+        updateToolCallGlobal(event.id, { status: 'done', output: event.output });
+      } else if (event.type === 'tool_progress') {
+        addToolCall({ id: generateId(), name: event.tool, input: '', status: 'running', timestamp: Date.now() });
+        setAgentState('running_tool');
+      } else if (event.type === 'session_id') {
+        setHermesSessionId(event.id);
+      } else if (event.type === 'done') {
+        useStore.getState().activeToolCalls.forEach(tc => updateToolCallGlobal(tc.id, { status: 'done' }));
+        updateLastMessage({ isStreaming: false });
+        setAgentState('idle');
+      } else if (event.type === 'error') {
+        updateLastMessage({ content: event.message, type: 'error', isStreaming: false });
+        setAgentState('error');
+      }
+    };
 
     try {
-      const { listen } = await import('@tauri-apps/api/event');
-
-      await new Promise<void>((resolve, reject) => {
-        Promise.all([
-          listen<string>(`chat-chunk-${eventId}`, (ev) => {
-            if (aborted) return;
-            accumulated += ev.payload;
-            updateLastMessage({ content: accumulated, isStreaming: true });
-          }),
-          listen<string>(`chat-done-${eventId}`, () => {
-            if (aborted) return;
-            useStore.getState().activeToolCalls.forEach((tc) => {
-              updateToolCallGlobal(tc.id, { status: 'done' });
-            });
-            updateLastMessage({ isStreaming: false });
-            setAgentState('idle');
-            cleanup();
-            resolve();
-          }),
-          listen<string>(`chat-error-${eventId}`, (ev) => {
-            if (aborted) return;
-            cleanup();
-            reject(new Error(ev.payload || 'Unknown gateway error'));
-          }),
-          listen<string>(`tool-progress-${eventId}`, (ev) => {
-            if (aborted) return;
-            addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() });
-            setAgentState('running_tool');
-          }),
-          listen<string>(`tool-call-${eventId}`, (ev) => {
-            if (aborted) return;
-            if (ev.payload === '__executing__') { setAgentState('running_tool'); return; }
-            addToolCall({ id: generateId(), name: ev.payload, input: '', status: 'running', timestamp: Date.now() });
-            setAgentState('running_tool');
-          }),
-          listen<string>(`chat-session-${eventId}`, (ev) => {
-            if (ev.payload && !aborted) setHermesSessionId(ev.payload);
-          }),
-        ]).then(([u1, u2, u3, u4, u5, u6]) => {
-          cleanupRef.fn = () => { u1(); u2(); u3(); u4(); u5(); u6(); };
-
-          if (localBrowserUrl) {
-            chatCli(eventId, effectiveContent, hermesSessionId).catch(reject);
-            return;
-          }
-          const isTuiSlashCommand = effectiveContent.startsWith('/') && !LOCAL_COMMANDS.has(effectiveContent.split(/\s+/)[0].toLowerCase());
-          if (isTuiSlashCommand) {
-            chatCli(eventId, effectiveContent, hermesSessionId).catch(reject);
-          } else {
-            chatStream(eventId, history, activeModel, hermesSessionId).catch(reject);
-          }
-        }).catch(reject);
-      });
-
+      if (localBrowserUrl) {
+        // Browser-agent mode: must go through CLI so the agent retains browser tool context
+        const { chatCli: ipcChatCli } = await import('../api/desktop');
+        const { listen } = await import('@tauri-apps/api/event');
+        const evId = Math.random().toString(36).slice(2);
+        await new Promise<void>((resolve, reject) => {
+          let cleanupFns: Array<() => void> = [];
+          const cleanup = () => { cleanupFns.forEach(fn => fn()); cleanupFns = []; };
+          Promise.all([
+            listen<string>(`chat-chunk-${evId}`, ev => { accumulated += ev.payload; updateLastMessage({ content: accumulated, isStreaming: true }); }),
+            listen<string>(`chat-done-${evId}`, () => { useStore.getState().activeToolCalls.forEach(tc => updateToolCallGlobal(tc.id, { status: 'done' })); updateLastMessage({ isStreaming: false }); setAgentState('idle'); cleanup(); resolve(); }),
+            listen<string>(`chat-error-${evId}`, ev => { cleanup(); reject(new Error(ev.payload || 'Unknown gateway error')); }),
+            listen<string>(`chat-session-${evId}`, ev => { if (ev.payload && !aborted) setHermesSessionId(ev.payload); }),
+          ]).then(([u1, u2, u3, u4]) => { cleanupFns = [u1, u2, u3, u4]; ipcChatCli(evId, effectiveContent, hermesSessionId).catch(reject); }).catch(reject);
+        });
+      } else {
+        await client.streamChat(history, activeModel, onEvent, hermesSessionId, abort.signal);
+      }
     } catch (err: unknown) {
-      cleanup();
       if (!aborted && (err as Error)?.name !== 'AbortError') {
         const errMsg = (err as Error)?.message || 'Connection failed. Is the Hermes gateway running?';
         updateLastMessage({ content: accumulated || errMsg, type: accumulated ? 'prose' : 'error', isStreaming: false });
@@ -487,7 +471,6 @@ export default function ConversationPanel() {
         setAgentState('idle');
       }
     } finally {
-      cleanup();
       setIsRunning(false);
       abortRef.current = null;
     }
@@ -649,11 +632,8 @@ export default function ConversationPanel() {
       }
     }
     if (userContent === '/compress' || userContent === '/compact') {
-      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Compressing context via CLI…', timestamp: Date.now() });
-      import('../api/desktop').then(({ chatCli }) => {
-        const eventId = Math.random().toString(36).slice(2);
-        chatCli(eventId, '/compress', hermesSessionId).catch(() => {});
-      });
+      addMessage({ id: generateId(), role: 'system', type: 'info', content: 'Compressing context…', timestamp: Date.now() });
+      sendContent('/compress').catch(() => {});
       return;
     }
     if (userContent === '/retry') {
@@ -972,8 +952,7 @@ export default function ConversationPanel() {
                 const enabling = !fastMode;
                 setFastMode(enabling);
                 addMessage({ id: generateId(), role: 'system', type: 'info', content: enabling ? 'Fast mode ON — priority processing enabled' : 'Fast mode OFF', timestamp: Date.now() });
-                const eventId = Math.random().toString(36).slice(2);
-                chatCli(eventId, '/fast', hermesSessionId).catch(() => {});
+                sendContent('/fast').catch(() => {});
               }}
               title="Toggle fast mode (/fast)"
               style={{ display: 'flex', alignItems: 'center', gap: 4, background: fastMode ? 'var(--accent-amber-dim)' : 'none', border: fastMode ? '1px solid rgba(245,158,11,0.3)' : '1px solid transparent', borderRadius: 5, padding: '2px 7px', fontSize: 11, color: fastMode ? 'var(--accent-amber)' : 'var(--text-tertiary)', cursor: 'pointer', transition: 'all 0.15s' }}
