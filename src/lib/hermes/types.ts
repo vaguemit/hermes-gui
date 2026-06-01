@@ -39,8 +39,11 @@ export interface ChatMessage {
 
 export type StreamEvent =
   | { type: 'delta'; content: string }
+  | { type: 'reasoning'; content: string }
   | { type: 'tool_call'; id: string; name: string; input: string }
   | { type: 'tool_result'; id: string; output: string }
+  | { type: 'tool_progress'; tool: string }
+  | { type: 'session_id'; id: string }
   | { type: 'done'; usage?: { promptTokens: number; completionTokens: number; totalTokens: number } }
   | { type: 'error'; message: string }
 
