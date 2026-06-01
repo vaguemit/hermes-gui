@@ -1,6 +1,6 @@
 export type { SseEvent, SseEventType, AccumulatedMessage, AccumulatedToolCall, UsageInfo, ToolCallStatus } from './types'
 export { parseStreamLine, isDoneMarker } from './parser'
-export { chatReducer, appendUserMessage } from './reducer'
+export { chatReducer, appendUserMessage, appendAssistantMessage, isAnyStreaming, getLastSessionId } from './reducer'
 export type { ChatReducerAction } from './reducer'
 export { SLASH_COMMANDS, parseSlashCommand, filterCommands, isLocalCommand } from './slash-commands'
 export { extractThinkBlocks, hasThinkBlocks } from './parser'
