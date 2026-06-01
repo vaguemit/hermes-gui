@@ -39,14 +39,16 @@ export class RemoteHermesClient implements HermesClient {
     messages: ChatMessage[],
     model: string,
     onEvent: (e: StreamEvent) => void,
+    sessionId?: string | null,
     signal?: AbortSignal,
   ): Promise<void> {
-    const body = {
+    const body: Record<string, unknown> = {
       model,
       messages,
       stream: true,
       stream_options: { include_usage: true },
     };
+    if (sessionId) body['session_id'] = sessionId;
 
     const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -70,6 +72,8 @@ export class RemoteHermesClient implements HermesClient {
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    // Accumulate tool call arguments across streaming chunks keyed by index
+    const toolCallAccum: Record<number, { id: string; name: string; args: string }> = {};
 
     while (true) {
       const { done, value } = await reader.read();
@@ -83,11 +87,19 @@ export class RemoteHermesClient implements HermesClient {
         if (!line.startsWith('data: ')) continue;
         const data = line.slice(6).trim();
         if (data === '[DONE]') {
+          // Emit any fully-accumulated tool calls before done
+          for (const tc of Object.values(toolCallAccum)) {
+            onEvent({ type: 'tool_call', id: tc.id, name: tc.name, input: tc.args });
+          }
           onEvent({ type: 'done' });
           return;
         }
         try {
           const chunk = JSON.parse(data);
+          if (chunk.error) {
+            const msg = chunk.error?.message || JSON.stringify(chunk.error);
+            throw new Error(msg);
+          }
           const choice = chunk.choices?.[0];
           if (!choice) {
             if (chunk.usage) {
@@ -102,26 +114,24 @@ export class RemoteHermesClient implements HermesClient {
           }
           if (delta?.tool_calls) {
             for (const tc of delta.tool_calls) {
-              if (tc.function?.name) {
-                onEvent({
-                  type: 'tool_call',
-                  id: tc.id || String(tc.index),
-                  name: tc.function.name,
-                  input: tc.function.arguments || '',
-                });
+              const idx = tc.index ?? 0;
+              if (!toolCallAccum[idx]) {
+                toolCallAccum[idx] = { id: tc.id || String(idx), name: tc.function?.name || '', args: '' };
               }
+              if (tc.function?.name) toolCallAccum[idx].name = tc.function.name;
+              if (tc.id) toolCallAccum[idx].id = tc.id;
+              if (tc.function?.arguments) toolCallAccum[idx].args += tc.function.arguments;
             }
           }
           if (choice.finish_reason === 'stop' || choice.finish_reason === 'tool_calls') {
+            for (const tc of Object.values(toolCallAccum)) {
+              onEvent({ type: 'tool_call', id: tc.id, name: tc.name, input: tc.args });
+            }
             const u = chunk.usage;
             onEvent({ type: 'done', usage: u ? { promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, totalTokens: u.total_tokens } : undefined });
           }
-          if (chunk.error) {
-            const msg = chunk.error?.message || JSON.stringify(chunk.error);
-            throw new Error(msg);
-          }
-        } catch {
-          // Skip malformed lines
+        } catch (e) {
+          if (e instanceof Error && e.message !== 'Skip') throw e;
         }
       }
     }
