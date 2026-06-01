@@ -102,3 +102,19 @@ export function isDoneMarker(line: string): boolean {
   const trimmed = line.startsWith('data: ') ? line.slice(6).trim() : line.trim()
   return trimmed === '[DONE]'
 }
+
+/** Extract content from legacy `<think>...</think>` tags in a message string. */
+export function extractThinkBlocks(content: string): { reasoning: string; prose: string } {
+  const thinkRe = /<think>([\s\S]*?)<\/think>/gi
+  let reasoning = ''
+  const prose = content.replace(thinkRe, (_, inner: string) => {
+    reasoning += (reasoning ? '\n' : '') + inner.trim()
+    return ''
+  }).trim()
+  return { reasoning, prose }
+}
+
+/** Returns true if content contains any `<think>` blocks. */
+export function hasThinkBlocks(content: string): boolean {
+  return /<think>/i.test(content)
+}
