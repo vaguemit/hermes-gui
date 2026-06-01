@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest'
 import { parseStreamLine, isDoneMarker } from '../../lib/chat/parser'
 
 describe('parseStreamLine', () => {
