@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest'
 import { parseSlashCommand, filterCommands, isLocalCommand, SLASH_COMMANDS } from '../../lib/chat/slash-commands'
 
 describe('parseSlashCommand', () => {
