@@ -775,3 +775,36 @@ export async function writeModelsJson(content: string): Promise<void> {
   if (!isTauriApp()) return
   return invoke('write_models_json', { content })
 }
+
+export interface SshTunnelStatus {
+  is_running: boolean
+  local_port: number | null
+}
+
+export async function getRemoteApiKey(): Promise<string | null> {
+  return invoke<string | null>('get_remote_api_key')
+}
+
+export async function setRemoteApiKey(key: string): Promise<void> {
+  return invoke('set_remote_api_key', { key })
+}
+
+export async function deleteRemoteApiKey(): Promise<void> {
+  return invoke('delete_remote_api_key')
+}
+
+export async function getRemoteApiKeyLength(): Promise<number> {
+  return invoke<number>('get_remote_api_key_length')
+}
+
+export async function isSshTunnelHealthy(tunnelUrl: string): Promise<boolean> {
+  return invoke<boolean>('is_ssh_tunnel_healthy', { tunnelUrl })
+}
+
+export async function waitForPort(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  return invoke<boolean>('wait_for_port', { host, port, timeoutMs })
+}
+
+export async function getSshTunnelStatus(): Promise<SshTunnelStatus> {
+  return invoke<SshTunnelStatus>('get_ssh_tunnel_status')
+}

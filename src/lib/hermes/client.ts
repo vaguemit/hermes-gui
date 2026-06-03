@@ -126,6 +126,17 @@ export interface HermesClient {
   getGatewayPort(): Promise<number>
   setGatewayPort(port: number): Promise<void>
 
+  // Remote API key (secure store) — optional until all client impls are updated
+  getRemoteApiKey?(): Promise<string | null>
+  setRemoteApiKey?(key: string): Promise<void>
+  deleteRemoteApiKey?(): Promise<void>
+  getRemoteApiKeyLength?(): Promise<number>
+
+  // SSH health — optional until all client impls are updated
+  isSshTunnelHealthy?(url: string): Promise<boolean>
+  waitForPort?(host: string, port: number, timeoutMs: number): Promise<boolean>
+  getSshTunnelStatus?(): Promise<{ is_running: boolean; local_port: number | null }>
+
   // Raw HTTP access helpers (for panels making direct fetch calls)
   getGatewayUrl(): string
   getGatewayHeaders(): Record<string, string>
