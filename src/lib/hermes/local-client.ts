@@ -32,6 +32,13 @@ import {
   readCronJobsIpc, writeCronJobsIpc, runCronJobNowIpc,
   getEnabledToolsets as ipcGetEnabledToolsets, setEnabledToolsets as ipcSetEnabledToolsets,
   readModelsJson, writeModelsJson,
+  getRemoteApiKey as ipcGetRemoteApiKey,
+  setRemoteApiKey as ipcSetRemoteApiKey,
+  deleteRemoteApiKey as ipcDeleteRemoteApiKey,
+  getRemoteApiKeyLength as ipcGetRemoteApiKeyLength,
+  isSshTunnelHealthy as ipcIsSshTunnelHealthy,
+  waitForPort as ipcWaitForPort,
+  getSshTunnelStatus as ipcGetSshTunnelStatus,
 } from '../../api/desktop'
 import { checkHealth, checkGatewayHealth, fetchModels as gatewayFetchModels, setInMemoryGatewayPort, getBaseUrl, getAuthHeaders } from '../../api/hermes'
 import { useStore } from '../../store'
@@ -304,6 +311,15 @@ export class LocalHermesClient implements HermesClient {
     await ipcSetGatewayPort(port)
     setInMemoryGatewayPort(port)
   }
+
+  async getRemoteApiKey(): Promise<string | null> { return ipcGetRemoteApiKey() }
+  async setRemoteApiKey(key: string): Promise<void> { return ipcSetRemoteApiKey(key) }
+  async deleteRemoteApiKey(): Promise<void> { return ipcDeleteRemoteApiKey() }
+  async getRemoteApiKeyLength(): Promise<number> { return ipcGetRemoteApiKeyLength() }
+
+  async isSshTunnelHealthy(url: string): Promise<boolean> { return ipcIsSshTunnelHealthy(url) }
+  async waitForPort(host: string, port: number, timeoutMs: number): Promise<boolean> { return ipcWaitForPort(host, port, timeoutMs) }
+  async getSshTunnelStatus() { return ipcGetSshTunnelStatus() }
 
   getGatewayUrl(): string { return getBaseUrl() }
   getGatewayHeaders(): Record<string, string> { return getAuthHeaders() }
