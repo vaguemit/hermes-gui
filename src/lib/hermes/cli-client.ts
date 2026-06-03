@@ -183,7 +183,7 @@ export class CliHermesClient implements HermesClient {
       const res = await fetch(url, { signal: AbortSignal.timeout(3000) })
       return { success: res.ok, latency_ms: Date.now() - t0, error: res.ok ? null : `HTTP ${res.status}` }
     } catch (e) {
-      return { success: false, latency_ms: null, error: (e as Error).message }
+      return { success: false, latency_ms: null, error: e instanceof Error ? e.message : String(e) }
     }
   }
 
