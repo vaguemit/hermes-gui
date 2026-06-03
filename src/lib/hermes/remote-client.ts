@@ -28,10 +28,17 @@ export class RemoteHermesClient implements HermesClient {
     return { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
   }
 
+  /** Auth-only headers for GET requests — no Content-Type. */
+  private async getAuthHeadersGet(): Promise<Record<string, string>> {
+    const h = await this.getAuthHeaders().catch(() => this.authHeaders())
+    const { 'Content-Type': _ct, ...rest } = h
+    return rest
+  }
+
   async getHealth(): Promise<HealthStatus> {
     const t0 = Date.now();
     try {
-      const headers = await this.getAuthHeaders().catch(() => this.authHeaders())
+      const headers = await this.getAuthHeadersGet()
       const res = await fetch(`${this.baseUrl}/health`, {
         signal: AbortSignal.timeout(3000),
         headers,
@@ -158,7 +165,7 @@ export class RemoteHermesClient implements HermesClient {
   async getGatewayLatency(): Promise<number | null> {
     const t0 = Date.now()
     try {
-      const headers = await this.getAuthHeaders().catch(() => this.authHeaders())
+      const headers = await this.getAuthHeadersGet()
       const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(3000), headers })
       return res.ok ? Date.now() - t0 : null
     } catch {
@@ -185,7 +192,7 @@ export class RemoteHermesClient implements HermesClient {
   async testGateway(): Promise<TestResult> {
     const t0 = Date.now()
     try {
-      const headers = await this.getAuthHeaders().catch(() => this.authHeaders())
+      const headers = await this.getAuthHeadersGet()
       const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(3000), headers })
       return { success: res.ok, latency_ms: Date.now() - t0, error: res.ok ? null : `HTTP ${res.status}` }
     } catch (e) {
