@@ -261,9 +261,27 @@ export class RemoteHermesClient implements HermesClient {
   writeEnv(_k: string, _v: string): Promise<void> { return this.unsupported('writeEnv') }
   getModelConfig(): Promise<ModelConfig> { return this.unsupported('getModelConfig') }
   setModelConfig(_p: string, _m: string, _b: string): Promise<void> { return this.unsupported('setModelConfig') }
-  listSavedModels(): Promise<SavedModel[]> { return this.unsupported('listSavedModels') }
-  addSavedModel(_m: Omit<SavedModel, 'id' | 'createdAt'>): Promise<SavedModel> { return this.unsupported('addSavedModel') }
-  removeSavedModel(_id: string): Promise<void> { return this.unsupported('removeSavedModel') }
+  async listSavedModels(): Promise<SavedModel[]> {
+    try {
+      const headers = await this.getAuthHeaders()
+      const res = await fetch(`${this.baseUrl}/api/models/saved`, { headers })
+      if (!res.ok) return []
+      return res.json()
+    } catch { return [] }
+  }
+  async addSavedModel(m: Omit<SavedModel, 'id' | 'createdAt'>): Promise<SavedModel> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/models/saved`, {
+      method: 'POST', headers, body: JSON.stringify(m),
+    })
+    if (!res.ok) throw new Error(`addSavedModel failed: ${res.status}`)
+    return res.json()
+  }
+  async removeSavedModel(id: string): Promise<void> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/models/saved/${encodeURIComponent(id)}`, { method: 'DELETE', headers })
+    if (!res.ok) throw new Error(`removeSavedModel failed: ${res.status}`)
+  }
   updateSavedModel(_id: string, _p: Partial<Omit<SavedModel, 'id' | 'createdAt'>>): Promise<void> { return this.unsupported('updateSavedModel') }
   getEnabledToolsets(): Promise<string[]> { return this.unsupported('getEnabledToolsets') }
   setEnabledToolsets(_t: string[]): Promise<void> { return this.unsupported('setEnabledToolsets') }
