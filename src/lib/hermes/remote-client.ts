@@ -257,8 +257,21 @@ export class RemoteHermesClient implements HermesClient {
   writeFile(_p: string, _c: string): Promise<void> { return this.unsupported('writeFile') }
   readConfig(): Promise<string> { return this.unsupported('readConfig') }
   writeConfig(_c: string): Promise<void> { return this.unsupported('writeConfig') }
-  readEnv(): Promise<Record<string, string>> { return this.unsupported('readEnv') }
-  writeEnv(_k: string, _v: string): Promise<void> { return this.unsupported('writeEnv') }
+  async readEnv(): Promise<Record<string, string>> {
+    try {
+      const headers = await this.getAuthHeaders()
+      const res = await fetch(`${this.baseUrl}/api/env`, { headers })
+      if (!res.ok) return {}
+      return res.json()
+    } catch { return {} }
+  }
+  async writeEnv(key: string, value: string): Promise<void> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/env/${encodeURIComponent(key)}`, {
+      method: 'PUT', headers, body: JSON.stringify({ value }),
+    })
+    if (!res.ok) throw new Error(`writeEnv failed: ${res.status}`)
+  }
   getModelConfig(): Promise<ModelConfig> { return this.unsupported('getModelConfig') }
   setModelConfig(_p: string, _m: string, _b: string): Promise<void> { return this.unsupported('setModelConfig') }
   async listSavedModels(): Promise<SavedModel[]> {
