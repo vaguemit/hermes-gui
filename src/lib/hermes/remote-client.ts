@@ -244,15 +244,39 @@ export class RemoteHermesClient implements HermesClient {
     const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE', headers })
     if (!res.ok) throw new Error(`deleteSessionDb failed: ${res.status}`)
   }
-  listProfiles(): Promise<ProfileMeta[]> { return this.unsupported('listProfiles') }
-  listProfileNames(): Promise<string[]> { return this.unsupported('listProfileNames') }
+  async listProfiles(): Promise<ProfileMeta[]> {
+    try {
+      const headers = await this.getAuthHeaders()
+      const res = await fetch(`${this.baseUrl}/api/profiles`, { headers })
+      if (!res.ok) return []
+      return res.json()
+    } catch { return [] }
+  }
+  async listProfileNames(): Promise<string[]> {
+    const profiles = await this.listProfiles()
+    return profiles.map((p: ProfileMeta) => p.name)
+  }
   readProfile(_n: string): Promise<string> { return this.unsupported('readProfile') }
   writeProfile(_n: string, _c: string): Promise<void> { return this.unsupported('writeProfile') }
   createProfile(_n: string): Promise<CommandResult> { return this.unsupported('createProfile') }
   deleteProfile(_n: string): Promise<void> { return this.unsupported('deleteProfile') }
   renameProfile(_o: string, _n: string): Promise<CommandResult> { return this.unsupported('renameProfile') }
-  async getActiveProfile(): Promise<string> { return 'default' }
-  setActiveProfile(_name: string): Promise<void> { return this.unsupported('setActiveProfile') }
+  async getActiveProfile(): Promise<string> {
+    try {
+      const headers = await this.getAuthHeaders()
+      const res = await fetch(`${this.baseUrl}/api/profiles/active`, { headers })
+      if (!res.ok) return 'default'
+      const data = await res.json()
+      return data.name ?? 'default'
+    } catch { return 'default' }
+  }
+  async setActiveProfile(name: string): Promise<void> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/profiles/active`, {
+      method: 'PUT', headers, body: JSON.stringify({ name }),
+    })
+    if (!res.ok) throw new Error(`setActiveProfile failed: ${res.status}`)
+  }
   readFile(_p: string): Promise<string> { return this.unsupported('readFile') }
   writeFile(_p: string, _c: string): Promise<void> { return this.unsupported('writeFile') }
   readConfig(): Promise<string> { return this.unsupported('readConfig') }
