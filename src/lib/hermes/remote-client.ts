@@ -196,16 +196,54 @@ export class RemoteHermesClient implements HermesClient {
   getAutostartEnabled(): Promise<boolean> { return this.unsupported('getAutostartEnabled') }
   toggleAutostart(_e: boolean): Promise<void> { return this.unsupported('toggleAutostart') }
   getSystemInfo(): Promise<{ ram_gb: number; cpu_count: number }> { return this.unsupported('getSystemInfo') }
-  listSessions(): Promise<SessionMeta[]> { return this.unsupported('listSessions') }
-  searchSessions(_q: string): Promise<SessionMeta[]> { return this.unsupported('searchSessions') }
+  async listSessions(limit = 50, offset = 0): Promise<SessionMeta[]> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/sessions?limit=${limit}&offset=${offset}`, { headers })
+    if (!res.ok) throw new Error(`listSessions failed: ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data) ? data : (data.sessions ?? [])
+  }
+  async searchSessions(q: string): Promise<SessionMeta[]> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/sessions/search?q=${encodeURIComponent(q)}`, { headers })
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : (data.sessions ?? [])
+  }
   readSession(_n: string): Promise<string> { return this.unsupported('readSession') }
   writeSession(_n: string, _c: string): Promise<void> { return this.unsupported('writeSession') }
-  deleteSession(_n: string): Promise<void> { return this.unsupported('deleteSession') }
+  async deleteSession(id: string): Promise<void> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE', headers })
+    if (!res.ok) throw new Error(`deleteSession failed: ${res.status}`)
+  }
   clearAllSessions(): Promise<number> { return this.unsupported('clearAllSessions') }
-  listSessionsDb(_l?: number, _o?: number): Promise<StateDbSession[]> { return this.unsupported('listSessionsDb') }
-  readSessionDb(_id: string): Promise<StateDbMessage[]> { return this.unsupported('readSessionDb') }
-  searchSessionsDb(_q: string): Promise<StateDbSession[]> { return this.unsupported('searchSessionsDb') }
-  deleteSessionDb(_id: string): Promise<void> { return this.unsupported('deleteSessionDb') }
+  async listSessionsDb(limit = 50, offset = 0): Promise<StateDbSession[]> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/sessions?limit=${limit}&offset=${offset}`, { headers })
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : (data.sessions ?? [])
+  }
+  async readSessionDb(id: string): Promise<StateDbMessage[]> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(id)}/messages`, { headers })
+    if (!res.ok) throw new Error(`readSessionDb failed: ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data) ? data : (data.messages ?? [])
+  }
+  async searchSessionsDb(q: string): Promise<StateDbSession[]> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/sessions/search?q=${encodeURIComponent(q)}`, { headers })
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : (data.sessions ?? [])
+  }
+  async deleteSessionDb(id: string): Promise<void> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE', headers })
+    if (!res.ok) throw new Error(`deleteSessionDb failed: ${res.status}`)
+  }
   listProfiles(): Promise<ProfileMeta[]> { return this.unsupported('listProfiles') }
   listProfileNames(): Promise<string[]> { return this.unsupported('listProfileNames') }
   readProfile(_n: string): Promise<string> { return this.unsupported('readProfile') }
