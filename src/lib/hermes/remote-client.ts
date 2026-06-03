@@ -17,6 +17,17 @@ export class RemoteHermesClient implements HermesClient {
     return this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {};
   }
 
+  private async getAuthHeaders(): Promise<Record<string, string>> {
+    let key = this.apiKey
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const stored = await invoke<string | null>('get_remote_api_key')
+      if (stored) key = stored
+    } catch { /* not in Tauri context */ }
+    if (!key) throw new Error('No remote API key configured. Go to Settings > Connection.')
+    return { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+  }
+
   async getHealth(): Promise<HealthStatus> {
     const t0 = Date.now();
     try {
