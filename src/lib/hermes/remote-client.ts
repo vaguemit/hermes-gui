@@ -383,4 +383,17 @@ export class RemoteHermesClient implements HermesClient {
 
   getGatewayUrl(): string { return this.baseUrl }
   getGatewayHeaders(): Record<string, string> { return this.authHeaders() }
+
+  // Secret management — stored in Rust plugin-store, not exposed here
+  async getRemoteApiKey(): Promise<string | null> { return null }
+  async setRemoteApiKey(_key: string): Promise<void> { /* stored via Rust plugin-store */ }
+  async deleteRemoteApiKey(): Promise<void> { /* stored via Rust plugin-store */ }
+  async getRemoteApiKeyLength(): Promise<number> { return this.apiKey ? this.apiKey.length : 0 }
+  async isSshTunnelHealthy(url: string): Promise<boolean> {
+    try { const r = await fetch(`${url}/health`); return r.ok } catch { return false }
+  }
+  async waitForPort(_host: string, _port: number, _timeoutMs: number): Promise<boolean> { return false }
+  async getSshTunnelStatus(): Promise<{ is_running: boolean; local_port: number | null }> {
+    return { is_running: false, local_port: null }
+  }
 }
