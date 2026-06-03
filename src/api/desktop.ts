@@ -782,29 +782,36 @@ export interface SshTunnelStatus {
 }
 
 export async function getRemoteApiKey(): Promise<string | null> {
+  if (!isTauriApp()) return null
   return invoke<string | null>('get_remote_api_key')
 }
 
 export async function setRemoteApiKey(key: string): Promise<void> {
+  if (!isTauriApp()) return
   return invoke('set_remote_api_key', { key })
 }
 
 export async function deleteRemoteApiKey(): Promise<void> {
+  if (!isTauriApp()) return
   return invoke('delete_remote_api_key')
 }
 
 export async function getRemoteApiKeyLength(): Promise<number> {
+  if (!isTauriApp()) return 0
   return invoke<number>('get_remote_api_key_length')
 }
 
 export async function isSshTunnelHealthy(tunnelUrl: string): Promise<boolean> {
+  if (!isTauriApp()) return false
   return invoke<boolean>('is_ssh_tunnel_healthy', { tunnelUrl })
 }
 
 export async function waitForPort(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  if (!isTauriApp()) return false
   return invoke<boolean>('wait_for_port', { host, port, timeoutMs })
 }
 
 export async function getSshTunnelStatus(): Promise<SshTunnelStatus> {
+  if (!isTauriApp()) return { is_running: false, local_port: null }
   return invoke<SshTunnelStatus>('get_ssh_tunnel_status')
 }
