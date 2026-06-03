@@ -4,6 +4,7 @@ import {
   Clock, Radio, History, Brain, Key,
 } from 'lucide-react';
 import { useStore } from '../store';
+import type { NavSection } from '../store';
 import { useHermesClient } from '../lib/hermes';
 import type { ModelConfig } from '../lib/hermes';
 
@@ -425,7 +426,7 @@ export default function DashboardPanel() {
                 key={action.label}
                 onClick={() => {
                   if (action.section === 'chat') { addSession(); }
-                  setActiveSection(action.section as any);
+                  setActiveSection(action.section as NavSection);
                 }}
                 style={{
                   display: 'flex',
