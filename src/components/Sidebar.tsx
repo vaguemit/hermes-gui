@@ -99,8 +99,8 @@ export default function Sidebar() {
             {gatewayStatus === 'connected' ? agentLabel : statusLabel}
           </span>
           {mode !== 'local' && (
-            <span className={`badge ${mode === 'remote' ? 'badge-info' : 'badge-beta'}`} style={{ fontSize: 10, padding: '1px 5px', marginLeft: 'auto' }}>
-              {mode}
+            <span className={`sidebar-mode-badge sidebar-mode-badge--${mode}`} style={{ marginLeft: 'auto' }}>
+              {mode === 'cli' ? 'CLI' : 'Remote'}
             </span>
           )}
         </div>
