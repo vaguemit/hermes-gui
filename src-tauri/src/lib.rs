@@ -2634,7 +2634,7 @@ fn get_enabled_toolsets(profile: Option<String>) -> Vec<String> {
 fn set_enabled_toolsets(toolsets: Vec<String>, profile: Option<String>) -> Result<(), String> {
     let path = config_path_for(profile.as_deref());
     let content = if path.exists() { std::fs::read_to_string(&path).map_err(|e| e.to_string())? } else { String::new() };
-    let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
+    let lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
     // Build replacement block
     let mut cli_lines: Vec<String> = vec!["platform_toolsets:".to_string(), "  cli:".to_string()];
     for t in &toolsets { cli_lines.push(format!("    - {}", t)); }
