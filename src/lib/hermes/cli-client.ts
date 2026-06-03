@@ -33,6 +33,7 @@ import {
   readModelsJson, writeModelsJson,
 } from '../../api/desktop'
 
+
 // CLI mode: delegates file/config ops to IPC like LocalHermesClient,
 // but chat goes through the hermes CLI process rather than the HTTP gateway.
 export class CliHermesClient implements HermesClient {
@@ -282,6 +283,32 @@ export class CliHermesClient implements HermesClient {
 
   async getGatewayPort(): Promise<number> { return ipcGetGatewayPort() }
   async setGatewayPort(port: number): Promise<void> { return ipcSetGatewayPort(port) }
+
+  async getRemoteApiKey(): Promise<string | null> {
+    throw new UnsupportedCapabilityError('getRemoteApiKey', 'cli')
+  }
+  async setRemoteApiKey(_key: string): Promise<void> {
+    throw new UnsupportedCapabilityError('setRemoteApiKey', 'cli')
+  }
+  async deleteRemoteApiKey(): Promise<void> {
+    throw new UnsupportedCapabilityError('deleteRemoteApiKey', 'cli')
+  }
+  async getRemoteApiKeyLength(): Promise<number> {
+    return 0
+  }
+
+  async isSshTunnelHealthy(url: string): Promise<boolean> {
+    try {
+      const resp = await fetch(`${url}/health`)
+      return resp.ok
+    } catch { return false }
+  }
+  async waitForPort(_host: string, _port: number, _timeoutMs: number): Promise<boolean> {
+    throw new UnsupportedCapabilityError('waitForPort', 'cli')
+  }
+  async getSshTunnelStatus() {
+    return { is_running: false, local_port: null }
+  }
 
   getGatewayUrl(): string { return 'http://127.0.0.1:8642' }
   getGatewayHeaders(): Record<string, string> { return {} }
