@@ -1,8 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest'
 
 const mockInvoke = vi.fn()
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mockInvoke }))
 vi.mock('@tauri-apps/api/tauri', () => ({ invoke: mockInvoke }))
+
+beforeAll(() => { vi.stubGlobal('window', { __TAURI_INTERNALS__: {} }) })
+afterAll(() => { vi.unstubAllGlobals() })
 
 describe('getRemoteApiKeyLength safety', () => {
   beforeEach(() => mockInvoke.mockReset())
