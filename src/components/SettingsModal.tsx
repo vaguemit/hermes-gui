@@ -271,7 +271,7 @@ export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () =>
         if (prefs.sshRemotePort) setSshRemotePort(String(prefs.sshRemotePort));
         if (prefs.sshLocalPort) setSshLocalPort(String(prefs.sshLocalPort));
       }).catch(() => {});
-      client.getRemoteApiKeyLength().then(len => setConnApiKeyLength(len)).catch(() => {});
+      client.getRemoteApiKeyLength?.().then(len => setConnApiKeyLength(len)).catch(() => {});
     }
   }, [settingsOpen, tab]);
 
@@ -369,9 +369,9 @@ export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () =>
     prefs = { ...prefs, connMode, connRemoteUrl, sshHost, sshPort: parseInt(sshPort) || 22, sshUser, sshKeyPath, sshRemotePort: parseInt(sshRemotePort) || 8642, sshLocalPort: parseInt(sshLocalPort) || 18642 };
     await client.writeFile('gui-prefs.json', JSON.stringify(prefs, null, 2));
     if (connApiKey.trim()) {
-      await client.setRemoteApiKey(connApiKey.trim()).catch(() => {});
+      await client.setRemoteApiKey?.(connApiKey.trim()).catch(() => {});
       setConnApiKey('');
-      client.getRemoteApiKeyLength().then(len => setConnApiKeyLength(len)).catch(() => {});
+      client.getRemoteApiKeyLength?.().then(len => setConnApiKeyLength(len)).catch(() => {});
     }
     setConnSaved(true);
     setTimeout(() => setConnSaved(false), 2000);
@@ -380,7 +380,7 @@ export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () =>
   const clearConnApiKey = async () => {
     setConnKeyClearing(true);
     try {
-      await client.deleteRemoteApiKey();
+      await client.deleteRemoteApiKey?.();
       setConnApiKeyLength(0);
       setConnApiKey('');
     } catch { /* non-fatal */ } finally {
