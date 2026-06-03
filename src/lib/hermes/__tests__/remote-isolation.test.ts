@@ -33,28 +33,32 @@ async function run() {
   assert(client.getGatewayUrl() === 'http://localhost:8642', 'getGatewayUrl returns baseUrl')
   assert(typeof client.getGatewayHeaders() === 'object', 'getGatewayHeaders returns object')
 
+  // HTTP-implemented — these return Promises, not throw:
+  //   listSessions, searchSessions, deleteSession, listSessionsDb, readSessionDb,
+  //   searchSessionsDb, deleteSessionDb, listProfiles, listProfileNames, getActiveProfile,
+  //   setActiveProfile, listCronJobs, createCronJob, deleteCronJob, enableCronJob,
+  //   disableCronJob, runCronJob, listSavedModels, addSavedModel, removeSavedModel,
+  //   readEnv, writeEnv
+  const httpMethods = ['listSessions', 'searchSessions', 'deleteSession', 'listProfiles', 'listCronJobs']
+  for (const name of httpMethods) {
+    assert(typeof (client as any)[name] === 'function', `${name} is a function`)
+  }
+
   // These are IPC-only — must throw UnsupportedCapabilityError
   const ipcOnlyMethods: Array<{ name: string; call: () => Promise<unknown> }> = [
     { name: 'getInstallStatus', call: () => client.getInstallStatus() },
     { name: 'startGateway', call: () => client.startGateway() },
     { name: 'stopGateway', call: () => client.stopGateway() },
     { name: 'getSystemInfo', call: () => client.getSystemInfo() },
-    { name: 'listSessions', call: () => client.listSessions() },
-    { name: 'searchSessions', call: () => client.searchSessions('test') },
     { name: 'readSession', call: () => client.readSession('test') },
     { name: 'writeSession', call: () => client.writeSession('test', '{}') },
-    { name: 'deleteSession', call: () => client.deleteSession('test') },
     { name: 'clearAllSessions', call: () => client.clearAllSessions() },
-    { name: 'listProfiles', call: () => client.listProfiles() },
-    { name: 'listProfileNames', call: () => client.listProfileNames() },
     { name: 'createProfile', call: () => client.createProfile('test') },
     { name: 'renameProfile', call: () => client.renameProfile('a', 'b') },
     { name: 'readFile', call: () => client.readFile('test.txt') },
     { name: 'writeFile', call: () => client.writeFile('test.txt', '') },
     { name: 'readConfig', call: () => client.readConfig() },
     { name: 'writeConfig', call: () => client.writeConfig('') },
-    { name: 'readEnv', call: () => client.readEnv() },
-    { name: 'writeEnv', call: () => client.writeEnv('K', 'V') },
     { name: 'detectApiKeys', call: () => client.detectApiKeys() },
     { name: 'runDoctor', call: () => client.runDoctor() },
     { name: 'checkUpdate', call: () => client.checkUpdate() },
@@ -63,12 +67,7 @@ async function run() {
     { name: 'readMemoryFile', call: () => client.readMemoryFile('test') },
     { name: 'deleteMemoryFile', call: () => client.deleteMemoryFile('test') },
     { name: 'listSkills', call: () => client.listSkills() },
-    { name: 'listCronJobs', call: () => client.listCronJobs() },
-    { name: 'createCronJob', call: () => client.createCronJob({ description: 'x', schedule: '* * * * *', enabled: true }) },
     { name: 'updateCronJob', call: () => client.updateCronJob('id1', { enabled: false }) },
-    { name: 'deleteCronJob', call: () => client.deleteCronJob('id1') },
-    { name: 'enableCronJob', call: () => client.enableCronJob('id1') },
-    { name: 'disableCronJob', call: () => client.disableCronJob('id1') },
     { name: 'listOllamaModels', call: () => client.listOllamaModels() },
     { name: 'getConnectionConfig', call: () => client.getConnectionConfig() },
     { name: 'setConnectionConfig', call: () => client.setConnectionConfig('local', '') },
