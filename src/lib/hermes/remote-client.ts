@@ -61,9 +61,10 @@ export class RemoteHermesClient implements HermesClient {
     };
     if (sessionId) body['session_id'] = sessionId;
 
+    const authHeaders = await this.getAuthHeaders().catch(() => this.authHeaders())
     const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
+      headers: authHeaders,
       body: JSON.stringify(body),
       signal,
     });
