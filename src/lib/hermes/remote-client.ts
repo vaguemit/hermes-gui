@@ -158,7 +158,8 @@ export class RemoteHermesClient implements HermesClient {
   async getGatewayLatency(): Promise<number | null> {
     const t0 = Date.now()
     try {
-      const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(3000), headers: this.authHeaders() })
+      const headers = await this.getAuthHeaders().catch(() => this.authHeaders())
+      const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(3000), headers })
       return res.ok ? Date.now() - t0 : null
     } catch {
       return null

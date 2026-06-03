@@ -7,26 +7,32 @@ const client = new RemoteHermesClient('http://localhost:8642', '')
 
 // ── RemoteHermesClient cron stubs ─────────────────────────────────────────────
 
-test('RemoteHermesClient.createCronJob throws UnsupportedCapabilityError', () => {
-  expect(() =>
-    client.createCronJob({ description: 'test', schedule: '* * * * *', enabled: true })
-  ).toThrow(UnsupportedCapabilityError)
+test('RemoteHermesClient.createCronJob returns a Promise', () => {
+  const p = client.createCronJob({ description: 'test', schedule: '* * * * *', enabled: true })
+  p.catch(() => {})
+  expect(p).toBeInstanceOf(Promise)
 })
 
 test('RemoteHermesClient.updateCronJob throws UnsupportedCapabilityError', () => {
   expect(() => client.updateCronJob('id', { enabled: false })).toThrow(UnsupportedCapabilityError)
 })
 
-test('RemoteHermesClient.deleteCronJob throws UnsupportedCapabilityError', () => {
-  expect(() => client.deleteCronJob('id')).toThrow(UnsupportedCapabilityError)
+test('RemoteHermesClient.deleteCronJob returns a Promise', () => {
+  const p = client.deleteCronJob('id')
+  p.catch(() => {})
+  expect(p).toBeInstanceOf(Promise)
 })
 
-test('RemoteHermesClient.enableCronJob throws UnsupportedCapabilityError', () => {
-  expect(() => client.enableCronJob('id')).toThrow(UnsupportedCapabilityError)
+test('RemoteHermesClient.enableCronJob returns a Promise', () => {
+  const p = client.enableCronJob('id')
+  p.catch(() => {})
+  expect(p).toBeInstanceOf(Promise)
 })
 
-test('RemoteHermesClient.disableCronJob throws UnsupportedCapabilityError', () => {
-  expect(() => client.disableCronJob('id')).toThrow(UnsupportedCapabilityError)
+test('RemoteHermesClient.disableCronJob returns a Promise', () => {
+  const p = client.disableCronJob('id')
+  p.catch(() => {})
+  expect(p).toBeInstanceOf(Promise)
 })
 
 // ── CronJobMeta interface shape ───────────────────────────────────────────────
@@ -54,16 +60,16 @@ test('CronJobMeta lastRun is optional', () => {
   expect(job.lastRun).toBeUndefined()
 })
 
-// ── UnsupportedCapabilityError carries correct metadata ───────────────────────
+// ── updateCronJob still throws; createCronJob is now async ───────────────────
 
-test('createCronJob error has capability and mode set', () => {
-  try {
-    client.createCronJob({ description: 'x', schedule: '* * * * *', enabled: true })
-    throw new Error('should not reach')
-  } catch (e) {
-    expect(e).toBeInstanceOf(UnsupportedCapabilityError)
-    const err = e as UnsupportedCapabilityError
-    expect(err.capability).toBe('createCronJob')
-    expect(err.mode).toBe('remote')
-  }
+test('createCronJob is async and updateCronJob still throws UnsupportedCapabilityError', () => {
+  const p = client.createCronJob({ description: 'x', schedule: '* * * * *', enabled: true })
+  p.catch(() => {})
+  expect(p).toBeInstanceOf(Promise)
+  expect(() => client.updateCronJob('id', { enabled: false })).toThrow(UnsupportedCapabilityError)
+  const err = (() => {
+    try { client.updateCronJob('id', {}); return null } catch (e) { return e }
+  })() as UnsupportedCapabilityError
+  expect(err.capability).toBe('updateCronJob')
+  expect(err.mode).toBe('remote')
 })
