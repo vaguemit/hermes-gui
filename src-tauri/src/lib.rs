@@ -3365,6 +3365,86 @@ fn claw3d_set_ws_url(url: String, state: tauri::State<OfficeState>) -> Result<()
     Ok(())
 }
 
+// ── Secrets commands ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn get_remote_api_key(app_handle: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app_handle.store("gui-secrets.json").map_err(|e| e.to_string())?;
+    Ok(store.get("remoteApiKey").and_then(|v| v.as_str().map(|s| s.to_string())))
+}
+
+#[tauri::command]
+fn set_remote_api_key(app_handle: tauri::AppHandle, key: String) -> Result<(), String> {
+    if key.is_empty() { return Err("API key cannot be empty".to_string()); }
+    if key.len() > 500 { return Err("API key too long".to_string()); }
+    if key.chars().any(|c| c.is_control()) { return Err("API key contains invalid characters".to_string()); }
+    use tauri_plugin_store::StoreExt;
+    let store = app_handle.store("gui-secrets.json").map_err(|e| e.to_string())?;
+    store.set("remoteApiKey", serde_json::Value::String(key));
+    store.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_remote_api_key(app_handle: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app_handle.store("gui-secrets.json").map_err(|e| e.to_string())?;
+    store.delete("remoteApiKey");
+    store.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_remote_api_key_length(app_handle: tauri::AppHandle) -> Result<usize, String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app_handle.store("gui-secrets.json").map_err(|e| e.to_string())?;
+    Ok(store.get("remoteApiKey")
+        .and_then(|v| v.as_str().map(|s| s.len()))
+        .unwrap_or(0))
+}
+
+#[tauri::command]
+async fn is_ssh_tunnel_healthy(tunnel_url: String) -> Result<bool, String> {
+    let url = format!("{}/health", tunnel_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .map_err(|e| e.to_string())?;
+    match client.get(&url).send().await {
+        Ok(resp) => Ok(resp.status().is_success()),
+        Err(_) => Ok(false),
+    }
+}
+
+#[tauri::command]
+async fn wait_for_port(host: String, port: u16, timeout_ms: u64) -> Result<bool, String> {
+    let addr = format!("{}:{}", host, port);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    loop {
+        if std::net::TcpStream::connect(&addr).is_ok() {
+            return Ok(true);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Ok(false);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+#[derive(serde::Serialize)]
+struct SshTunnelStatus {
+    is_running: bool,
+    local_port: Option<u16>,
+}
+
+#[tauri::command]
+fn get_ssh_tunnel_status(state: tauri::State<SshState>) -> SshTunnelStatus {
+    let guard = state.0.lock().unwrap();
+    SshTunnelStatus {
+        is_running: guard.is_some(),
+        local_port: None,
+    }
+}
+
 // ── App entry point ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -3376,6 +3456,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_store::Builder::default().build())
         .manage(GatewayState)
         .manage(SshState(Mutex::new(None)))
         .manage(PtyState(Mutex::new(HashMap::new())))
@@ -3550,6 +3631,13 @@ pub fn run() {
             read_session_statedb,
             search_sessions_statedb,
             delete_session_statedb,
+            get_remote_api_key,
+            set_remote_api_key,
+            delete_remote_api_key,
+            get_remote_api_key_length,
+            is_ssh_tunnel_healthy,
+            wait_for_port,
+            get_ssh_tunnel_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
