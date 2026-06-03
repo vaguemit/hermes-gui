@@ -116,7 +116,7 @@ export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () =>
   const [gatewayPort, setGatewayPortState] = useState<number>(8642);
 
   // Connection tab state
-  const [connMode, setConnMode] = useState<'local' | 'remote' | 'ssh'>('local');
+  const [connMode, setConnMode] = useState<'local' | 'remote' | 'cli'>('local');
   const [connRemoteUrl, setConnRemoteUrl] = useState('');
   const [connApiKey, setConnApiKey] = useState('');
   const [sshHost, setSshHost] = useState('');
@@ -262,7 +262,13 @@ export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () =>
       client.readFile('gui-prefs.json').then(raw => {
         if (!raw) return;
         const prefs = JSON.parse(raw);
-        if (prefs.connMode) setConnMode(prefs.connMode);
+        if (prefs.connMode) {
+          // Migrate legacy 'ssh' value to 'cli'
+          const storedMode = prefs.connMode === 'ssh' ? 'cli' : prefs.connMode;
+          if (storedMode === 'local' || storedMode === 'remote' || storedMode === 'cli') {
+            setConnMode(storedMode);
+          }
+        }
         if (prefs.connRemoteUrl) setConnRemoteUrl(prefs.connRemoteUrl);
         if (prefs.sshHost) setSshHost(prefs.sshHost);
         if (prefs.sshPort) setSshPort(String(prefs.sshPort));
@@ -683,7 +689,7 @@ export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () =>
 
                 {/* Mode selector */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-                  {(['local', 'remote', 'ssh'] as const).map(mode => (
+                  {(['local', 'remote', 'cli'] as const).map(mode => (
                     <button
                       key={mode}
                       onClick={() => setConnMode(mode)}
@@ -758,8 +764,8 @@ export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () =>
                   </div>
                 )}
 
-                {/* SSH mode */}
-                {connMode === 'ssh' && (
+                {/* CLI/SSH tunnel mode */}
+                {connMode === 'cli' && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
                     <div>
                       <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>Host</label>
