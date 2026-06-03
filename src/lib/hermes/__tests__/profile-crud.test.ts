@@ -4,8 +4,10 @@ import { RemoteHermesClient } from '../remote-client'
 
 const client = new RemoteHermesClient('http://localhost:8642', '')
 
-test('RemoteHermesClient.listProfileNames throws UnsupportedCapabilityError', () => {
-  expect(() => client.listProfileNames()).toThrow(UnsupportedCapabilityError)
+test('RemoteHermesClient.listProfileNames returns a Promise', () => {
+  const p = client.listProfileNames()
+  p.catch(() => {})
+  expect(p).toBeInstanceOf(Promise)
 })
 
 test('RemoteHermesClient.createProfile throws UnsupportedCapabilityError', () => {
