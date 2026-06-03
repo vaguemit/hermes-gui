@@ -4,7 +4,7 @@ const mockInvoke = vi.fn().mockResolvedValue(null)
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mockInvoke }))
 
 const mockFetch = vi.fn()
-global.fetch = mockFetch
+vi.stubGlobal('fetch', mockFetch)
 
 const { RemoteHermesClient } = await import('../lib/hermes/remote-client')
 

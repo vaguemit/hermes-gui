@@ -4,7 +4,7 @@ const mockInvoke = vi.fn().mockResolvedValue(null)
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mockInvoke }))
 
 const mockFetch = vi.fn()
-global.fetch = mockFetch
+vi.stubGlobal('fetch', mockFetch)
 
 const { RemoteHermesClient } = await import('../lib/hermes/remote-client')
 
@@ -36,7 +36,7 @@ describe('RemoteHermesClient — cron jobs', () => {
 
   it('createCronJob posts job data to /api/jobs', async () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => ({ id: 'j1' }) })
-    await client.createCronJob({ name: 'test', schedule: '0 9 * * *', prompt: 'run task', enabled: true })
+    await client.createCronJob({ description: 'run task', schedule: '0 9 * * *', enabled: true })
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/jobs'),
       expect.objectContaining({ method: 'POST' })
@@ -44,7 +44,7 @@ describe('RemoteHermesClient — cron jobs', () => {
     const call = mockFetch.mock.calls[0]
     const body = JSON.parse(call[1].body)
     expect(body.schedule).toBe('0 9 * * *')
-    expect(body.prompt).toBe('run task')
+    expect(body.description).toBe('run task')
   })
 
   it('deleteCronJob uses DELETE on /api/jobs/{id}', async () => {

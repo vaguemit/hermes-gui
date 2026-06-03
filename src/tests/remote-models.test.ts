@@ -4,7 +4,7 @@ const mockInvoke = vi.fn().mockResolvedValue(null)
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mockInvoke }))
 
 const mockFetch = vi.fn()
-global.fetch = mockFetch
+vi.stubGlobal('fetch', mockFetch)
 
 const { RemoteHermesClient } = await import('../lib/hermes/remote-client')
 
@@ -34,7 +34,7 @@ describe('RemoteHermesClient — saved models', () => {
 
   it('addSavedModel posts to /api/models/saved', async () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => ({ id: 'new', name: 'claude-3' }) })
-    await client.addSavedModel({ name: 'claude-3', provider: 'anthropic', model: 'claude-3-sonnet' })
+    await client.addSavedModel({ name: 'claude-3', provider: 'anthropic', model: 'claude-3-sonnet', baseUrl: '' })
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/models/saved'),
       expect.objectContaining({ method: 'POST' })

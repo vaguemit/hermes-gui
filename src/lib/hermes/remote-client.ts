@@ -351,7 +351,7 @@ export class RemoteHermesClient implements HermesClient {
     const headers = await this.getAuthHeaders()
     const res = await fetch(`${this.baseUrl}/api/jobs`, {
       method: 'POST', headers,
-      body: JSON.stringify({ name: j.name, schedule: j.schedule, prompt: j.prompt, deliver: j.deliver ?? ['local'] }),
+      body: JSON.stringify({ description: j.description, schedule: j.schedule, enabled: j.enabled }),
     })
     if (!res.ok) throw new Error(`createCronJob failed: ${res.status}`)
     return res.json()
@@ -376,7 +376,7 @@ export class RemoteHermesClient implements HermesClient {
     const headers = await this.getAuthHeaders()
     const res = await fetch(`${this.baseUrl}/api/jobs/${encodeURIComponent(id)}/run`, { method: 'POST', headers })
     if (!res.ok) throw new Error(`runCronJob failed: ${res.status}`)
-    return { command: 'cron run', stdout: `Job ${id} triggered`, stderr: '', success: true }
+    return { command: 'cron run', stdout: `Job ${id} triggered`, stderr: '', success: true, code: 0 }
   }
   getConnectionConfig(): Promise<ConnectionConfig> { return this.unsupported('getConnectionConfig') }
   setConnectionConfig(_m: string, _u: string, _k?: string): Promise<void> { return this.unsupported('setConnectionConfig') }
