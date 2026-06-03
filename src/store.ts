@@ -352,12 +352,8 @@ export const useStore = create<AppState>((set, get) => ({
       crons: state.crons.map((c) => (c.id === id ? { ...c, lastRun } : c)),
     })),
 
-  // Skills
-  skills: [
-    { id: '1', name: 'summarize', description: 'Summarize any text, document, or URL', source: 'builtin', content: '# Summarize\nSummarize the provided content concisely.' },
-    { id: '2', name: 'code-review', description: 'Review code for bugs, style, and security', source: 'builtin', content: '# Code Review\nReview the provided code.' },
-    { id: '3', name: 'translate', description: 'Translate text to any language', source: 'user', content: '# Translate\nTranslate the text to the specified language.' },
-  ],
+  // Skills — populated at runtime from real Hermes skill list
+  skills: [],
   addSkill: (s) => set((state) => ({ skills: [...state.skills, s] })),
   updateSkill: (id, patch) =>
     set((state) => ({ skills: state.skills.map((s) => (s.id === id ? { ...s, ...patch } : s)) })),

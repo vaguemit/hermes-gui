@@ -185,10 +185,11 @@ export class RemoteHermesClient implements HermesClient {
   async testGateway(): Promise<TestResult> {
     const t0 = Date.now()
     try {
-      const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(3000), headers: this.authHeaders() })
+      const headers = await this.getAuthHeaders().catch(() => this.authHeaders())
+      const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(3000), headers })
       return { success: res.ok, latency_ms: Date.now() - t0, error: res.ok ? null : `HTTP ${res.status}` }
     } catch (e) {
-      return { success: false, latency_ms: null, error: (e as Error).message }
+      return { success: false, latency_ms: null, error: e instanceof Error ? e.message : String(e) }
     }
   }
 
