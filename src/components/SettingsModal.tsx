@@ -128,6 +128,8 @@ export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () =>
   const [connSaved, setConnSaved] = useState(false);
   const [connTesting, setConnTesting] = useState(false);
   const [connTestResult, setConnTestResult] = useState<'ok' | 'error' | null>(null);
+  const [connApiKeyLength, setConnApiKeyLength] = useState<number>(0);
+  const [connKeyClearing, setConnKeyClearing] = useState(false);
 
   // Browser automation tab state
   const [browserKeys, setBrowserKeys] = useState<Record<string, string>>({});
@@ -269,6 +271,7 @@ export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () =>
         if (prefs.sshRemotePort) setSshRemotePort(String(prefs.sshRemotePort));
         if (prefs.sshLocalPort) setSshLocalPort(String(prefs.sshLocalPort));
       }).catch(() => {});
+      client.getRemoteApiKeyLength().then(len => setConnApiKeyLength(len)).catch(() => {});
     }
   }, [settingsOpen, tab]);
 
@@ -365,8 +368,24 @@ export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () =>
     try { const raw = await client.readFile('gui-prefs.json'); if (raw) prefs = JSON.parse(raw); } catch {}
     prefs = { ...prefs, connMode, connRemoteUrl, sshHost, sshPort: parseInt(sshPort) || 22, sshUser, sshKeyPath, sshRemotePort: parseInt(sshRemotePort) || 8642, sshLocalPort: parseInt(sshLocalPort) || 18642 };
     await client.writeFile('gui-prefs.json', JSON.stringify(prefs, null, 2));
+    if (connApiKey.trim()) {
+      await client.setRemoteApiKey(connApiKey.trim()).catch(() => {});
+      setConnApiKey('');
+      client.getRemoteApiKeyLength().then(len => setConnApiKeyLength(len)).catch(() => {});
+    }
     setConnSaved(true);
     setTimeout(() => setConnSaved(false), 2000);
+  };
+
+  const clearConnApiKey = async () => {
+    setConnKeyClearing(true);
+    try {
+      await client.deleteRemoteApiKey();
+      setConnApiKeyLength(0);
+      setConnApiKey('');
+    } catch { /* non-fatal */ } finally {
+      setConnKeyClearing(false);
+    }
   };
 
   const testConn = async () => {
@@ -709,13 +728,32 @@ export default function SettingsModal({ onRerunWizard }: { onRerunWizard?: () =>
                       />
                     </div>
                     <div style={{ marginBottom: 14 }}>
-                      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 5 }}>API Key (optional)</label>
-                      <MaskedInput
-                        id="conn-api-key"
-                        placeholder="API Key (optional)"
-                        value={connApiKey}
-                        onChange={setConnApiKey}
-                      />
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                        <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)' }}>API Key (optional)</label>
+                        {connApiKeyLength > 0 && (
+                          <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>key set: {connApiKeyLength} chars</span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <div style={{ flex: 1 }}>
+                          <MaskedInput
+                            id="conn-api-key"
+                            placeholder={connApiKeyLength > 0 ? 'Enter new key to replace…' : 'API Key (optional)'}
+                            value={connApiKey}
+                            onChange={setConnApiKey}
+                          />
+                        </div>
+                        {connApiKeyLength > 0 && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={clearConnApiKey}
+                            disabled={connKeyClearing}
+                            style={{ fontSize: 12, flexShrink: 0 }}
+                          >
+                            {connKeyClearing ? '…' : 'Clear'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
