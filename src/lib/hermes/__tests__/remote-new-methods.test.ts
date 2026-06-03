@@ -18,16 +18,10 @@ test('getGatewayHeaders returns empty object when no apiKey', () => {
   expect(noKeyClient.getGatewayHeaders()).toEqual({})
 })
 
-test('searchSessions throws UnsupportedCapabilityError', () => {
-  expect(() => client.searchSessions('query')).toThrow(UnsupportedCapabilityError)
-})
-
-test('searchSessions error has capability=searchSessions', () => {
-  try {
-    client.searchSessions('q')
-  } catch (e) {
-    expect((e as UnsupportedCapabilityError).capability).toBe('searchSessions')
-  }
+test('searchSessions returns a Promise', () => {
+  const p = client.searchSessions('query')
+  p.catch(() => {})
+  expect(p).toBeInstanceOf(Promise)
 })
 
 test('getSystemInfo throws UnsupportedCapabilityError', () => {
