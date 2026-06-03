@@ -31,6 +31,9 @@ import {
   readCronJobsIpc, writeCronJobsIpc, runCronJobNowIpc,
   getEnabledToolsets as ipcGetEnabledToolsets, setEnabledToolsets as ipcSetEnabledToolsets,
   readModelsJson, writeModelsJson,
+  isSshTunnelHealthy as ipcIsSshTunnelHealthy,
+  waitForPort as ipcWaitForPort,
+  getSshTunnelStatus as ipcGetSshTunnelStatus,
 } from '../../api/desktop'
 
 
@@ -297,18 +300,9 @@ export class CliHermesClient implements HermesClient {
     return 0
   }
 
-  async isSshTunnelHealthy(url: string): Promise<boolean> {
-    try {
-      const resp = await fetch(`${url}/health`)
-      return resp.ok
-    } catch { return false }
-  }
-  async waitForPort(_host: string, _port: number, _timeoutMs: number): Promise<boolean> {
-    throw new UnsupportedCapabilityError('waitForPort', 'cli')
-  }
-  async getSshTunnelStatus() {
-    return { is_running: false, local_port: null }
-  }
+  async isSshTunnelHealthy(url: string): Promise<boolean> { return ipcIsSshTunnelHealthy(url) }
+  async waitForPort(host: string, port: number, timeoutMs: number): Promise<boolean> { return ipcWaitForPort(host, port, timeoutMs) }
+  async getSshTunnelStatus() { return ipcGetSshTunnelStatus() }
 
   getGatewayUrl(): string { return 'http://127.0.0.1:8642' }
   getGatewayHeaders(): Record<string, string> { return {} }
