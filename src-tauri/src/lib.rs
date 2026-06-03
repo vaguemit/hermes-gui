@@ -3376,6 +3376,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_store::Builder::default().build())
         .manage(GatewayState)
         .manage(SshState(Mutex::new(None)))
         .manage(PtyState(Mutex::new(HashMap::new())))
