@@ -31,9 +31,10 @@ export class RemoteHermesClient implements HermesClient {
   async getHealth(): Promise<HealthStatus> {
     const t0 = Date.now();
     try {
+      const headers = await this.getAuthHeaders().catch(() => this.authHeaders())
       const res = await fetch(`${this.baseUrl}/health`, {
         signal: AbortSignal.timeout(3000),
-        headers: this.authHeaders(),
+        headers,
       });
       return { healthy: res.ok, latencyMs: Date.now() - t0 };
     } catch {
