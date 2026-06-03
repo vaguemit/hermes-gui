@@ -825,3 +825,65 @@ pre:hover .code-copy-btn { opacity: 1; }
   background: var(--bg1); border: 1px solid var(--border);
   border-radius: 4px; padding: 8px; max-height: 160px; overflow-y: auto;
 }
+
+/* ModeBanner */
+.mode-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+  z-index: 100;
+}
+.mode-banner--remote {
+  background: #7c2d12;
+  color: #fed7aa;
+  border-bottom: 1px solid #9a3412;
+}
+.mode-banner--cli {
+  background: #1e3a5f;
+  color: #bfdbfe;
+  border-bottom: 1px solid #1d4ed8;
+}
+.mode-banner__content {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  padding: 0;
+  font-size: inherit;
+}
+.mode-banner__icon { font-size: 14px; }
+.mode-banner__label { font-weight: 600; }
+.mode-banner__hint { opacity: 0.7; font-size: 11px; }
+.mode-banner__dismiss {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 4px 8px;
+  opacity: 0.7;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.mode-banner__dismiss:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+
+/* Sidebar mode badge */
+.sidebar-mode-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sidebar-mode-badge--remote { background: #7c2d12; color: #fed7aa; }
+.sidebar-mode-badge--cli { background: #1e3a5f; color: #bfdbfe; }
