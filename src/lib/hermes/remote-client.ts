@@ -165,7 +165,8 @@ export class RemoteHermesClient implements HermesClient {
 
   async fetchModels(): Promise<string[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/v1/models`, { headers: this.authHeaders() })
+      const headers = await this.getAuthHeaders().catch(() => this.authHeaders())
+      const res = await fetch(`${this.baseUrl}/v1/models`, { headers })
       if (!res.ok) return []
       const data = await res.json()
       return (data.data || []).map((m: { id: string }) => m.id)
