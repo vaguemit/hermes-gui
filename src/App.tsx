@@ -29,6 +29,7 @@ import MemoryPanel from './components/MemoryPanel';
 import OfficePanel from './components/OfficePanel';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
+import { ModeBanner } from './components/ModeBanner';
 import SplashScreen from './components/SplashScreen';
 import WelcomePanel from './components/WelcomePanel';
 import { PanelRightClose, PanelRight, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -436,6 +437,9 @@ function AppInner() {
             <button onClick={dismissBanner} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>×</button>
           </div>
         )}
+
+        {/* Mode banner — shown when not in local mode */}
+        <ModeBanner onOpenSettings={() => setSettingsOpen(true)} />
 
         {/* Main content */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
