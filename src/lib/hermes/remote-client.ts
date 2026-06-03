@@ -284,13 +284,44 @@ export class RemoteHermesClient implements HermesClient {
   uninstallSkill(_n: string): Promise<CommandResult> { return this.unsupported('uninstallSkill') }
   searchMemory(_q: string): Promise<MemoryFileMeta[]> { return this.unsupported('searchMemory') }
   listOllamaModels(): Promise<string[]> { return this.unsupported('listOllamaModels') }
-  listCronJobs(): Promise<CronJobMeta[]> { return this.unsupported('listCronJobs') }
-  createCronJob(_j: Omit<CronJobMeta, 'id'>): Promise<CronJobMeta> { return this.unsupported('createCronJob') }
+  async listCronJobs(): Promise<CronJobMeta[]> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/jobs?include_disabled=true`, { headers })
+    if (!res.ok) throw new Error(`listCronJobs failed: ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data) ? data : (data.jobs ?? [])
+  }
+  async createCronJob(j: Omit<CronJobMeta, 'id'>): Promise<CronJobMeta> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/jobs`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ name: j.name, schedule: j.schedule, prompt: j.prompt, deliver: j.deliver ?? ['local'] }),
+    })
+    if (!res.ok) throw new Error(`createCronJob failed: ${res.status}`)
+    return res.json()
+  }
   updateCronJob(_id: string, _p: Partial<Omit<CronJobMeta, 'id'>>): Promise<void> { return this.unsupported('updateCronJob') }
-  deleteCronJob(_id: string): Promise<void> { return this.unsupported('deleteCronJob') }
-  enableCronJob(_id: string): Promise<void> { return this.unsupported('enableCronJob') }
-  disableCronJob(_id: string): Promise<void> { return this.unsupported('disableCronJob') }
-  runCronJob(_id: string): Promise<CommandResult> { return this.unsupported('runCronJob') }
+  async deleteCronJob(id: string): Promise<void> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/jobs/${encodeURIComponent(id)}`, { method: 'DELETE', headers })
+    if (!res.ok) throw new Error(`deleteCronJob failed: ${res.status}`)
+  }
+  async enableCronJob(id: string): Promise<void> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/jobs/${encodeURIComponent(id)}/resume`, { method: 'POST', headers })
+    if (!res.ok) throw new Error(`enableCronJob failed: ${res.status}`)
+  }
+  async disableCronJob(id: string): Promise<void> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/jobs/${encodeURIComponent(id)}/pause`, { method: 'POST', headers })
+    if (!res.ok) throw new Error(`disableCronJob failed: ${res.status}`)
+  }
+  async runCronJob(id: string): Promise<CommandResult> {
+    const headers = await this.getAuthHeaders()
+    const res = await fetch(`${this.baseUrl}/api/jobs/${encodeURIComponent(id)}/run`, { method: 'POST', headers })
+    if (!res.ok) throw new Error(`runCronJob failed: ${res.status}`)
+    return { command: 'cron run', stdout: `Job ${id} triggered`, stderr: '', success: true }
+  }
   getConnectionConfig(): Promise<ConnectionConfig> { return this.unsupported('getConnectionConfig') }
   setConnectionConfig(_m: string, _u: string, _k?: string): Promise<void> { return this.unsupported('setConnectionConfig') }
 
